@@ -150,7 +150,7 @@ that verifies each present row.
 | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_postprocessing_outline.jpg" alt="webgpu_postprocessing_outline" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_postprocessing_outline) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_oit.jpg" alt="webgpu_oit" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_oit) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_clipping.jpg" alt="webgpu_clipping" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_clipping) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_clipping_stencil.jpg" alt="webgpu_clipping_stencil" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_clipping_stencil) |
 | [`webgpu_postprocessing_outline`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_outline.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_outline-progress.md) | [`webgpu_oit`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_oit.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_oit-progress.md) | [`webgpu_clipping`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_clipping.rs) | [`webgpu_clipping_stencil`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_clipping_stencil.rs) |
 | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_materials_transmission.jpg" alt="webgpu_materials_transmission" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_materials_transmission) |  |  |  |
-| [`webgpu_materials_transmission`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_materials_transmission.rs) |  |  |  |
+| [`webgpu_materials_transmission`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_materials_transmission.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_materials_transmission-progress.md) |  |  |  |
 
 <sub>Our own rendered frames, one per graded example. Each thumbnail opens the example running in your browser on WebGPU ([all of them](https://oneilltomhq.github.io/three-rs/)); the caption links the ported source. See [`docs/gallery.md`](https://github.com/oneilltomhq/three-rs/blob/main/docs/gallery.md).</sub>
 <!-- gallery:end -->
@@ -364,7 +364,7 @@ cargo run --release --bin viewer -- 8                        # the same, by key
 cargo run --release --bin viewer -- shadowmap --headless --frames 40
 ```
 
-Opens the named example in a window (winit, tested on Wayland). All 96 graded
+Opens the named example in a window (winit, tested on Wayland). All 97 graded
 examples are there, and so are the ungraded `webgpu_postprocessing_traa`, `webgpu_water`,
 `webgpu_postprocessing_sss`, `webgpu_postprocessing_ssgi`,
 `webgpu_postprocessing_ao`,
@@ -407,7 +407,7 @@ workspace crates that depend on `three-rs` and are not ports of anything in
 three.js' `src/`.
 
 `three_rs::addons::controls::OrbitControls` is the exception to that rule, and
-it is in the root crate rather than a workspace one: 69 of the 96 graded pages
+it is in the root crate rather than a workspace one: 70 of the 97 graded pages
 create an `OrbitControls`, and an example pulled in by `#[path]` cannot reach a
 crate that depends on `three-rs`. It is a port of
 `examples/jsm/controls/OrbitControls.js` — the same state, the same defaults,
