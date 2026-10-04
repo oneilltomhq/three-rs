@@ -28,7 +28,7 @@ use std::rc::Rc;
 
 use three_rs::addons::controls::OrbitControls;
 use three_rs::core::Node;
-use three_rs::nodes::tsl::{fog, normal_map, range_fog_factor, texture};
+use three_rs::nodes::tsl::{self, fog, normal_map, range_fog_factor, texture};
 use three_rs::textures::Wrapping;
 use three_rs::utils::now_ms;
 use three_rs::{
@@ -115,8 +115,8 @@ pub fn init() -> App {
     // `lights( [ light1 ] )` / `lights( [ light2 ] )` — indices into the
     // renderer's light list, which is scene-traversal order; the four lights are
     // added before the teapots, so it is the order they were added in.
-    let red_lights_node = vec![0];
-    let blue_lights_node = vec![1];
+    let red_lights_node = tsl::lights([0]);
+    let blue_lights_node = tsl::lights([1]);
 
     // models
 

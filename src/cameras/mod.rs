@@ -4,11 +4,13 @@ mod array_camera;
 mod cube_camera;
 mod orthographic_camera;
 mod perspective_camera;
+mod stereo_camera;
 
 pub use array_camera::ArrayCamera;
 pub use cube_camera::CubeCamera;
 pub use orthographic_camera::OrthographicCamera;
 pub use perspective_camera::{CameraView, PerspectiveCamera};
+pub use stereo_camera::StereoCamera;
 
 use crate::core::Layers;
 use crate::math::{Box3, CoordinateSystem, Matrix4, Vector3};

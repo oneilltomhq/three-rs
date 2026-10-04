@@ -157,7 +157,9 @@ pub mod testing;
 pub mod textures;
 pub mod utils;
 
-pub use cameras::{ArrayCamera, CubeCamera, OrthographicCamera, PerspectiveCamera, RenderCamera};
+pub use cameras::{
+    ArrayCamera, CubeCamera, OrthographicCamera, PerspectiveCamera, RenderCamera, StereoCamera,
+};
 pub use core::{BufferGeometry, Intersection, Node, Object3D, Raycaster, Timer};
 pub use environments::RoomEnvironment;
 pub use error::{Error, GltfError};
@@ -191,9 +193,9 @@ pub use objects::{
     QuadMesh, Scene, SceneFog, Sprite,
 };
 pub use renderer::{
-    pass, BuildCounts, CameraRef, ComputeCounts, CubeRenderTarget, DirectRenderPipeline, Info,
-    MemoryCounts, PassNode, RenderCounts, RenderPipeline, RenderTarget, Renderer,
-    RendererParameters, SceneRef, SsaaPassNode, BACKENDS,
+    depth_pass, pass, BuildCounts, CameraRef, ComputeCounts, CubeRenderTarget,
+    DirectRenderPipeline, Info, MemoryCounts, PassNode, RenderCounts, RenderPipeline, RenderTarget,
+    Renderer, RendererParameters, SceneRef, SsaaPassNode, BACKENDS,
 };
 pub use textures::{
     CubeTexture, Data3DTexture, DepthTexture, Mapping, MinFilter, Texture, TextureFilter,

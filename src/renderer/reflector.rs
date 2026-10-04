@@ -68,6 +68,13 @@ impl Renderer {
             }
 
             for reflector in &reflectors {
+                // A target added from the material's own `Fn()`, which three
+                // runs as the material is built (`add_target_on_setup`).
+                let add_target_to = reflector.borrow_mut().add_target_to.take();
+                if let Some(parent) = add_target_to.and_then(|parent| parent.upgrade()) {
+                    let target = reflector.borrow().target.clone();
+                    parent.add(&target);
+                }
                 // `ReflectorBaseNode.setup()`: `this._updateResolution(
                 // _defaultRT, builder.renderer )`. The default target is what
                 // the node samples until the reflector has rendered, so it

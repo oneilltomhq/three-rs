@@ -32,7 +32,7 @@ pub use cube_render_target::CubeRenderTarget;
 pub use direct_render_pipeline::DirectRenderPipeline;
 pub use info::{BuildCounts, ComputeCounts, Info, MemoryCounts, RenderCounts};
 use mipmap::{create_mipmap_pipeline, MipmapShader};
-pub use pass::{pass, CameraRef, PassNode, PassOptions, SceneRef, DEPTH_ATTACHMENT};
+pub use pass::{depth_pass, pass, CameraRef, PassNode, PassOptions, SceneRef, DEPTH_ATTACHMENT};
 pub use pmrem::PmremGenerator;
 pub(crate) use programs::RenderState;
 use programs::{
@@ -49,8 +49,8 @@ use crate::core::{BufferGeometry, Group, Index, Layers, Node};
 use crate::error::Error;
 use crate::geometries::{quad_geometry, sphere_geometry};
 use crate::lights::{
-    LightKind, LightObject, LightShadow, ShadowFilter, ShadowFilterMap, ShadowMapType,
-    CUBE_DIRECTIONS, CUBE_UPS,
+    LightKind, LightObject, LightShadow, ShadowCamera, ShadowFilter, ShadowFilterMap,
+    ShadowMapType, CUBE_DIRECTIONS, CUBE_UPS,
 };
 use crate::materials::phong::{LightDesc, ShadowMap};
 use crate::materials::{self, MeshBasicNodeMaterial, MrtContext, SetupContext, Side, ToneMapping};
@@ -100,6 +100,17 @@ const CACHE_GRACE_FRAMES: u64 = 4;
 pub const COMPRESSION_FEATURES: wgpu::Features = wgpu::Features::TEXTURE_COMPRESSION_BC
     .union(wgpu::Features::TEXTURE_COMPRESSION_ETC2)
     .union(wgpu::Features::TEXTURE_COMPRESSION_ASTC);
+
+/// WebGPU's `subgroups` feature, which `WebGPUBackend` requests whenever the
+/// adapter has it and the subgroup TSL functions (`subgroupAdd` and the rest,
+/// `subgroupSize`, `subgroupIndex`) need. A host that builds its own device
+/// (`with_device`, `adopt_device`) passes it in its `required_features` to run
+/// those kernels; without it [`Renderer::compute`] skips them.
+///
+/// wgpu 30 counts it as native-only: its WebGPU backend has no mapping for
+/// `subgroups` (`FEATURES_MAPPING` in `wgpu/src/backend/webgpu.rs`), so a web
+/// build never sees or requests it.
+pub const SUBGROUP_FEATURES: wgpu::Features = wgpu::Features::SUBGROUP;
 
 /// A cached GPU buffer that is filled exactly once — `range()`'s random draw,
 /// or one upload of an `InstancedBufferAttribute`'s array — with the same
@@ -451,6 +462,49 @@ const VARIANT_FRONT_SIDE: u64 = 5;
 /// draw's) for a material a [`RenderObjectFunction`] derived.
 const VARIANT_RENDER_OBJECT_FUNCTION: u64 = 7;
 
+/// The two render-object functions `OutlineNode.updateBefore()` installs
+/// around its scene renders, together with the
+/// `resetRendererAndSceneState()` they run under (`docs/nodes.md` §72):
+///
+/// ```js
+/// renderer.setRenderObjectFunction( ( object, …, material, … ) => {
+///     if ( this._selectionCache.has( object ) === draw_selected ) {
+///         const overrideMaterial = object.isSprite ? spriteMaterial : material;
+///         renderer.renderObject( object, …, overrideMaterial, … );
+///     }
+/// } );
+/// ```
+///
+/// Every object whose membership in `selected` differs from `draw_selected`
+/// is skipped, and every other one is drawn with `material` (`sprite_material`
+/// for a sprite) in place of its own. `resetSceneState()`'s `scene.background
+/// = null` is the skybox and colour background being ignored for the
+/// render. The shadow maps are not rendered either: three renders them from
+/// `ShadowNode.updateBefore()`, which only a lit material's program reaches,
+/// and both outline materials are unlit.
+pub(crate) struct OutlineSelection {
+    /// `this._selectionCache`, by `Object3D.id`.
+    pub(crate) selected: Rc<HashSet<u32>>,
+    /// `true` for the selected-objects pass, `false` for the depth pass of
+    /// everything else.
+    pub(crate) draw_selected: bool,
+    pub(crate) material: Rc<MeshBasicNodeMaterial>,
+    pub(crate) sprite_material: Rc<MeshBasicNodeMaterial>,
+}
+
+impl OutlineSelection {
+    /// The material `object` is drawn with, or `None` when this pass skips it.
+    fn material_for(&self, object: &crate::core::Object3D) -> Option<&MeshBasicNodeMaterial> {
+        (self.selected.contains(&object.id) == self.draw_selected).then(|| {
+            if object.payload.is_sprite() {
+                &*self.sprite_material
+            } else {
+                &*self.material
+            }
+        })
+    }
+}
+
 /// One entry of `Renderer::programs`: the compiled program, and the last
 /// frame a material state named it.
 struct ProgramEntry {
@@ -641,6 +695,16 @@ struct PassTarget {
     /// `mrtNode.setBlendMode( name, ... )` gives it a blend state of its own;
     /// the pipeline descriptor carries one `ColorTargetState` per attachment.
     extra_color_targets: Vec<ExtraColorTarget>,
+    /// Attachment 0's blend state when the MRT decides it rather than the
+    /// material: `MRTNode.getBlendMode( textures[ 0 ].name )` is
+    /// `MaterialBlending` only for an attachment named `output`, so a target
+    /// whose first attachment has another name — `OITPassNode`'s `accum` —
+    /// gets the MRT's own blend mode, or none. `None` here is the material's.
+    color_blend: Option<Option<wgpu::BlendState>>,
+    /// `renderContext.mrt.getClearColor( textures[ i ].name )` per colour
+    /// attachment, attachment 0 first: a value the pass clears that
+    /// attachment to in place of its default. Empty without an MRT.
+    clear_colors: Vec<Option<[f64; 4]>>,
     resolve: Option<wgpu::TextureView>,
     /// The single-sampled colour texture itself — the resolve target under
     /// MSAA and the attachment otherwise. `copyFramebufferToTexture()` copies
@@ -834,6 +898,19 @@ pub struct Renderer {
     /// carries only the flag, because nothing on the ladder uses a `Lighting`
     /// for anything else.
     pub lighting_enabled: bool,
+    /// `renderer.contextNode`'s `getShadow` — the `builtinShadowContext` of
+    /// the pass being rendered, which `PassNode.updateBefore()` merges into
+    /// the renderer's context for the duration of its render. Every scene
+    /// draw that receives the named light's shadow carries it in that
+    /// light's [`ShadowMap`]. `None` outside such a pass.
+    pub(crate) context_shadow: Option<pass::ShadowContext>,
+    /// `renderer.contextNode`'s `getAO` — the ambient-occlusion node of the
+    /// pass being rendered, which `PassNode.updateBefore()` merges into the
+    /// renderer's context for the duration of its render
+    /// (`passNode.contextNode = builtinAOContext( ao )`). Every scene draw
+    /// built while it is set carries it in its `SetupContext`. `None` outside
+    /// such a pass.
+    pub(crate) context_ao: Option<crate::nodes::NodeRef>,
     /// `renderer.setRenderObjectFunction()` as `ToonOutlinePassNode` sets it
     /// for the duration of its own render: the outline material every
     /// `MeshToonNodeMaterial` draw is preceded by. `None` is three's default
@@ -846,6 +923,16 @@ pub struct Renderer {
     /// is three's default render-object function. See
     /// [`RetroPassNode`](crate::nodes::display::RetroPassNode).
     pub(crate) render_object_function: Option<Rc<dyn RenderObjectFunction>>,
+    /// `renderer.setRenderObjectFunction()` as `OITPassNode` sets it for each
+    /// of its two renders: which half of the scene the pass draws, and with
+    /// `depthWrite` forced off for the accumulation half. `None` is three's
+    /// default render-object function. See
+    /// [`OitPassNode`](crate::nodes::display::OitPassNode).
+    pub(crate) oit: Option<crate::nodes::display::OitRenderObjects>,
+    /// `renderer.setRenderObjectFunction()` as `OutlineNode.updateBefore()`
+    /// sets it for its two scene renders. `None` is three's default
+    /// render-object function. See [`OutlineSelection`].
+    pub(crate) outline_selection: Option<OutlineSelection>,
     /// `PassNode.updateBefore()`'s `camera.layers.mask = this._layers.mask` —
     /// the layer mask `_projectObject()` tests against for the duration of one
     /// pass. `None` leaves the camera's own mask alone.
@@ -857,6 +944,9 @@ pub struct Renderer {
 
     canvas: Option<CanvasTarget>,
     render_target: Option<RenderTarget>,
+    /// `Renderer._activeMipmapLevel` — the level of `render_target`'s colour
+    /// texture a pass draws into.
+    active_mipmap_level: u32,
     /// `Renderer._mrt` — the MRT configuration the *pass* sets, which
     /// `NodeMaterial.setup()` merges each material's own `mrtNode` over.
     /// The pass's `updateBefore()` sets it from its own `set_mrt` and
@@ -1244,7 +1334,18 @@ impl Renderer {
         // device to pick a transcode target. Without them a Basis texture
         // falls back to uncompressed RGBA — correct, four to eight times the
         // memory, and not the texture three samples.
-        let wanted = wgpu::Features::FLOAT32_FILTERABLE | COMPRESSION_FEATURES;
+        //
+        // `RG11B10UFLOAT_RENDERABLE` is WebGPU's `rg11b10ufloat-renderable`,
+        // which `SSGINode` renders its GI attachment into (and checks for).
+        //
+        // `SUBGROUP` is WebGPU's `subgroups`, which three requests the same
+        // way and which the subgroup TSL functions need
+        // (`WGSLNodeBuilder.enableSubGroups()`). An adapter without it only
+        // costs those kernels: `compute()` logs three's error and skips them.
+        let wanted = wgpu::Features::FLOAT32_FILTERABLE
+            | wgpu::Features::RG11B10UFLOAT_RENDERABLE
+            | COMPRESSION_FEATURES
+            | SUBGROUP_FEATURES;
         let required_features = adapter.features() & wanted;
 
         let (device, queue) = adapter
@@ -1331,12 +1432,17 @@ impl Renderer {
             opaque: true,
             transparent: true,
             lighting_enabled: true,
+            context_shadow: None,
+            context_ao: None,
             toon_outline: None,
             render_object_function: None,
+            oit: None,
+            outline_selection: None,
             camera_layers: None,
             sort_objects: true,
             canvas: None,
             render_target: None,
+            active_mipmap_level: 0,
             mrt: None,
             frame_buffer_target: None,
             opaque_frame: None,
@@ -1443,6 +1549,12 @@ impl Renderer {
         self.canvas = None;
     }
 
+    /// `renderer.getSize( target )`: the canvas size in logical pixels, as
+    /// [`set_size`](Self::set_size) last set it.
+    pub fn size(&self) -> (f64, f64) {
+        (self.width, self.height)
+    }
+
     /// `renderer.setViewport( x, y, width, height )` — the rectangle of the
     /// canvas that `render()` draws into, in **logical** pixels (the pixel
     /// ratio is applied for you, exactly as three.js does).
@@ -1545,7 +1657,35 @@ impl Renderer {
 
     /// `renderer.setRenderTarget( target )`.
     pub fn set_render_target(&mut self, render_target: Option<RenderTarget>) {
+        self.set_render_target_level(render_target, 0);
+    }
+
+    /// `renderer.setRenderTarget( target, 0, activeMipmapLevel )`: the passes
+    /// that follow draw into one mip level of the target's colour texture.
+    ///
+    /// `Renderer._renderScene()` shifts the viewport, the scissor and the
+    /// context size right by the level, and `WebGPUBackend` views the texture
+    /// at `baseMipLevel: activeMipmapLevel, mipLevelCount: 1`. The target needs
+    /// that many levels ([`RenderTarget::set_mip_level_count`]).
+    ///
+    /// Three's `Textures.updateRenderTarget()` gives each level of a target
+    /// with a depth buffer its own depth texture (`depthTextureMips[ level ]`,
+    /// `size >> level` pixels). three-rs does not port that, nor per-level
+    /// MSAA or extra MRT attachments: at a level above 0 the target must be
+    /// colour-only (`depth_buffer: false`, no depth texture, `samples <= 1`,
+    /// one attachment), and the render pass panics otherwise.
+    pub fn set_render_target_level(
+        &mut self,
+        render_target: Option<RenderTarget>,
+        active_mipmap_level: u32,
+    ) {
         self.render_target = render_target;
+        self.active_mipmap_level = active_mipmap_level;
+    }
+
+    /// `renderer.getActiveMipmapLevel()`.
+    pub fn active_mipmap_level(&self) -> u32 {
+        self.active_mipmap_level
     }
 
     /// `renderer.setMRT( mrt )`. Read by the next `render()` into a render
@@ -1774,10 +1914,9 @@ impl Renderer {
         // flag, which the port has no field for.)
         let needs_previous_data = self.mrt.as_ref().is_some_and(|mrt| mrt.has("velocity"));
         let mrt_context = match (&self.render_target, &self.mrt) {
-            (Some(render_target), Some(node)) => Some(MrtContext {
-                node: node.clone(),
-                attachments: render_target.attachment_names(),
-            }),
+            (Some(render_target), Some(node)) => {
+                Some(MrtContext::for_target(node.clone(), render_target))
+            }
             _ => None,
         };
 
@@ -1785,7 +1924,11 @@ impl Renderer {
         // What `Background.update()` builds the material's `colorNode` from is
         // the material's variant in the program cache: the cube map by
         // identity, a colour node by its value (it is baked as a constant).
-        let background = match scene.background.clone() {
+        let scene_background = scene
+            .background
+            .clone()
+            .filter(|_| self.outline_selection.is_none());
+        let background = match scene_background.clone() {
             Some(Background::CubeTexture(background)) => Some((
                 materials::background_color_node(&background),
                 hash_of(&("cube", background.id())),
@@ -1840,6 +1983,8 @@ impl Renderer {
                 // takes the same inline output transform as everything else.
                 setup: SetupContext {
                     output: output_context.clone(),
+                    // `builder.camera` is the scene camera for the skybox too.
+                    orthographic: camera.is_orthographic_camera(),
                     // The skybox is a draw like any other: three's
                     // `NodeMaterial.setup()` reads `renderer._mrt` for it too,
                     // so it writes every attachment. `webgpu_mrt`'s `diffuse`
@@ -1887,7 +2032,9 @@ impl Renderer {
         // scene from its own camera before the main pass builds any material,
         // because `LightDesc.shadow_map` is what decides whether a Phong
         // program carries the filter at all.
-        self.render_shadows(scene, &render_list, camera);
+        if self.outline_selection.is_none() {
+            self.render_shadows(scene, &render_list, camera);
+        }
 
         // `LightsNode`'s list, as the materials see it: the kind decides which
         // `AnalyticLightNode` subclass generates, and the shadow map (present
@@ -1904,6 +2051,17 @@ impl Renderer {
                 (light.kind, object.cast_shadow && light.shadow.is_some())
             })
             .collect();
+
+        // `builtinShadowContext( shadow, light )` of the pass being rendered,
+        // resolved to the light's index in the list: its `getShadow` hook
+        // matches the light by identity.
+        let context_shadow = self.context_shadow.as_ref().and_then(|context| {
+            render_list
+                .lights
+                .iter()
+                .position(|light| Node::ptr_eq(light, &context.light))
+                .map(|index| (index, context.shadow.clone()))
+        });
 
         // `NodeManager.getFogNode( scene )`, once per render: `scene.fogNode`
         // if set, else the node `updateFog()` builds for `scene.fog` — which
@@ -1983,11 +2141,17 @@ impl Renderer {
         if self.transparent {
             for item in &render_list.transparent {
                 let object = item.node.borrow();
-                let material = scene
-                    .override_material
-                    .as_ref()
-                    .or(item.material(&object))
-                    .unwrap_or(&self.default_material);
+                let material = match &self.outline_selection {
+                    Some(selection) => match selection.material_for(&object) {
+                        Some(material) => material,
+                        None => continue,
+                    },
+                    None => scene
+                        .override_material
+                        .as_ref()
+                        .or(item.material(&object))
+                        .unwrap_or(&self.default_material),
+                };
                 // `material.transparent === true && material.side ===
                 // DoubleSide && material.forceSinglePass === false`.
                 let split = material.transparent
@@ -2001,6 +2165,21 @@ impl Renderer {
                     draws.push((item, None));
                 }
             }
+        }
+
+        // `OITPassNode`'s two render-object functions, which three calls per
+        // render item *before* `renderObject()` splits a `DoubleSide`
+        // material in two — so both halves go, or neither.
+        if let Some(oit) = self.oit {
+            draws.retain(|(item, _)| {
+                let object = item.node.borrow();
+                let material = scene
+                    .override_material
+                    .as_ref()
+                    .or(item.material(&object))
+                    .unwrap_or(&self.default_material);
+                oit.draws(material)
+            });
         }
 
         for (item, side) in draws {
@@ -2018,11 +2197,22 @@ impl Renderer {
             // `new Mesh( geometry )` with no material gets
             // `new MeshBasicMaterial()`, which under `WebGPURenderer` is a
             // `MeshBasicNodeMaterial`: white, opaque, front side, depth on.
-            let material: &MeshBasicNodeMaterial = scene
-                .override_material
-                .as_ref()
-                .or(item.material(&object))
-                .unwrap_or(&self.default_material);
+            //
+            // `OutlineNode`'s render-object functions skip the objects on the
+            // other side of the selection and draw the rest with the pass's
+            // own material (`resetSceneState()` has cleared
+            // `scene.overrideMaterial` for them).
+            let material: &MeshBasicNodeMaterial = match &self.outline_selection {
+                Some(selection) => match selection.material_for(&object) {
+                    Some(material) => material,
+                    None => continue,
+                },
+                None => scene
+                    .override_material
+                    .as_ref()
+                    .or(item.material(&object))
+                    .unwrap_or(&self.default_material),
+            };
 
             let primitive = Primitive::of(&object, &geometry, material.wireframe);
 
@@ -2122,6 +2312,11 @@ impl Renderer {
             if let Some(side) = side {
                 material.side = side;
             }
+            // `_oitRenderObjectFunction`'s `material.depthWrite = false`
+            // around the draw: a pipeline-state change, not a program one.
+            if self.oit == Some(crate::nodes::display::OitRenderObjects::Accumulate) {
+                material.depth_write = false;
+            }
             // `viewportOpaqueMipTexture()` — one texture for the whole pass,
             // handed to whichever materials transmit.
             let item_opaque_frame = (material.transmission > 0.0)
@@ -2155,11 +2350,19 @@ impl Renderer {
                 key,
                 setup: SetupContext {
                     array_cameras: camera.sub_cameras().len(),
+                    orthographic: camera.is_orthographic_camera(),
                     environment: scene_environment,
                     // `builder.renderer.lighting.enabled`: a pass with lighting
                     // disabled builds its materials with no lights *and* no
                     // environment (see `SetupContext::lighting_disabled`).
                     lighting_disabled: !self.lighting_enabled,
+                    // `builder.context.getAO` from the pass's
+                    // `builtinAOContext`; `setupAmbientOcclusion()` applies
+                    // it (and skips transparent materials).
+                    ambient_occlusion: self
+                        .context_ao
+                        .clone()
+                        .map(|node| materials::AoContext { node }),
                     viewport_opaque_mip: item_opaque_frame,
                     // `InstanceNode.setup()` branches on
                     // `instanceMatrix.count * 16 * 4` against
@@ -2182,7 +2385,19 @@ impl Renderer {
                                 && object.receive_shadow
                                 && self.shadow_map_enabled)
                                 .then(|| self.shadow_maps.get(&index).cloned())
-                                .flatten(),
+                                .flatten()
+                                // `AnalyticLightNode.setupShadow()`'s
+                                // `builder.context.getShadow( this, builder )`,
+                                // which runs only where the shadow does.
+                                .map(|map| match &context_shadow {
+                                    Some((light, shadow)) if *light == index => {
+                                        ShadowMap::Context {
+                                            map: Box::new(map),
+                                            shadow: shadow.clone(),
+                                        }
+                                    }
+                                    _ => map,
+                                }),
                         })
                         .collect(),
                     morph: morph.clone(),
@@ -2272,7 +2487,7 @@ impl Renderer {
         // `Background.update()`'s `forceClear`: a `Color` background clears
         // even with `autoClear` off (`if ( renderer.autoClear === true ||
         // forceClear === true )`); anything else clears only when it is on.
-        let (clear_color, force_clear) = match &scene.background {
+        let (clear_color, force_clear) = match &scene_background {
             Some(Background::Color(Color { r, g, b })) => ([*r, *g, *b, 1.0], true),
             _ => (self.clear_color, false),
         };
@@ -2316,40 +2531,13 @@ impl Renderer {
         // `RenderList.lightsArray` — scene-traversal order, which is the order
         // `LightsNode.setLights()` receives and which `UniformSource::Light*( i )`
         // indexes.
+        let camera_view = camera.matrix_world_inverse();
+        let shadow_map_enabled = self.shadow_map_enabled;
         let lights: Vec<LightState> = render_list
             .lights
             .iter()
             .map(|node| {
-                let object = node.borrow();
-                let light = object
-                    .light()
-                    .expect("three-rs: the light list only holds lights");
-
-                let mut view_position = LightObject::world_position(&object.matrix_world);
-                view_position.apply_matrix4(&camera.matrix_world_inverse());
-
-                let shadow = light.shadow.as_deref();
-                LightState {
-                    color: light.color_intensity(),
-                    view_position,
-                    distance: light.distance,
-                    decay: light.decay,
-                    world_position: LightObject::world_position(&object.matrix_world),
-                    target_position: light.target_world_position(),
-                    ground_color: light.ground_color_intensity(),
-                    cone_cos: light.cone_cos(),
-                    penumbra_cos: light.penumbra_cos(),
-                    shadow_matrix: shadow.map_or_else(Matrix4::identity, |s| s.matrix),
-                    shadow_camera_near: shadow.map_or(0.5, |s| s.camera.near()),
-                    shadow_camera_far: shadow.map_or(500.0, |s| s.camera.far()),
-                    shadow_bias: shadow.map_or(0.0, |s| s.bias),
-                    shadow_normal_bias: shadow.map_or(0.0, |s| s.normal_bias),
-                    shadow_radius: shadow.map_or(1.0, |s| s.radius),
-                    shadow_blur_samples: shadow.map_or(8.0, |s| s.blur_samples as f64),
-                    shadow_map_size: shadow.map_or(Vector2::new(512.0, 512.0), |s| s.map_size),
-                    shadow_intensity: shadow.map_or(1.0, |s| s.intensity),
-                    sh: light.sh_intensity(),
-                }
+                gather_light_state(&mut node.borrow_mut(), &camera_view, shadow_map_enabled)
             })
             .collect();
 
@@ -2370,6 +2558,7 @@ impl Renderer {
             .collect();
 
         let camera_uniforms = UniformContext {
+            env_rotation: scene_env_rotation(scene),
             camera_id: camera.id(),
             camera_projection: camera.projection_matrix(),
             camera_projection_inverse: camera.projection_matrix_inverse(),
@@ -2387,6 +2576,9 @@ impl Renderer {
             // `scene.backgroundBlurriness` — a render-group uniform, so it
             // rides the pass rather than the background draw.
             background_blurriness: scene.background_blurriness,
+            // `scene.backgroundIntensity`, the same: a render-group uniform.
+            background_intensity: scene.background_intensity,
+            scene_environment_intensity: scene.environment_intensity,
             fog_color,
             fog_near,
             fog_far,
@@ -2620,8 +2812,10 @@ impl Renderer {
                     material: materials::shadow_material_for(source, shadow_type),
                     key: MaterialKey::of(source).variant(VARIANT_SHADOW),
                     setup: SetupContext {
-                        // A shadow camera is never an `ArrayCamera`.
+                        // A shadow camera is never an `ArrayCamera`; a
+                        // directional light's is an `OrthographicCamera`.
                         array_cameras: 0,
+                        orthographic: matches!(shadow.camera, ShadowCamera::Orthographic(_)),
                         environment: None,
                         lighting_disabled: false,
                         viewport_opaque_mip: None,
@@ -2631,6 +2825,10 @@ impl Renderer {
                         // The shadow pass draws into the shadow map, which is
                         // `renderer.isOutputTarget === false`: no hook.
                         output: None,
+                        // No `builtinAOContext` on a depth-only draw: the
+                        // shadow material is never lit, so three's dead
+                        // `AmbientOcclusion` assignment would change nothing.
+                        ambient_occlusion: None,
                         lights: Vec::new(),
                         // The shadow pass does not carry morph targets yet:
                         // nothing in the ladder both morphs and casts a shadow.
@@ -2652,7 +2850,10 @@ impl Renderer {
                         // A shadow material is `MeshBasicNodeMaterial`: it has
                         // no roughness, so the flag cannot reach any code.
                         geometry_missing_normal: false,
-                        has_tangent_attribute: false,
+                        // What `AttributeNode` checks: a cast-shadow or
+                        // position node that reads `tangent` gets the
+                        // attribute, or a zero on a geometry without one.
+                        has_tangent_attribute: geometry.has_attribute("tangent"),
                         instanced_attributes: Vec::new(),
                     },
                     fog: None,
@@ -2818,7 +3019,12 @@ impl Renderer {
                 geometry: self.quad_geometry(),
                 material,
                 key,
-                setup: SetupContext::default(),
+                // `QuadMesh` draws through its own
+                // `OrthographicCamera( - 1, 1, 1, - 1, 0, 1 )`.
+                setup: SetupContext {
+                    orthographic: true,
+                    ..SetupContext::default()
+                },
                 model_world: Matrix4::identity(),
                 instance_matrix: None,
                 instance_color: None,
@@ -2870,7 +3076,7 @@ impl Renderer {
         // `PointLightShadow.updateMatrices( light )`: `far = light.distance ||
         // camera.far`, `shadowMatrix.makeTranslation( - lightPositionWorld )`.
         let shadow_type = self.shadow_map_type.resolved();
-        let (light_world_position, near, far, size, filter_node) = {
+        let (light_world_position, near, far, light_depth_texture, filter_node) = {
             let mut object = node.borrow_mut();
             let light_world_position = LightObject::world_position(&object.matrix_world);
             let light = object
@@ -2886,56 +3092,62 @@ impl Renderer {
                 light_world_position,
                 shadow.camera.near(),
                 shadow.camera.far(),
-                shadow.map_size.x as u32,
+                // `shadow.map.depthTexture` — the light's own handle, which a
+                // display node (`GodraysNode`) may already hold.
+                shadow.point_depth_texture(),
                 shadow.filter_node.clone(),
             )
         };
 
         // `PointShadowNode.setupRenderTarget()`: a cube render target whose
-        // depth attachment is the `CubeDepthTexture` the shader samples.
-        let (depth_texture, color) = self
+        // depth attachment is the `CubeDepthTexture` the shader samples. The
+        // cached entry is reused only while it is still the light's texture.
+        let cached = self
             .cube_shadow_targets
             .get(&index)
-            .cloned()
-            .unwrap_or_else(|| {
-                let depth_texture = CubeDepthTexture::new(size);
-                let gpu = self.device.create_texture(&wgpu::TextureDescriptor {
-                    label: Some("three-rs point shadow depth"),
-                    size: wgpu::Extent3d {
-                        width: size,
-                        height: size,
-                        depth_or_array_layers: 6,
-                    },
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: wgpu::TextureDimension::D2,
-                    format: depth_texture.gpu_format(),
-                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                        | wgpu::TextureUsages::TEXTURE_BINDING,
-                    view_formats: &[],
-                });
-                depth_texture.inner().borrow_mut().gpu = Some(gpu);
-                // The colour attachment of the cube render target. Nothing
-                // ever samples it — the shadow material writes black — but
-                // the pass needs a target.
-                let color = self.device.create_texture(&wgpu::TextureDescriptor {
-                    label: Some("three-rs point shadow map"),
-                    size: wgpu::Extent3d {
-                        width: size,
-                        height: size,
-                        depth_or_array_layers: 6,
-                    },
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: wgpu::TextureDimension::D2,
-                    format: wgpu::TextureFormat::Rgba8Unorm,
-                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                    view_formats: &[],
-                });
-                let entry = (depth_texture, color);
-                self.cube_shadow_targets.insert(index, entry.clone());
-                entry
+            .filter(|(depth_texture, _)| depth_texture.id() == light_depth_texture.id())
+            .cloned();
+        let (depth_texture, color) = cached.unwrap_or_else(|| {
+            let depth_texture = light_depth_texture;
+            let size = depth_texture.size();
+            let gpu = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("three-rs point shadow depth"),
+                size: wgpu::Extent3d {
+                    width: size,
+                    height: size,
+                    depth_or_array_layers: 6,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: depth_texture.gpu_format(),
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
             });
+            depth_texture.inner().borrow_mut().gpu = Some(gpu);
+            // The colour attachment of the cube render target. Nothing
+            // ever samples it — the shadow material writes black — but
+            // the pass needs a target.
+            let color = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("three-rs point shadow map"),
+                size: wgpu::Extent3d {
+                    width: size,
+                    height: size,
+                    depth_or_array_layers: 6,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            });
+            let entry = (depth_texture, color);
+            self.cube_shadow_targets.insert(index, entry.clone());
+            entry
+        });
+        let size = depth_texture.size();
         // `ShadowNode.setupShadow()`, which `PointShadowNode` inherits:
         // `LinearFilter` for `PCFShadowMap`, `NearestFilter` otherwise.
         let cube_filter = if shadow_type == ShadowMapType::Pcf {
@@ -3010,8 +3222,10 @@ impl Renderer {
                     material: materials::shadow_material_for(source, shadow_type),
                     key: MaterialKey::of(source).variant(VARIANT_SHADOW),
                     setup: SetupContext {
-                        // A shadow camera is never an `ArrayCamera`.
+                        // A shadow camera is never an `ArrayCamera`; a point light's
+                        // six are `PerspectiveCamera`s.
                         array_cameras: 0,
+                        orthographic: false,
                         environment: None,
                         lighting_disabled: false,
                         viewport_opaque_mip: None,
@@ -3021,6 +3235,10 @@ impl Renderer {
                         // The shadow pass draws into the shadow map, which is
                         // `renderer.isOutputTarget === false`: no hook.
                         output: None,
+                        // No `builtinAOContext` on a depth-only draw: the
+                        // shadow material is never lit, so three's dead
+                        // `AmbientOcclusion` assignment would change nothing.
+                        ambient_occlusion: None,
                         lights: Vec::new(),
                         morph: None,
                         skin: None,
@@ -3040,7 +3258,10 @@ impl Renderer {
                         // A shadow material is `MeshBasicNodeMaterial`: it has
                         // no roughness, so the flag cannot reach any code.
                         geometry_missing_normal: false,
-                        has_tangent_attribute: false,
+                        // What `AttributeNode` checks: a cast-shadow or
+                        // position node that reads `tangent` gets the
+                        // attribute, or a zero on a geometry without one.
+                        has_tangent_attribute: geometry.has_attribute("tangent"),
                         instanced_attributes: Vec::new(),
                     },
                     fog: None,
@@ -3086,6 +3307,8 @@ impl Renderer {
                 color: color_view,
                 extra_colors: Vec::new(),
                 extra_color_targets: Vec::new(),
+                color_blend: None,
+                clear_colors: Vec::new(),
                 resolve: None,
                 color_texture: None,
                 depth: Some(depth_view),
@@ -3195,7 +3418,12 @@ impl Renderer {
             geometry: self.quad_geometry(),
             material,
             key,
-            setup: SetupContext::default(),
+            // `QuadMesh` draws through its own
+            // `OrthographicCamera( - 1, 1, 1, - 1, 0, 1 )`.
+            setup: SetupContext {
+                orthographic: true,
+                ..SetupContext::default()
+            },
             model_world: Matrix4::identity(),
             instance_matrix: None,
             instance_color: None,
@@ -3357,6 +3585,9 @@ impl Renderer {
                 target.color_format.components(),
                 target.sample_count,
             );
+            if self.subgroups_unsupported(node.subgroups) {
+                continue;
+            }
             let program_key = node.cache_key;
 
             // `nodes.updateBefore( renderObject )`: a `ComputeNode` the
@@ -3391,7 +3622,9 @@ impl Renderer {
                 depth_write: item.material.depth_write,
                 depth_func: item.material.depth_func,
                 alpha_to_coverage: item.material.alpha_to_coverage,
-                blend: item.material.blend_state(),
+                blend: target
+                    .color_blend
+                    .unwrap_or_else(|| item.material.blend_state()),
                 topology: item.primitive.topology,
                 strip_index_format: item.primitive.strip_index_format,
             };
@@ -3434,6 +3667,7 @@ impl Renderer {
                 material_alpha_test: item.material.alpha_test,
                 material_rotation: item.material.rotation,
                 material_reflectivity: item.material.reflectivity,
+                material_refraction_ratio: item.material.refraction_ratio,
                 material_shininess: item.material.shininess,
                 material_specular: item.material.specular,
                 material_emissive: item.material.emissive,
@@ -3465,6 +3699,26 @@ impl Renderer {
                 material_attenuation_distance: item.material.attenuation_distance,
                 material_attenuation_color: item.material.attenuation_color,
                 material_ao_map_intensity: item.material.ao_map_intensity,
+                // `materialEnvRotation`: the scene's rotation reaches only the
+                // materials that read the scene environment; an own `envMap`
+                // uses `material.envMapRotation`, which is always zero here.
+                env_rotation: if item.material.env_map.is_some() {
+                    Matrix4::identity()
+                } else {
+                    camera_uniforms.env_rotation
+                },
+                material_light_map_intensity: item.material.light_map_intensity,
+                material_point_size: item.material.size,
+                // `EnvironmentNode.setup()`: `material.envMap ? reference(
+                // 'envMapIntensity', … material ) : reference(
+                // 'environmentIntensity', … scene )`. The port's envMap is
+                // `pmrem_env`, whose intensity stays 1; the scene's
+                // environment is the draw's `setup.environment`.
+                material_env_intensity: if item.setup.environment.is_some() {
+                    camera_uniforms.scene_environment_intensity
+                } else {
+                    1.0
+                },
                 tone_mapping_exposure: self.tone_mapping_exposure,
                 material_line_width: item.material.linewidth,
                 // `ScreenNode.update()`: `SIZE` is the bound target's
@@ -3698,23 +3952,32 @@ impl Renderer {
         clear: ClearOps,
         occlusion_query_set: Option<&wgpu::QuerySet>,
     ) {
-        let load = match clear.color {
-            Some(color) => wgpu::LoadOp::Clear(wgpu::Color {
-                r: color[0],
-                g: color[1],
-                b: color[2],
-                a: color[3],
-            }),
-            None => wgpu::LoadOp::Load,
-        };
-
         // One attachment per `renderTarget.textures` entry. They share the
         // pass's load op but not its clear *value*: `WebGPUBackend.beginRender()`
         // clears attachment 0 to `renderContext.clearColorValue` and every
-        // other one to `( 0, 0, 0, 1 )`. (`MRTNode.clearColors` is three's
-        // per-output override and nothing on this ladder sets one.)
-        // `webgpu_multiple_rendertargets` shows it: its `normal` half is black
-        // where the knot is not, not the scene's `0x222222`.
+        // other one to `( 0, 0, 0, 1 )`, unless the MRT has a clear colour of
+        // its own for that attachment's name (`mrt.getClearColor( name )`,
+        // which `OITPassNode` sets on both of its targets).
+        // `webgpu_multiple_rendertargets` shows the default: its `normal` half
+        // is black where the knot is not, not the scene's `0x222222`.
+        let load_for = |index: usize, default: [f64; 4]| match clear.color {
+            Some(_) => {
+                let color = target
+                    .clear_colors
+                    .get(index)
+                    .copied()
+                    .flatten()
+                    .unwrap_or(default);
+                wgpu::LoadOp::Clear(wgpu::Color {
+                    r: color[0],
+                    g: color[1],
+                    b: color[2],
+                    a: color[3],
+                })
+            }
+            None => wgpu::LoadOp::Load,
+        };
+        let load = load_for(0, clear.color.unwrap_or_default());
         let mut color_attachments = vec![Some(wgpu::RenderPassColorAttachment {
             view: &target.color,
             depth_slice: None,
@@ -3724,22 +3987,13 @@ impl Renderer {
                 store: wgpu::StoreOp::Store,
             },
         })];
-        let extra_load = match clear.color {
-            Some(_) => wgpu::LoadOp::Clear(wgpu::Color {
-                r: 0.0,
-                g: 0.0,
-                b: 0.0,
-                a: 1.0,
-            }),
-            None => wgpu::LoadOp::Load,
-        };
-        for (view, resolve) in &target.extra_colors {
+        for (index, (view, resolve)) in target.extra_colors.iter().enumerate() {
             color_attachments.push(Some(wgpu::RenderPassColorAttachment {
                 view,
                 depth_slice: None,
                 resolve_target: resolve.as_ref(),
                 ops: wgpu::Operations {
-                    load: extra_load,
+                    load: load_for(index + 1, [0.0, 0.0, 0.0, 1.0]),
                     store: wgpu::StoreOp::Store,
                 },
             }));
@@ -3914,7 +4168,12 @@ impl Renderer {
             geometry: self.quad_geometry(),
             material,
             key,
-            setup: SetupContext::default(),
+            // `QuadMesh` draws through its own
+            // `OrthographicCamera( - 1, 1, 1, - 1, 0, 1 )`.
+            setup: SetupContext {
+                orthographic: true,
+                ..SetupContext::default()
+            },
             model_world: Matrix4::identity(),
             instance_matrix: None,
             instance_color: None,
@@ -3986,7 +4245,8 @@ impl Renderer {
     /// kernel can decide how much work this one does.
     ///
     /// The bounds check `if ( instanceIndex >= count ) { return; }` is still
-    /// generated against the flow's own `count`, as it is in three.
+    /// generated against the flow's own `count`, as it is in three, unless
+    /// the kernel has a barrier (`docs/nodes.md` §84.6).
     pub fn compute_indirect(
         &mut self,
         flow: &ComputeFlow,
@@ -3997,6 +4257,28 @@ impl Renderer {
             "three-rs: an indirect dispatch reads three u32 workgroup counts"
         );
         self.compute_dispatch(flow, Some(dispatch))
+    }
+
+    /// `WGSLNodeBuilder.enableSubGroups()` on a device without
+    /// [`SUBGROUP_FEATURES`]: three logs this, per build, and goes on to a
+    /// module the browser then rejects. wgpu would panic on the module
+    /// instead, so the port logs once per thread (across every renderer on
+    /// it) and the caller skips the kernel or the draw (`docs/nodes.md`
+    /// §84.3). `true` when the program needs subgroups and the device lacks
+    /// them.
+    fn subgroups_unsupported(&self, subgroups: bool) -> bool {
+        if !subgroups || self.device.features().contains(SUBGROUP_FEATURES) {
+            return false;
+        }
+        thread_local! {
+            static WARNED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+        }
+        if !WARNED.with(|warned| warned.replace(true)) {
+            eprintln!(
+                "three-rs: WGSLNodeBuilder: The 'subgroups' feature is not supported by the current device."
+            );
+        }
+        true
     }
 
     fn compute_dispatch(
@@ -4019,6 +4301,10 @@ impl Renderer {
                 program
             }
         };
+
+        if self.subgroups_unsupported(program.subgroups) {
+            return Ok(());
+        }
 
         let frames = self.node_frame.frame_id;
         let fresh = match self.compute_pipelines.get_mut(&program.cache_key) {
@@ -4767,13 +5053,19 @@ impl Renderer {
                 .with_instanced_attributes(&item.setup.instanced_attributes),
         );
         self.info.build.programs_compiled += 1;
-        self.programs
-            .entry(node.cache_key)
-            .and_modify(|entry| entry.last_named = frames)
-            .or_insert_with(|| ProgramEntry {
-                program: Program::new(&self.device, &node),
-                last_named: frames,
-            });
+        // A material that needs subgroups on a device without them has no
+        // `Program` — its module would not validate — and the pass skips
+        // its draws (`subgroups_unsupported()`). The state is still kept, so
+        // the build and the warning happen once.
+        if !(node.subgroups && !self.device.features().contains(SUBGROUP_FEATURES)) {
+            self.programs
+                .entry(node.cache_key)
+                .and_modify(|entry| entry.last_named = frames)
+                .or_insert_with(|| ProgramEntry {
+                    program: Program::new(&self.device, &node),
+                    last_named: frames,
+                });
+        }
         states.by_dynamic_key.insert(dynamic_key, node.clone());
         self.count_programs();
         node
@@ -6707,6 +6999,18 @@ impl Renderer {
         &self.node_frame
     }
 
+    /// Run the update-before of whatever node renders `texture_id` — a pass,
+    /// an `RttNode`, another display node — opening the frame first if no
+    /// render has yet. For a node drawn by hand, outside any render, that
+    /// sizes its targets from its input: three's frame has rendered that input
+    /// by then, and the port's first frame has not.
+    pub(crate) fn update_texture_source(&mut self, texture_id: usize) {
+        self.node_frame.open(crate::utils::now_ms());
+        if let Some(entry) = crate::nodes::frame::texture_update(texture_id) {
+            self.update_before_node(&entry);
+        }
+    }
+
     /// `NodeFrame.updateBeforeNode( node )`.
     pub(crate) fn update_before_node(&mut self, entry: &crate::nodes::UpdateNode) {
         use crate::nodes::frame::UpdatePhase;
@@ -7200,9 +7504,37 @@ impl Renderer {
 
         let inner = render_target.inner().borrow();
         let color_format = inner.texture.format();
-        let single = inner
-            .texture
-            .with_gpu(|gpu| gpu.create_view(&Default::default()));
+        // `WebGPUBackend.beginRender()`: a level above 0 is drawn through a
+        // one-level view of the colour texture.
+        let level = self.active_mipmap_level;
+        debug_assert!(
+            level < inner.mip_level_count,
+            "three-rs: active mipmap level {level} is past the render target's {} level(s); \
+             call RenderTarget::set_mip_level_count() first",
+            inner.mip_level_count,
+        );
+        let level = level.min(inner.mip_level_count - 1);
+        // Three's `Textures.updateRenderTarget()` gives each level its own
+        // depth texture (`depthTextureMips[ level ]`, sized `size >> level`);
+        // that is not ported, and neither is a per-level MSAA texture or
+        // per-level extra MRT attachments, so a level above 0 is colour-only.
+        assert!(
+            level == 0
+                || (!inner.depth_buffer
+                    && inner.depth_texture.is_none()
+                    && inner.samples <= 1
+                    && inner.extra_textures.is_empty()),
+            "three-rs: drawing into mip level {level} of a render target needs it to have no \
+             depth buffer, no depth texture, no MSAA (samples <= 1) and no extra MRT \
+             attachments; per-level depth and MSAA textures are not ported",
+        );
+        let single = inner.texture.with_gpu(|gpu| {
+            gpu.create_view(&wgpu::TextureViewDescriptor {
+                base_mip_level: level,
+                mip_level_count: Some(1),
+                ..Default::default()
+            })
+        });
 
         let (color, resolve) = match &inner.msaa {
             Some(msaa) => (msaa.create_view(&Default::default()), Some(single)),
@@ -7236,14 +7568,30 @@ impl Renderer {
                     .mrt
                     .as_ref()
                     .and_then(|mrt| mrt.blend_mode(name))
-                    .and_then(|blending| {
-                        materials::blending::blending(&materials::BlendMode {
-                            blending,
-                            ..Default::default()
-                        })
-                    }),
+                    .and_then(|mode| materials::blending::blending(&mode)),
             })
             .collect();
+        // Attachment 0 goes through the same `getBlendMode( texture.name )`:
+        // an unset `output` is the `MaterialBlending` seed (the material's
+        // own state), and any other unset name is `_noBlending`.
+        let name0 = inner
+            .texture_name
+            .clone()
+            .unwrap_or_else(|| OUTPUT_ATTACHMENT.to_string());
+        let color_blend = self
+            .mrt
+            .as_ref()
+            .and_then(|mrt| match mrt.blend_mode(&name0) {
+                Some(mode) => Some(materials::blending::blending(&mode)),
+                None => (name0 != OUTPUT_ATTACHMENT).then_some(None),
+            });
+        let clear_colors: Vec<Option<[f64; 4]>> = match &self.mrt {
+            Some(mrt) => std::iter::once(name0.as_str())
+                .chain(inner.extra_textures.iter().map(|(name, _)| name.as_str()))
+                .map(|name| mrt.clear_color(name))
+                .collect(),
+            None => Vec::new(),
+        };
 
         let (depth_texture, depth_format) = match (&inner.depth_texture, &inner.depth) {
             (Some(depth_texture), _) => (
@@ -7268,6 +7616,8 @@ impl Renderer {
             color,
             extra_colors,
             extra_color_targets,
+            color_blend,
+            clear_colors,
             resolve,
             color_texture: Some(inner.texture.with_gpu(|gpu| gpu.clone())),
             depth,
@@ -7275,15 +7625,26 @@ impl Renderer {
             color_format,
             depth_format,
             sample_count: inner.samples.max(1),
-            width: inner.width,
-            height: inner.height,
+            width: (inner.width >> level).max(1),
+            height: (inner.height >> level).max(1),
             // `Renderer._renderScene()`: with a render target bound the
             // viewport and the scissor are the *target's*, and the pixel ratio
-            // is 1.
-            viewport: Rect::of(inner.viewport, 1.0, inner.width, inner.height),
-            scissor: inner
-                .scissor_test
-                .then(|| Rect::of(inner.scissor, 1.0, inner.width, inner.height)),
+            // is 1. Their width and height, and the context's, are shifted
+            // right by the active mipmap level (the origin is not).
+            viewport: Rect::of(
+                mip_rect(inner.viewport, level),
+                1.0,
+                (inner.width >> level).max(1),
+                (inner.height >> level).max(1),
+            ),
+            scissor: inner.scissor_test.then(|| {
+                Rect::of(
+                    mip_rect(inner.scissor, level),
+                    1.0,
+                    (inner.width >> level).max(1),
+                    (inner.height >> level).max(1),
+                )
+            }),
         }
     }
 
@@ -7318,6 +7679,8 @@ impl Renderer {
             color,
             extra_colors: Vec::new(),
             extra_color_targets: Vec::new(),
+            color_blend: None,
+            clear_colors: Vec::new(),
             resolve,
             color_texture: Some(canvas.color.clone()),
             depth: depth.clone(),
@@ -7441,7 +7804,7 @@ impl Renderer {
                         height,
                         depth_or_array_layers: 1,
                     },
-                    mip_level_count: 1,
+                    mip_level_count: inner.mip_level_count,
                     // The resolved, sampleable texture is always single-sample;
                     // `samples > 1` adds the MSAA texture below.
                     sample_count: 1,
@@ -7568,6 +7931,20 @@ impl Renderer {
             }
         }
     }
+}
+
+/// `viewportValue.width >>= activeMipmapLevel` (and the height) — the
+/// integer shift three applies to a render target's viewport or scissor.
+fn mip_rect(rect: Vector4, level: u32) -> Vector4 {
+    if level == 0 {
+        return rect;
+    }
+    Vector4::new(
+        rect.x,
+        rect.y,
+        ((rect.z as i64) >> level) as f64,
+        ((rect.w as i64) >> level) as f64,
+    )
 }
 
 /// `rgba16float` texels, as the GPU holds them, decoded to `f32`.
@@ -7917,23 +8294,99 @@ fn warn_unsupported(id: usize, material: &MeshBasicNodeMaterial, setup: &SetupCo
             fields.push("size without sizeNode (PointsNodeMaterial on a Sprite)");
         }
     }
+    let label = format!(
+        "{:?}{}",
+        material.kind,
+        if material.name.is_empty() {
+            String::new()
+        } else {
+            format!(" \"{}\"", material.name)
+        }
+    );
     WARNED.with(|warned| {
         let mut warned = warned.borrow_mut();
         for field in fields {
             if warned.insert((id, field)) {
                 eprintln!(
-                    "three-rs: material {id} ({:?}{}): {} is set but not supported, and is ignored",
-                    material.kind,
-                    if material.name.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" \"{}\"", material.name)
-                    },
-                    field,
+                    "three-rs: material {id} ({label}): {field} is set but not supported, and is ignored",
+                );
+            }
+        }
+        // Read by an accessor (`materialLightMap` / `materialSpecularStrength`)
+        // but not by the material's own lighting flow.
+        for field in material.accessor_only_fields() {
+            if warned.insert((id, field)) {
+                eprintln!(
+                    "three-rs: material {id} ({label}): {field} is set, but the built-in lighting flow does not apply it; only the materialLightMap / materialSpecularStrength accessors read it",
                 );
             }
         }
     });
+}
+
+/// One light's [`LightState`] for the render: `LightsNode.setupLights()`'s
+/// colour and view-space position, plus every per-light uniform the light's
+/// nodes read.
+///
+/// `light.shadow.matrix` is refreshed here for a light whose shadow is not
+/// rendered — `castShadow` off, or `renderer.shadowMap.enabled` off — as
+/// `lightShadowMatrix()`'s `onRenderUpdate` (`Lights.js`) does with
+/// `light.shadow.updateMatrices( light )`, so a
+/// [`light_projection_uv`](crate::nodes::tsl::light_projection_uv) on a light
+/// that casts nothing still projects through its current pose. A rendered
+/// shadow's matrices are already updated by `render_shadows()`. Three's
+/// coordinate-system check has nothing to do: the port only has WebGPU's.
+/// Three's `PointLightShadow` has no `updateMatrices()` of its own, so a
+/// point light takes `LightShadow`'s (looking at the origin, where three
+/// would throw on the missing `light.target`).
+fn gather_light_state(
+    object: &mut crate::core::Object3D,
+    camera_view: &Matrix4,
+    shadow_map_enabled: bool,
+) -> LightState {
+    let world_position = LightObject::world_position(&object.matrix_world);
+    let shadow_rendered = object.cast_shadow && shadow_map_enabled;
+    let light = object
+        .light_mut()
+        .expect("three-rs: the light list only holds lights");
+
+    if !shadow_rendered {
+        let (kind, angle, distance) = (light.kind, light.angle, light.distance);
+        let target_position = light.target_world_position();
+        if let Some(shadow) = light.shadow.as_deref_mut() {
+            // `SpotLightShadow.updateMatrices()`'s projection half.
+            if kind == LightKind::Spot {
+                shadow.update_spot_projection(angle, distance);
+            }
+            shadow.update_matrices(world_position, target_position);
+        }
+    }
+
+    let mut view_position = world_position;
+    view_position.apply_matrix4(camera_view);
+
+    let shadow = light.shadow.as_deref();
+    LightState {
+        color: light.color_intensity(),
+        view_position,
+        distance: light.distance,
+        decay: light.decay,
+        world_position,
+        target_position: light.target_world_position(),
+        ground_color: light.ground_color_intensity(),
+        cone_cos: light.cone_cos(),
+        penumbra_cos: light.penumbra_cos(),
+        shadow_matrix: shadow.map_or_else(Matrix4::identity, |s| s.matrix),
+        shadow_camera_near: shadow.map_or(0.5, |s| s.camera.near()),
+        shadow_camera_far: shadow.map_or(500.0, |s| s.camera.far()),
+        shadow_bias: shadow.map_or(0.0, |s| s.bias),
+        shadow_normal_bias: shadow.map_or(0.0, |s| s.normal_bias),
+        shadow_radius: shadow.map_or(1.0, |s| s.radius),
+        shadow_blur_samples: shadow.map_or(8.0, |s| s.blur_samples as f64),
+        shadow_map_size: shadow.map_or(Vector2::new(512.0, 512.0), |s| s.map_size),
+        shadow_intensity: shadow.map_or(1.0, |s| s.intensity),
+        sh: light.sh_intensity(),
+    }
 }
 
 /// `SkinningNode.update( frame )`: `if ( _frameId.get( skeleton ) ===
@@ -7957,5 +8410,101 @@ fn update_skeleton(
         node_frame.velocity.rotate_bones(skeleton);
         skeleton.borrow_mut().update();
         node_frame.settle(claim, true);
+    }
+}
+
+/// The scene half of three's `materialEnvRotation`:
+/// `makeRotationFromEuler( scene.environmentRotation ).transpose()` while the
+/// scene has an environment (a PMREM or an `environmentNode`), identity
+/// otherwise.
+fn scene_env_rotation(scene: &Scene) -> Matrix4 {
+    let mut m = Matrix4::identity();
+    if scene.environment.is_some() || scene.environment_node.is_some() {
+        m.make_rotation_from_euler(&scene.environment_rotation)
+            .transpose();
+    }
+    m
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lights::SpotLight;
+    use crate::math::Vector3;
+    use crate::nodes::{UniformMember, UniformSource};
+
+    /// The `ShadowMatrix( 0 )` uniform's bytes for one gathered light.
+    fn shadow_matrix_uniform(light: LightState) -> Vec<u8> {
+        let lights = [light];
+        let context = UniformContext {
+            lights: &lights,
+            ..Default::default()
+        };
+        let member = UniformMember {
+            name: "shadowMatrix".into(),
+            source: UniformSource::ShadowMatrix(0),
+            ty: Type::Mat4,
+            offset: 0,
+        };
+        context.bytes(&[member], 64)
+    }
+
+    fn expected_spot_matrix(position: Vector3, angle: f64, distance: f64) -> Vec<u8> {
+        let mut shadow = LightShadow::spot();
+        shadow.update_spot_projection(angle, distance);
+        shadow.update_matrices(position, Vector3::new(0.0, 0.0, 0.0));
+        bytemuck::cast_slice(&shadow.matrix.to_f32_array()).to_vec()
+    }
+
+    /// `lightShadowMatrix()`'s `onRenderUpdate`: a light that casts no
+    /// shadow still gets `light.shadow.updateMatrices( light )`, so the
+    /// uniform tracks the light as it moves rather than holding whatever
+    /// the matrix last was.
+    #[test]
+    fn shadow_matrix_follows_a_light_that_casts_no_shadow() {
+        let node = SpotLight::new(Color::new(1.0, 1.0, 1.0), 1.0);
+        node.borrow_mut().position.set(3.0, 4.0, 5.0);
+        node.update_matrix_world(true);
+        assert!(!node.borrow().cast_shadow);
+        let angle = node.borrow().light().unwrap().angle;
+
+        let first = gather_light_state(&mut node.borrow_mut(), &Matrix4::identity(), true);
+        let first = shadow_matrix_uniform(first);
+        assert_eq!(
+            first,
+            expected_spot_matrix(Vector3::new(3.0, 4.0, 5.0), angle, 0.0)
+        );
+        let identity: Vec<u8> = bytemuck::cast_slice(&Matrix4::identity().to_f32_array()).to_vec();
+        assert_ne!(first, identity);
+
+        node.borrow_mut().position.set(-2.0, 6.0, 1.0);
+        node.update_matrix_world(true);
+        let moved = gather_light_state(&mut node.borrow_mut(), &Matrix4::identity(), true);
+        assert_eq!(
+            shadow_matrix_uniform(moved),
+            expected_spot_matrix(Vector3::new(-2.0, 6.0, 1.0), angle, 0.0)
+        );
+    }
+
+    /// The same refresh when the light casts but `shadowMap.enabled` is off,
+    /// and none when the shadow is rendered: `render_shadows()` owns the
+    /// matrix then.
+    #[test]
+    fn shadow_matrix_refresh_depends_on_the_shadow_being_rendered() {
+        let node = SpotLight::new(Color::new(1.0, 1.0, 1.0), 1.0);
+        node.borrow_mut().position.set(3.0, 4.0, 5.0);
+        node.borrow_mut().cast_shadow = true;
+        node.update_matrix_world(true);
+        let angle = node.borrow().light().unwrap().angle;
+
+        let rendered = gather_light_state(&mut node.borrow_mut(), &Matrix4::identity(), true);
+        let identity: Vec<u8> = bytemuck::cast_slice(&Matrix4::identity().to_f32_array()).to_vec();
+        assert_eq!(shadow_matrix_uniform(rendered), identity);
+
+        let disabled = gather_light_state(&mut node.borrow_mut(), &Matrix4::identity(), false);
+        assert_eq!(
+            shadow_matrix_uniform(disabled),
+            expected_spot_matrix(Vector3::new(3.0, 4.0, 5.0), angle, 0.0)
+        );
     }
 }

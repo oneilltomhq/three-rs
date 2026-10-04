@@ -22,10 +22,11 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::cameras::RenderCamera;
-use crate::core::Layers;
+use crate::core::{Layers, Node};
 use crate::nodes::node::SettableValue;
 use crate::nodes::tsl::{
     pass_depth_texture, perspective_depth_to_view_z, texture_uv, to_var, uniform_settable, uv,
+    view_z_to_orthographic_depth,
 };
 use crate::nodes::{MrtNode, NodeRef, NodeUpdate, NodeUpdateType, Type};
 use crate::objects::Scene;
@@ -86,6 +87,11 @@ pub struct PassState {
     /// `PassNode._viewZNodes` — memoised like the texture nodes, so two asks
     /// compose one graph.
     view_z_nodes: RefCell<HashMap<String, NodeRef>>,
+    /// `PassNode._linearDepthNodes`.
+    linear_depth_nodes: RefCell<HashMap<String, NodeRef>>,
+    /// `PassNode.scope === PassNode.DEPTH` — what [`depth_pass`] makes: the
+    /// pass used as a value is its linear depth, not its colour.
+    depth_scope: Cell<bool>,
     /// `PassNode._cameraNear` / `_cameraFar`: `uniform( 0 )` a piece, written
     /// from the pass's camera in `updateBefore()`. They are object-group
     /// uniforms of whatever material samples the pass, which is why the fog
@@ -115,8 +121,25 @@ pub struct PassState {
     opaque: Cell<bool>,
     transparent: Cell<bool>,
     lighting_enabled: Cell<bool>,
+    /// `PassNode.contextNode`'s `getShadow`, from `builtinShadowContext(
+    /// shadowNode, light )`.
+    context_shadow: RefCell<Option<ShadowContext>>,
+    /// `PassNode.contextNode`'s `getAO`, from `builtinAOContext( ao )`.
+    context_ao: RefCell<Option<NodeRef>>,
     /// `this.scene` / `this.camera`.
     scene: RefCell<Option<(SceneRef, CameraRef)>>,
+}
+
+/// `builtinShadowContext( shadowNode, light )`'s `getShadow` hook, as a pass
+/// installs it on the renderer for the duration of its render: which light
+/// it applies to, and the node it multiplies that light's shadowed colour
+/// by. See [`PassNode::set_context_shadow`].
+#[derive(Clone)]
+pub(crate) struct ShadowContext {
+    /// `light` — compared by identity, as three's `light === shadowLight`.
+    pub light: Node,
+    /// `shadowNode`.
+    pub shadow: NodeRef,
 }
 
 /// `pass( scene, camera )`: a pass that renders `scene` through `camera`
@@ -124,6 +147,16 @@ pub struct PassState {
 pub fn pass(scene: SceneRef, camera: CameraRef) -> PassNode {
     let node = PassNode::new();
     node.set_scene(scene, camera);
+    node
+}
+
+/// `depthPass( scene, camera )` — `new PassNode( PassNode.DEPTH, scene,
+/// camera )`: a pass whose [`node`](PassNode::node) is the scene's depth as
+/// `[0,1]` linear depth between the camera's clip planes
+/// ([`linear_depth_node`](PassNode::linear_depth_node)).
+pub fn depth_pass(scene: SceneRef, camera: CameraRef) -> PassNode {
+    let node = pass(scene, camera);
+    node.depth_scope.set(true);
     node
 }
 
@@ -218,6 +251,8 @@ impl PassNode {
             mrt: RefCell::new(None),
             texture_nodes: RefCell::new(texture_nodes),
             view_z_nodes: RefCell::new(HashMap::new()),
+            linear_depth_nodes: RefCell::new(HashMap::new()),
+            depth_scope: Cell::new(false),
             camera_near,
             camera_far,
             auto_clear_depth: options.auto_clear_depth,
@@ -229,6 +264,8 @@ impl PassNode {
             opaque: Cell::new(true),
             transparent: Cell::new(true),
             lighting_enabled: Cell::new(true),
+            context_shadow: RefCell::new(None),
+            context_ao: RefCell::new(None),
             scene: RefCell::new(None),
         }));
         // `PassTextureNode.passNode`: a draw that binds one of the pass's
@@ -315,6 +352,56 @@ impl PassNode {
         self.0.lighting_enabled.set(enabled);
     }
 
+    /// `passNode.contextNode = builtinShadowContext( shadow, light )` — every
+    /// material this pass draws that receives `light`'s shadow multiplies
+    /// `shadow` (a `float` node, typically another pass's texture read at
+    /// `screenUV`) into that light's colour, after the shadow map's own
+    /// factor: three's `getShadow` returns `shadowColorNode.mul( shadow )`
+    /// for that light and every other light's `shadowColorNode` untouched.
+    ///
+    /// Like three's, the hook only runs where `AnalyticLightNode.setupShadow()`
+    /// does — `light.castShadow`, `object.receiveShadow` and
+    /// `renderer.shadowMap.enabled` — so an object that receives no shadow
+    /// map receives none of `shadow` either.
+    ///
+    /// `webgpu_postprocessing_sss`: `scenePass.contextNode =
+    /// builtinShadowContext( sssPass.getTextureNode().sample( screenUV ).r,
+    /// dirLight )`.
+    ///
+    /// The node is part of each receiving material's program key, so
+    /// replacing it builds new programs; keep one node for the pass's
+    /// lifetime.
+    pub fn set_context_shadow(&self, shadow: NodeRef, light: &Node) {
+        *self.0.context_shadow.borrow_mut() = Some(ShadowContext {
+            light: light.clone(),
+            shadow,
+        });
+    }
+
+    /// `passNode.contextNode = null` after a
+    /// [`set_context_shadow`](Self::set_context_shadow): the page's
+    /// "Shadow Maps only" output.
+    pub fn clear_context_shadow(&self) {
+        *self.0.context_shadow.borrow_mut() = None;
+    }
+
+    /// `passNode.contextNode = builtinAOContext( ao )` — every
+    /// non-transparent material this pass draws multiplies `ao` (a `float`
+    /// node, typically another pass's texture read at `screenUV`) into its
+    /// `AmbientOcclusion`, on top of its own `aoMap` when it has one. The
+    /// lighting models then occlude their indirect light by it, exactly as
+    /// they would by an `aoMap`.
+    ///
+    /// `webgpu_postprocessing_ao`:
+    /// `scenePass.contextNode = builtinAOContext( aoPass.getTextureNode()
+    /// .sample( screenUV ).r )`.
+    ///
+    /// The node is part of each material's program key, so replacing it
+    /// builds new programs; keep one node for the pass's lifetime.
+    pub fn set_context_ao(&self, ao: NodeRef) {
+        *self.0.context_ao.borrow_mut() = Some(ao);
+    }
+
     /// `passNode.getTexture( 'depth' )` — the pass's own depth attachment.
     ///
     /// Three seeds `_textures[ 'depth' ]` in the constructor when the target
@@ -347,6 +434,24 @@ impl PassNode {
             self.camera_far.0.clone(),
         );
         self.view_z_nodes
+            .borrow_mut()
+            .insert(name.to_string(), node.clone());
+        node
+    }
+
+    /// `passNode.getLinearDepthNode( name )` — [`view_z_node`](Self::view_z_node)
+    /// as `viewZToOrthographicDepth( viewZ, cameraNear, cameraFar )`: `0` at
+    /// the near plane, `1` at the far one, linear in between.
+    pub fn linear_depth_node(&self, name: &str) -> NodeRef {
+        if let Some(node) = self.linear_depth_nodes.borrow().get(name) {
+            return node.clone();
+        }
+        let node = view_z_to_orthographic_depth(
+            self.view_z_node(name),
+            self.camera_near.0.clone(),
+            self.camera_far.0.clone(),
+        );
+        self.linear_depth_nodes
             .borrow_mut()
             .insert(name.to_string(), node.clone());
         node
@@ -444,14 +549,21 @@ impl PassNode {
         self.render_target.add_texture(name)
     }
 
-    /// `passNode.getTextureNode()` — the node to compose with.
+    /// The pass used as a value — `PassNode.setup()`: the colour texture
+    /// (`getTextureNode()`), or for a [`depth_pass`] the linear depth
+    /// (`getLinearDepthNode()`).
     pub fn node(&self) -> NodeRef {
-        self.node.clone()
+        if self.depth_scope.get() {
+            self.linear_depth_node(DEPTH_ATTACHMENT)
+        } else {
+            self.node.clone()
+        }
     }
 
-    /// `pass( … ).a`.
+    /// `pass( … ).a` — the `a` of [`node`](Self::node), so a [`depth_pass`]
+    /// swizzles its linear depth as three's `PassNode` in depth scope does.
     pub fn a(&self) -> NodeRef {
-        self.node.a()
+        self.node().a()
     }
 
     /// `renderTarget.texture`.
@@ -482,6 +594,20 @@ impl PassNode {
             renderer.render(scene, camera)
         });
     }
+
+    /// `PassNode.updateBefore()`'s bracket — the target sized to the
+    /// drawing buffer, its samples, the previous textures, `cameraNear` /
+    /// `cameraFar`, `setRenderTarget()` / `setMRT()` and their restore —
+    /// around a render of the caller's: `StereoPassNode`'s two eyes.
+    pub(crate) fn render_with(
+        &self,
+        renderer: &mut Renderer,
+        near: f64,
+        far: f64,
+        render: impl FnOnce(&mut Renderer),
+    ) {
+        self.0.render_with(renderer, near, far, render);
+    }
 }
 
 impl PassState {
@@ -492,7 +618,8 @@ impl PassState {
     /// `render` is the `renderer.render( this.scene, this.camera )` call, so
     /// that a pass holding its scene in a `RefCell` can render it through a
     /// shared borrow (see [`update_before`](NodeUpdate::update_before)).
-    fn render_with(
+    /// `OITPassNode` renders twice inside it.
+    pub(crate) fn render_with(
         &self,
         renderer: &mut Renderer,
         near: f64,
@@ -540,6 +667,8 @@ impl PassState {
         let previous_opaque = renderer.opaque;
         let previous_transparent = renderer.transparent;
         let previous_lighting = renderer.lighting_enabled;
+        let previous_context_shadow = renderer.context_shadow.take();
+        let previous_context_ao = renderer.context_ao.take();
         let previous_layers = renderer.camera_layers;
         let previous_function = renderer.render_object_function.clone();
 
@@ -549,6 +678,20 @@ impl PassState {
         renderer.opaque = self.opaque.get();
         renderer.transparent = self.transparent.get();
         renderer.lighting_enabled = self.lighting_enabled.get();
+        // `renderer.contextNode = context( { ...renderer.contextNode
+        // .getFlowContextData(), ...this.contextNode.getFlowContextData() } )`
+        // — the pass's `getShadow` and `getAO` each win over an outer one,
+        // and an outer one survives a pass that sets none.
+        renderer.context_shadow = self
+            .context_shadow
+            .borrow()
+            .clone()
+            .or_else(|| previous_context_shadow.clone());
+        renderer.context_ao = self
+            .context_ao
+            .borrow()
+            .clone()
+            .or_else(|| previous_context_ao.clone());
         renderer.camera_layers = *self.layers.borrow();
         if let Some(function) = self.render_object_function.borrow().clone() {
             renderer.render_object_function = Some(function);
@@ -562,6 +705,8 @@ impl PassState {
         renderer.opaque = previous_opaque;
         renderer.transparent = previous_transparent;
         renderer.lighting_enabled = previous_lighting;
+        renderer.context_shadow = previous_context_shadow;
+        renderer.context_ao = previous_context_ao;
         renderer.camera_layers = previous_layers;
         renderer.render_object_function = previous_function;
     }

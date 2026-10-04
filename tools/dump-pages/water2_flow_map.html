@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three-rs dump page - Water2Mesh with a flow map</title>
+		<meta charset="utf-8">
+	</head>
+	<body>
+		<!--
+			Not a three.js example: a minimal page for tools/dump-webgpu.mjs --html,
+			so the WGSL of Water2Mesh's flow-map branch (`_USE_FLOW`) can be dumped
+			and gated in tests/nodes_water_wgsl.rs. webgpu_water, the one example
+			that uses Water2Mesh, sets no flowMap, so it only builds the
+			flowDirection branch.
+
+			The water is drawn straight to the canvas, with no RenderPipeline and
+			no MRT, and every option but the maps is left at its default.
+		-->
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.webgpu.js",
+					"three/webgpu": "../build/three.webgpu.js",
+					"three/tsl": "../build/three.tsl.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			import * as THREE from 'three/webgpu';
+			import { WaterMesh } from 'three/addons/objects/Water2Mesh.js';
+
+			const camera = new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 0.1, 100 );
+			camera.position.set( 0, 6, 10 );
+			camera.lookAt( 0, 0, 0 );
+
+			const scene = new THREE.Scene();
+			scene.background = new THREE.Color( 0x334455 );
+
+			const box = new THREE.Mesh( new THREE.BoxGeometry( 2, 2, 2 ), new THREE.MeshBasicMaterial( { color: 0xff8800 } ) );
+			box.position.set( 0, 1.5, - 3 );
+			scene.add( box );
+
+			const textureLoader = new THREE.TextureLoader();
+
+			const [ normalMap0, normalMap1, flowMap ] = await Promise.all( [
+				textureLoader.loadAsync( 'textures/water/Water_1_M_Normal.jpg' ),
+				textureLoader.loadAsync( 'textures/water/Water_2_M_Normal.jpg' ),
+				textureLoader.loadAsync( 'textures/water/Water_1_M_Flow.jpg' )
+			] );
+
+			normalMap0.wrapS = normalMap0.wrapT = THREE.RepeatWrapping;
+			normalMap1.wrapS = normalMap1.wrapT = THREE.RepeatWrapping;
+
+			const water = new WaterMesh( new THREE.PlaneGeometry( 10, 10 ), {
+				normalMap0: normalMap0,
+				normalMap1: normalMap1,
+				flowMap: flowMap
+			} );
+			water.rotation.x = Math.PI * - 0.5;
+			scene.add( water );
+
+			const renderer = new THREE.WebGPURenderer();
+			renderer.setPixelRatio( window.devicePixelRatio );
+			renderer.setSize( window.innerWidth, window.innerHeight );
+			renderer.setAnimationLoop( () => renderer.render( scene, camera ) );
+			document.body.appendChild( renderer.domElement );
+
+		</script>
+	</body>
+</html>

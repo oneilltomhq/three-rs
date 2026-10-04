@@ -358,6 +358,12 @@ pub enum UniformSource {
     /// `MeshStandardMaterial.aoMapIntensity` — the scale in `materialAO`'s
     /// `tex.r.sub( 1 ).mul( aoMapIntensity ).add( 1 )`.
     MaterialAoMapIntensity,
+    /// `material.lightMapIntensity` (`MeshBasicMaterial`, `MeshLambertMaterial`,
+    /// `MeshPhongMaterial`, `MeshStandardMaterial`, `MeshToonMaterial`) — the
+    /// scale in `materialLightMap`'s `tex.rgb.mul( lightMapIntensity )`.
+    MaterialLightMapIntensity,
+    /// `PointsMaterial.size` — `materialPointSize`.
+    MaterialPointSize,
     /// `toneMappingExposure` — `renderer.toneMappingExposure`.
     ToneMappingExposure,
     /// `reference( 'bindMatrix', 'mat4' )` / `reference( 'bindMatrixInverse',
@@ -411,6 +417,57 @@ pub enum UniformSource {
     /// compute kernel can read it: `computeSkinning()` and
     /// `webgpu_skinning_points` are the first. See `docs/nodes.md` §44.
     Live(LiveValue),
+    /// `cameraNormalMatrix` — `uniform( camera.normalMatrix )`. Nothing in
+    /// `WebGPURenderer` ever writes a camera's `normalMatrix` (only
+    /// `WebGLRenderer` updates it, and only for the objects it draws), so
+    /// three uploads the identity it was constructed with, and so does this.
+    CameraNormalMatrix,
+    /// `materialRefractionRatio` — `uniform( 0 ).onObjectUpdate( ( { material
+    /// } ) => material.refractionRatio )`.
+    MaterialRefractionRatio,
+    /// `highpModelViewMatrix` — `uniform( 'mat4' ).onObjectUpdate( … )`:
+    /// `camera.matrixWorldInverse * object.matrixWorld`, multiplied on the CPU
+    /// in double precision.
+    HighpModelViewMatrix,
+    /// `highpModelNormalViewMatrix` — the normal matrix of
+    /// [`UniformSource::HighpModelViewMatrix`]'s product, per object.
+    HighpModelNormalViewMatrix,
+    /// `Object3DNode`'s vector and scalar scopes: [`Object3DScope`] of the
+    /// object drawn (`ModelNode`, `object` `None`) or of an explicit one
+    /// (`objectPosition( object3d )` and friends), whose `matrixWorld` the
+    /// [`LiveValue`] reads when the buffer is written.
+    Object3D {
+        /// Which value of the object.
+        scope: Object3DScope,
+        /// The explicit object's `matrixWorld`, or `None` for the object the
+        /// draw is for. For [`Object3DScope::Direction`] it is instead the
+        /// world direction itself, three components, since
+        /// `getWorldDirection()` refreshes the object's world matrix and
+        /// negates for a camera, which only the object can tell.
+        object: Option<LiveValue>,
+    },
+}
+
+/// `Object3DNode`'s scopes other than `WORLD_MATRIX`, which has a uniform
+/// source of its own ([`UniformSource::ModelWorldMatrix`], or
+/// [`UniformSource::Live`] for an explicit object).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum Object3DScope {
+    /// `POSITION` — `setFromMatrixPosition( matrixWorld )`, a `vec3`.
+    Position,
+    /// `SCALE` — `setFromMatrixScale( matrixWorld )`, a `vec3`.
+    Scale,
+    /// `DIRECTION` — `getWorldDirection()`, the normalised `+z` column of
+    /// `matrixWorld`, a `vec3`.
+    Direction,
+    /// `VIEW_POSITION` — the world position through the rendering camera's
+    /// `matrixWorldInverse`, a `vec3`.
+    ViewPosition,
+    /// `RADIUS` — the bounding sphere of the *drawn* object's geometry,
+    /// through the scoped object's `matrixWorld`, a `float`. three reads
+    /// `frame.object.geometry` even for an explicit object, and so does this.
+    Radius,
 }
 
 /// The reader behind [`UniformSource::Live`]. Compares and hashes by
@@ -594,6 +651,8 @@ impl UniformSource {
             | UniformSource::MaterialDiffuseRoughness
             | UniformSource::MaterialNormalScale
             | UniformSource::MaterialAoMapIntensity
+            | UniformSource::MaterialLightMapIntensity
+            | UniformSource::MaterialPointSize
             | UniformSource::EnvRotationMatrix
             | UniformSource::MorphBase
             | UniformSource::BindMatrix
@@ -619,8 +678,10 @@ pub struct UniformNode {
     /// Which uniform block the uniform is bound in.
     pub group: UniformGroup,
     /// Three names camera uniforms explicitly and numbers the rest
-    /// `nodeUniformN`.
-    pub name: Option<&'static str>,
+    /// `nodeUniformN`. A `Cell` because three's `UniformNode.setName()`
+    /// renames the node in place, so every reference to it sees the new name
+    /// ([`NodeRef::set_name`] on a uniform).
+    pub name: std::cell::Cell<Option<&'static str>>,
 }
 
 /// Where an array-typed uniform buffer's contents come from — `BufferNode`.
@@ -900,6 +961,10 @@ pub struct InstanceBuffer {
     /// interleaved instance matrix (`new InstancedInterleavedBuffer( array, 16,
     /// 1 )`), 4 for a `range()`.
     pub item_size: usize,
+    /// The buffer steps once per *vertex*: `attributeArray()`'s
+    /// `StorageBufferAttribute` read through `.toAttribute()`, which is not an
+    /// `InstancedBufferAttribute`. `false` for everything else here.
+    pub per_vertex: bool,
 }
 
 /// `BufferNode` — `buffer( array, type, count )`.
@@ -1112,6 +1177,22 @@ pub enum Builtin {
     GlobalId,
     /// `@builtin( num_workgroups )` — see [`Builtin::WorkgroupId`].
     NumWorkgroups,
+    /// `subgroupSize` — `@builtin( subgroup_size )`. Three's
+    /// `computeBuiltin( 'subgroupSize', 'uint' )` only writes the name: the
+    /// parameter is the one `WGSLNodeBuilder.getAttributes( 'compute' )`
+    /// appends after the four above when the device has `subgroups`. The port
+    /// declares it, and `enable subgroups;`, when a kernel reads it or calls a
+    /// subgroup function (`docs/nodes.md` §84).
+    SubgroupSize,
+    /// `invocationSubgroupIndex` — `@builtin( subgroup_invocation_id )`,
+    /// registered by `WGSLNodeBuilder.getInvocationSubgroupIndex()` when the
+    /// flow reads it, so it comes before the four fixed parameters, like
+    /// [`Builtin::InvocationLocalIndex`].
+    InvocationSubgroupIndex,
+    /// `subgroupIndex` — `@builtin( subgroup_id )`, registered by
+    /// `WGSLNodeBuilder.getSubgroupIndex()`; see
+    /// [`Builtin::InvocationSubgroupIndex`].
+    SubgroupIndex,
 }
 
 impl Builtin {
@@ -1126,14 +1207,20 @@ impl Builtin {
             Builtin::LocalId => "localId",
             Builtin::GlobalId => "globalId",
             Builtin::NumWorkgroups => "numWorkgroups",
+            Builtin::SubgroupSize => "subgroupSize",
+            Builtin::InvocationSubgroupIndex => "invocationSubgroupIndex",
+            Builtin::SubgroupIndex => "subgroupIndex",
         }
     }
 
     pub(crate) fn ty(self) -> Type {
         match self {
-            Builtin::VertexIndex | Builtin::InstanceIndex | Builtin::InvocationLocalIndex => {
-                Type::U32
-            }
+            Builtin::VertexIndex
+            | Builtin::InstanceIndex
+            | Builtin::InvocationLocalIndex
+            | Builtin::SubgroupSize
+            | Builtin::InvocationSubgroupIndex
+            | Builtin::SubgroupIndex => Type::U32,
             Builtin::WorkgroupId
             | Builtin::LocalId
             | Builtin::GlobalId
@@ -1141,6 +1228,35 @@ impl Builtin {
             Builtin::FragCoord => Type::Vec4,
             Builtin::FrontFacing => Type::Bool,
         }
+    }
+}
+
+/// `SubgroupFunctionNode.getInputType()`: the longer of the two inputs'
+/// types, a matrix counting as length 0, and `b`'s on a tie.
+pub(crate) fn subgroup_input_type(a: Option<&NodeRef>, b: Option<&NodeRef>) -> Type {
+    let length = |node: Option<&NodeRef>| match node.map(NodeRef::ty) {
+        Some(ty) if ty.is_matrix() => 0,
+        Some(ty) => ty.components(),
+        None => 0,
+    };
+    if length(a) > length(b) {
+        a.map(NodeRef::ty)
+    } else {
+        b.map(NodeRef::ty)
+    }
+    // Three returns `bType`, `null` for a one-input function whose input is a
+    // matrix; the port's `Type` has no null, and a matrix is its own type.
+    .or_else(|| a.map(NodeRef::ty))
+    .unwrap_or(Type::Void)
+}
+
+/// `SubgroupFunctionNode.generateNodeType()`: `subgroupElect` is a `bool`,
+/// `subgroupBallot` a `uvec4`, everything else its input type.
+fn subgroup_type(method: &str, a: Option<&NodeRef>, b: Option<&NodeRef>) -> Type {
+    match method {
+        "subgroupElect" => Type::Bool,
+        "subgroupBallot" => Type::UVec4,
+        _ => subgroup_input_type(a, b),
     }
 }
 
@@ -1324,6 +1440,12 @@ impl std::fmt::Debug for dyn CustomNode {
 #[derive(Clone, Debug, Default)]
 pub struct ContextValue {
     pub(crate) entries: Vec<(&'static str, NodeRef)>,
+    /// `{ uniformFlow: … }`, which is not a node: see
+    /// [`uniform_flow`](Self::uniform_flow).
+    pub(crate) uniform_flow: Option<bool>,
+    /// `{ nodeName: … }`, which is not a node: see
+    /// [`node_name`](Self::node_name).
+    pub(crate) node_name: Option<&'static str>,
 }
 
 impl ContextValue {
@@ -1338,6 +1460,59 @@ impl ContextValue {
         self.entries.retain(|(k, _)| *k != key);
         self.entries.push((key, value.into()));
         self
+    }
+
+    /// `{ …, uniformFlow: on }` — what [`uniform_flow`] installs. Under it a
+    /// `select()` with both branches is WGSL's `select( f, t, cond )` rather
+    /// than an `if`/`else` over a var (`ConditionalNode.generate()`), so it
+    /// stays in uniform control flow.
+    ///
+    /// [`uniform_flow`]: crate::nodes::tsl::uniform_flow
+    pub fn uniform_flow(mut self, on: bool) -> Self {
+        self.uniform_flow = Some(on);
+        self
+    }
+
+    /// `{ …, nodeName: name }` — what [`set_name`] installs. The first
+    /// `uniform()` built inside clears it, and takes the name unless it has
+    /// one of its own.
+    ///
+    /// [`set_name`]: crate::nodes::tsl::set_name
+    pub fn node_name(mut self, name: &'static str) -> Self {
+        self.node_name = Some(name);
+        self
+    }
+}
+
+/// What [`debug`](crate::nodes::tsl::debug)'s callback is handed: three's
+/// `callback( builder, snippet )`, with the two things of the builder a
+/// debugging callback reads.
+#[derive(Clone, Copy, Debug)]
+pub struct DebugInfo<'a> {
+    /// `builder.shaderStage`: `"vertex"`, `"fragment"` or `"compute"`.
+    pub stage: &'static str,
+    /// `builder.flow.code`: the statements emitted so far in the current
+    /// scope (the stage's `main`, or the `Fn()` being built), one per line,
+    /// with one level of indentation removed.
+    pub flow: &'a str,
+    /// The debugged node's snippet, which is also the debug node's own.
+    pub snippet: &'a str,
+}
+
+/// A [`debug`](crate::nodes::tsl::debug) callback.
+#[derive(Clone)]
+pub struct DebugCallback(pub(crate) Rc<dyn Fn(&DebugInfo<'_>)>);
+
+impl DebugCallback {
+    /// Wrap `callback`.
+    pub fn new(callback: impl Fn(&DebugInfo<'_>) + 'static) -> Self {
+        Self(Rc::new(callback))
+    }
+}
+
+impl std::fmt::Debug for DebugCallback {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("DebugCallback")
     }
 }
 
@@ -1595,6 +1770,9 @@ pub enum Node {
     },
     /// `Break()` — a bare `break;` out of the innermost `Loop`.
     Break,
+    /// `Continue()` — a bare `continue;` to the next iteration of the
+    /// innermost `Loop`.
+    Continue,
     /// `textureStore( storageTexture, coord, value )` — a statement.
     ///
     /// `StorageTextureNode.generateStore()` writes the coordinate as
@@ -1704,6 +1882,19 @@ pub enum Node {
         /// The barrier's WGSL prefix, e.g. `"workgroup"`.
         scope: &'static str,
     },
+    /// `SubgroupFunctionNode` — `subgroupAdd( e )`, `subgroupShuffle( e, id )`,
+    /// `quadSwapX( e )` and the rest of the family
+    /// (`src/nodes/gpgpu/SubgroupFunctionNode.js`). Reaching one enables
+    /// `subgroups` in the stage that builds it.
+    Subgroup {
+        /// The WGSL builtin's name, e.g. `"subgroupAdd"` — three's
+        /// `SubgroupFunctionNode.SUBGROUP_ADD` and friends.
+        method: &'static str,
+        /// `aNode`; `None` only for `subgroupElect()`.
+        a: Option<NodeRef>,
+        /// `bNode`: the lane id, shuffle mask or delta of the two-input forms.
+        b: Option<NodeRef>,
+    },
     /// A node type defined outside the crate; see [`CustomNode`]. Built by
     /// building what its `setup` returns.
     Custom(Rc<dyn CustomNode>),
@@ -1724,6 +1915,24 @@ pub enum Node {
         /// The node built in its own cache.
         node: NodeRef,
     },
+    /// `ExpressionNode` — `expression( snippet, type )`: raw WGSL. A value
+    /// type prints `snippet` where the node is read; `void` writes it to the
+    /// flow as a statement. Not cacheable: each read prints it again.
+    Expression {
+        /// The WGSL, verbatim.
+        snippet: Rc<str>,
+        /// Its type, `Void` for a statement.
+        ty: Type,
+    },
+    /// `DebugNode` — `debug( node, callback )`: `node`'s snippet, passed
+    /// through after `callback` (or a log of the flow so far) has seen it.
+    Debug {
+        /// The node debugged.
+        node: NodeRef,
+        /// `null` logs the stage's flow code to stderr, as three's `log()`
+        /// does to the console.
+        callback: Option<DebugCallback>,
+    },
     /// `structType( values )` — `StructNode`: a value of a [`struct_type`]
     /// (`StructTypeNode`) built from one value per member, in member order.
     /// Always held in a var of the struct's type, which is where three's
@@ -1737,6 +1946,19 @@ pub enum Node {
         layout: Rc<StructLayout>,
         /// One value per member.
         values: Vec<NodeRef>,
+    },
+    /// `outputStruct( ...members )` — `OutputStructNode`, a fragment stage's
+    /// whole result as one `@location( i )` member per value, each of its own
+    /// type. It is only ever a material's `outputNode`
+    /// (`DepthOfFieldNode`'s CoC pass writes its near and far fields this
+    /// way); the builder turns it into the `OutputType` struct and its
+    /// `output.mN = …` lines, as it does an [`MrtNode`]'s members, and it
+    /// has no value of its own.
+    ///
+    /// [`MrtNode`]: crate::nodes::MrtNode
+    OutputStruct {
+        /// The members, by location.
+        members: Vec<NodeRef>,
     },
     /// `structNode.get( name )` — `MemberNode` over a [`Node::StructNew`]
     /// (or over a block or `Fn()` whose result is one): `{ var }.{ member }`.
@@ -1813,6 +2035,7 @@ impl NodeRef {
             | Node::If { .. }
             | Node::Discard
             | Node::Break
+            | Node::Continue
             | Node::TextureStore { .. }
             | Node::Return { .. } => Type::Void,
             Node::Not { node } => Type::vector_of(Type::Bool, node.ty().components().max(1)),
@@ -1825,10 +2048,14 @@ impl NodeRef {
             Node::Atomic { pointer, .. } => pointer.ty(),
             Node::Workgroup(def) => def.element_ty,
             Node::Barrier { .. } => Type::Void,
+            Node::Subgroup { method, a, b } => subgroup_type(method, a.as_ref(), b.as_ref()),
             Node::Compute { output, .. } => output.ty(),
             Node::Custom(custom) => custom.node_type(),
-            Node::Context { node, .. } | Node::Isolate { node } => node.ty(),
-            Node::StructNew { .. } => Type::Void,
+            Node::Context { node, .. } | Node::Isolate { node } | Node::Debug { node, .. } => {
+                node.ty()
+            }
+            Node::Expression { ty, .. } => *ty,
+            Node::StructNew { .. } | Node::OutputStruct { .. } => Type::Void,
             Node::StructGet { layout, member, .. } => layout.members[*member].ty,
         }
     }
