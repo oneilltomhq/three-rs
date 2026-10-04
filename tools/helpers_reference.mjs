@@ -31,7 +31,7 @@ const THREE = await import( pathToFileURL( path.join( threeDir, 'build/three.mod
 if ( THREE.REVISION !== '187dev' ) throw new Error( `expected three.js r187dev, ${ threeDir } is r${ THREE.REVISION }` );
 
 const {
-	Object3D, Group, Bone, Mesh, Vector3, Box3, Plane, Color,
+	Object3D, Group, Bone, Mesh, SkinnedMesh, Skeleton, Vector3, Box3, Plane, Color,
 	BoxGeometry, SphereGeometry, MeshBasicMaterial,
 	DirectionalLight, HemisphereLight, PointLight, SpotLight,
 	AxesHelper, ArrowHelper, BoxHelper, Box3Helper, PlaneHelper, PolarGridHelper,
@@ -212,6 +212,26 @@ scenarios.box_helper = ( () => {
 
 } )();
 
+scenarios.box_helper_no_object = ( () => {
+
+	// Every BoxHelper shares the module's `_box`, so one built with no object
+	// draws whatever box the last `update()` measured. Measure one here, so
+	// the scenario does not depend on the ones before it.
+	const seed = new Mesh( new BoxGeometry( 2, 1, 0.5 ), new MeshBasicMaterial() );
+	seed.position.set( 1, - 1, 2 );
+	new BoxHelper( seed );
+
+	const helper = new BoxHelper( undefined, 0x00ff00 );
+	const built = dump( helper );
+
+	const sphere = new Mesh( new SphereGeometry( 0.5 ), new MeshBasicMaterial() );
+	sphere.position.set( - 2, 0, 1 );
+	helper.setFromObject( sphere );
+
+	return { built, set: dump( helper ) };
+
+} )();
+
 // Box3Helper -----------------------------------------------------------------
 
 scenarios.box3_helper = ( () => {
@@ -228,8 +248,15 @@ scenarios.box3_helper = ( () => {
 	box.min.set( 0, - 2, - 1 );
 	box.max.set( 0.5, 2, 1 );
 	root.updateMatrixWorld();
+	const resized = dump( helper );
 
-	return { built, updated, resized: dump( helper ) };
+	// The override called directly, forced, as a caller outside the
+	// traversal would.
+	box.min.set( - 3, - 1, 0 );
+	box.max.set( - 1, 1, 4 );
+	helper.updateMatrixWorld( true );
+
+	return { built, updated, resized, forced: dump( helper ) };
 
 } )();
 
@@ -248,8 +275,14 @@ scenarios.plane_helper = ( () => {
 	plane.constant = 1.5;
 	helper.size = 2;
 	root.updateMatrixWorld();
+	const changed = dump( helper );
 
-	return { updated, changed: dump( helper ) };
+	// The override called directly, forced: the child mesh comes along.
+	plane.normal.set( 0, - 1, 1 ).normalize();
+	plane.constant = 0.5;
+	helper.updateMatrixWorld( true );
+
+	return { updated, changed, forced: dump( helper ) };
 
 } )();
 
@@ -456,8 +489,21 @@ scenarios.skeleton = ( () => {
 
 	b1.rotation.set( 0.5, 0, - 0.2 );
 	root.updateMatrixWorld();
+	const posed = dump( helper );
 
-	return { built, posed: dump( helper ) };
+	// Outside the root's traversal: the bones and the character are brought
+	// up to date on their own, then the override is called directly. The
+	// helper's `matrix` is the character's `matrixWorld` and it never
+	// updates its own matrix, so unforced its `matrixWorld` stays where it
+	// was; forced, it follows the character.
+	character.position.set( 0.5, 1, - 0.5 );
+	b1.rotation.set( - 0.4, 0.2, 0 );
+	character.updateMatrixWorld();
+	helper.updateMatrixWorld( false );
+	const unforced = dump( helper );
+	helper.updateMatrixWorld( true );
+
+	return { built, posed, unforced, forced: dump( helper ) };
 
 } )();
 
@@ -469,6 +515,41 @@ scenarios.skeleton_bone_root = ( () => {
 	root.updateMatrixWorld();
 
 	return { built: dump( helper ) };
+
+} )();
+
+scenarios.skeleton_skinned = ( () => {
+
+	const root = transformedRoot();
+	const mesh = new SkinnedMesh( new BoxGeometry( 1, 3, 1 ), new MeshBasicMaterial() );
+	mesh.position.set( 0.5, 0, - 1 );
+	mesh.rotation.set( 0, 0.4, 0 );
+	root.add( mesh );
+
+	const b0 = new Bone();
+	b0.position.set( 0, - 1.5, 0 );
+	const b1 = new Bone();
+	b1.position.set( 0, 1.5, 0 );
+	b1.rotation.set( 0.2, 0, 0 );
+	const b2 = new Bone();
+	b2.position.set( 0, 1.5, 0.25 );
+	b0.add( b1 );
+	b1.add( b2 );
+	mesh.add( b0 );
+	mesh.bind( new Skeleton( [ b0, b1, b2 ] ) );
+
+	const helper = new SkeletonHelper( mesh );
+	root.add( helper );
+	root.updateMatrixWorld();
+	const built = dump( helper );
+
+	helper.setColors( new Color( 0xff8800 ), new Color( 0x8800ff ) );
+	const colored = dump( helper );
+
+	b1.rotation.set( - 0.3, 0.1, 0.2 );
+	root.updateMatrixWorld();
+
+	return { built, colored, posed: dump( helper ) };
 
 } )();
 

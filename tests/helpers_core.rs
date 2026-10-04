@@ -25,6 +25,7 @@
 //! have no field for: the test checks the reference says `false` and drops
 //! it from the comparison.
 
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::process::Command;
 
@@ -38,7 +39,7 @@ use three_rs::helpers::{
 use three_rs::lights::{DirectionalLight, HemisphereLight, PointLight, SpotLight};
 use three_rs::materials::{MaterialKind, MeshBasicNodeMaterial, Side};
 use three_rs::math::{Box3, Color, Plane, Vector3};
-use three_rs::objects::{Bone, Group, Mesh};
+use three_rs::objects::{Bone, Group, Mesh, Skeleton, SkinnedMesh};
 use three_rs::testing::three_js_dir;
 
 // --- Reference ---------------------------------------------------------------
@@ -362,6 +363,31 @@ fn box_helper() -> Value {
     ])
 }
 
+fn box_helper_no_object() -> Value {
+    // Every `BoxHelper` shares the module's `_box` (a thread local here), so
+    // one built with no object draws whatever box the last `update()`
+    // measured. Measure one here, so the scenario does not depend on the
+    // ones before it.
+    let seed = Mesh::new(
+        std::rc::Rc::new(box_geometry(2.0, 1.0, 0.5, 1, 1, 1)),
+        MeshBasicNodeMaterial::new(),
+    );
+    seed.borrow_mut().position.set(1.0, -1.0, 2.0);
+    BoxHelper::new(Some(seed), hex(0xffff00));
+
+    let mut helper = BoxHelper::new(None, hex(0x00ff00));
+    let built = dump(&helper.node);
+
+    let sphere = Mesh::new(
+        std::rc::Rc::new(sphere_geometry(0.5, 32, 16)),
+        MeshBasicNodeMaterial::new(),
+    );
+    sphere.borrow_mut().position.set(-2.0, 0.0, 1.0);
+    helper.set_from_object(sphere);
+
+    stages(vec![("built", built), ("set", dump(&helper.node))])
+}
+
 fn box3_helper() -> Value {
     let root = transformed_root();
     let mut helper = Box3Helper::new(
@@ -379,11 +405,17 @@ fn box3_helper() -> Value {
     helper.box3.max.set(0.5, 2.0, 1.0);
     root.update_matrix_world(false);
     helper.update_matrix_world(false);
+    let resized = dump(&helper.node);
+
+    helper.box3.min.set(-3.0, -1.0, 0.0);
+    helper.box3.max.set(-1.0, 1.0, 4.0);
+    helper.update_matrix_world(true);
 
     stages(vec![
         ("built", built),
         ("updated", updated),
-        ("resized", dump(&helper.node)),
+        ("resized", resized),
+        ("forced", dump(&helper.node)),
     ])
 }
 
@@ -404,8 +436,17 @@ fn plane_helper() -> Value {
     helper.size = 2.0;
     root.update_matrix_world(false);
     helper.update_matrix_world(false);
+    let changed = dump(&helper.node);
 
-    stages(vec![("updated", updated), ("changed", dump(&helper.node))])
+    helper.plane.normal = normalized(0.0, -1.0, 1.0);
+    helper.plane.constant = 0.5;
+    helper.update_matrix_world(true);
+
+    stages(vec![
+        ("updated", updated),
+        ("changed", changed),
+        ("forced", dump(&helper.node)),
+    ])
 }
 
 fn polar_default() -> Value {
@@ -557,14 +598,15 @@ fn spot_colored() -> Value {
     stages(vec![("built", dump(&helper.node))])
 }
 
-struct Skeleton {
+/// `skeleton()` in the script: the bones under a transformed root.
+struct Rig {
     root: Node,
     character: Node,
     b0: Node,
     b1: Node,
 }
 
-fn skeleton() -> Skeleton {
+fn skeleton() -> Rig {
     let root = transformed_root();
     let character = Group::new();
     character.borrow_mut().position.set(0.0, 1.0, 0.0);
@@ -596,7 +638,7 @@ fn skeleton() -> Skeleton {
     let b4 = bone(0.0, 0.5, 0.0);
     holder.add(&b4);
 
-    Skeleton {
+    Rig {
         root,
         character,
         b0,
@@ -605,7 +647,7 @@ fn skeleton() -> Skeleton {
 }
 
 fn skeleton_scenario() -> Value {
-    let Skeleton {
+    let Rig {
         root,
         character,
         b1,
@@ -620,18 +662,80 @@ fn skeleton_scenario() -> Value {
     b1.borrow_mut().set_rotation(0.5, 0.0, -0.2);
     root.update_matrix_world(false);
     helper.update_matrix_world(false);
+    let posed = dump(&helper.node);
 
-    stages(vec![("built", built), ("posed", dump(&helper.node))])
+    character.borrow_mut().position.set(0.5, 1.0, -0.5);
+    b1.borrow_mut().set_rotation(-0.4, 0.2, 0.0);
+    character.update_matrix_world(false);
+    helper.update_matrix_world(false);
+    let unforced = dump(&helper.node);
+    helper.update_matrix_world(true);
+
+    stages(vec![
+        ("built", built),
+        ("posed", posed),
+        ("unforced", unforced),
+        ("forced", dump(&helper.node)),
+    ])
 }
 
 fn skeleton_bone_root() -> Value {
-    let Skeleton { root, b0, .. } = skeleton();
+    let Rig { root, b0, .. } = skeleton();
     let helper = SkeletonHelper::new(&b0);
     root.add(&helper.node);
     root.update_matrix_world(false);
     helper.update_matrix_world(false);
 
     stages(vec![("built", dump(&helper.node))])
+}
+
+fn skeleton_skinned() -> Value {
+    let root = transformed_root();
+    let mesh = SkinnedMesh::new(
+        std::rc::Rc::new(box_geometry(1.0, 3.0, 1.0, 1, 1, 1)),
+        MeshBasicNodeMaterial::new(),
+    );
+    {
+        let mut object = mesh.borrow_mut();
+        object.position.set(0.5, 0.0, -1.0);
+        object.set_rotation(0.0, 0.4, 0.0);
+    }
+    root.add(&mesh);
+
+    let b0 = Bone::new();
+    b0.borrow_mut().position.set(0.0, -1.5, 0.0);
+    let b1 = Bone::new();
+    {
+        let mut object = b1.borrow_mut();
+        object.position.set(0.0, 1.5, 0.0);
+        object.set_rotation(0.2, 0.0, 0.0);
+    }
+    let b2 = Bone::new();
+    b2.borrow_mut().position.set(0.0, 1.5, 0.25);
+    b0.add(&b1);
+    b1.add(&b2);
+    mesh.add(&b0);
+    let skeleton = Skeleton::new(vec![b0, b1.clone(), b2], None);
+    SkinnedMesh::bind(&mesh, std::rc::Rc::new(RefCell::new(skeleton)), None);
+
+    let helper = SkeletonHelper::new(&mesh);
+    root.add(&helper.node);
+    root.update_matrix_world(false);
+    helper.update_matrix_world(false);
+    let built = dump(&helper.node);
+
+    helper.set_colors(hex(0xff8800), hex(0x8800ff));
+    let colored = dump(&helper.node);
+
+    b1.borrow_mut().set_rotation(-0.3, 0.1, 0.2);
+    root.update_matrix_world(false);
+    helper.update_matrix_world(false);
+
+    stages(vec![
+        ("built", built),
+        ("colored", colored),
+        ("posed", dump(&helper.node)),
+    ])
 }
 
 /// Builds one scenario's stages, as the script's function of the same name.
@@ -650,6 +754,7 @@ fn core_helpers_match_three() {
         ("arrow_up", arrow_up),
         ("arrow_down", arrow_down),
         ("box_helper", box_helper),
+        ("box_helper_no_object", box_helper_no_object),
         ("box3_helper", box3_helper),
         ("plane_helper", plane_helper),
         ("polar_default", polar_default),
@@ -665,6 +770,7 @@ fn core_helpers_match_three() {
         ("spot_colored", spot_colored),
         ("skeleton", skeleton_scenario),
         ("skeleton_bone_root", skeleton_bone_root),
+        ("skeleton_skinned", skeleton_skinned),
     ];
 
     // Every scenario the script runs is checked here, and the other way round.
