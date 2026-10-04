@@ -6110,8 +6110,6 @@ material's beauty at the contact and nowhere else.
 
 ## 65. `SSRNode` and `SMAANode` (`webgpu_postprocessing_ssr`)
 
-§64 is reserved for the GTAO and denoise nodes, whose branch is not merged.
-
 ### 65.1 What three does
 
 `ssr( colorNode, depthNode, normalNode, { metalnessNode, roughnessNode,
