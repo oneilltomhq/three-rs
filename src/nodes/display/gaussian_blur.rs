@@ -13,7 +13,6 @@
 //! built in the constructor instead of in a setup pass.
 
 use crate::materials::MeshBasicNodeMaterial;
-use crate::math::Color;
 use crate::nodes::node::{SettableValue, Type};
 use crate::nodes::tsl::{
     block, float, premultiply_alpha, texture_uv, texture_with_uv, to_var, uniform_settable,
@@ -333,14 +332,7 @@ impl GaussianBlurNode {
     pub fn render(&self, renderer: &mut Renderer) {
         renderer.update_texture_source(self.map.id());
 
-        let previous_target = renderer.render_target();
-        let previous_mrt = renderer.mrt();
-        let previous_auto_clear = renderer.auto_clear;
-        let previous_clear_color = renderer.clear_color();
-        let previous_clear_alpha = renderer.clear_alpha();
-        renderer.set_mrt(None);
-        renderer.set_clear_color(Color::new(0.0, 0.0, 0.0), 1.0);
-        renderer.auto_clear = true;
+        let mut renderer = renderer.reset_state();
 
         let (width, height) = self.map.size();
         self.set_size(width, height);
@@ -351,10 +343,7 @@ impl GaussianBlurNode {
         renderer.set_render_target(Some(self.vertical.clone()));
         renderer.render_quad(&self.vertical_quad);
 
-        renderer.set_render_target(previous_target);
-        renderer.set_mrt(previous_mrt);
-        renderer.set_clear_color(previous_clear_color, previous_clear_alpha);
-        renderer.auto_clear = previous_auto_clear;
+        drop(renderer);
     }
 }
 

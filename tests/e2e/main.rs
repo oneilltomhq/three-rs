@@ -137,6 +137,10 @@ mod webgpu_materials_cubemap_mipmaps;
 #[allow(dead_code)]
 mod webgpu_materials_envmaps;
 
+#[path = "../../examples/webgpu_materials_transmission.rs"]
+#[allow(dead_code)]
+mod webgpu_materials_transmission;
+
 #[path = "../../examples/webgpu_multiple_rendertargets_readback.rs"]
 #[allow(dead_code)]
 mod webgpu_multiple_rendertargets_readback;
@@ -3045,6 +3049,64 @@ fn webgpu_loader_gltf_iridescence() {
         name,
         &mut app,
         webgpu_loader_gltf_iridescence::animate,
+        |app| app.renderer.device(),
+    );
+}
+
+/// A `transmission: 1` sphere in front of the UltraHDR skybox: the ladder's
+/// direct test of the transmission path (`docs/nodes.md` §26, §96). Unlike the
+/// barn lamp's glass, the transmissive surface covers a fifth of the frame and
+/// everything behind it is background, so a missing or mis-sampled opaque-frame
+/// copy is not a detail — it is the sphere.
+///
+/// The `alphaMap` bands are the second half: seven stripes where
+/// `DiffuseColor.a` alternates 1 and 0, which is the one place
+/// `transparent: true` blending shows.
+#[test]
+fn webgpu_materials_transmission() {
+    let name = "webgpu_materials_transmission";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_materials_transmission::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_materials_transmission::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    // The draw calls and triangles the README's graded table records.
+    let info = app.renderer.info();
+    println!("{name}: info {info:?}");
+
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_materials_transmission::animate,
         |app| app.renderer.device(),
     );
 }
@@ -6758,6 +6820,9 @@ fn steady_frame_builds_nothing() {
     // The equirect-to-cube conversion and the PMREM run in `init()`; every
     // frame draws the same five calls, and only frame one builds anything.
     rung!(webgpu_loader_gltf_iridescence);
+    // Two transmission copies a frame, at the first back-side and the first
+    // front-side draw: both textures exist from frame one.
+    rung!(webgpu_materials_transmission);
 }
 
 // ---------------------------------------------------------------------------

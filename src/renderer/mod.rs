@@ -18,6 +18,7 @@ mod reflector;
 mod render_list;
 mod render_pipeline;
 mod render_target;
+mod renderer_state;
 mod screen_reads;
 mod ssaa_pass;
 
@@ -429,6 +430,14 @@ const VARIANT_FRONT_SIDE: u64 = 5;
 /// draw's) for a material a [`RenderObjectFunction`] derived.
 const VARIANT_RENDER_OBJECT_FUNCTION: u64 = 7;
 
+/// How a render entry point holds its camera: [`Renderer::render`] and
+/// [`Renderer::render_nested`] own a mutable borrow, a pass's
+/// [`Renderer::render_shared`] a `RefCell` an outer render may already hold.
+enum SceneCamera<'a> {
+    Exclusive(&'a mut dyn RenderCamera),
+    Shared(&'a std::cell::RefCell<dyn RenderCamera>),
+}
+
 /// The two render-object functions `OutlineNode.updateBefore()` installs
 /// around its scene renders, together with the
 /// `resetRendererAndSceneState()` they run under (`docs/nodes.md` §72):
@@ -449,6 +458,7 @@ const VARIANT_RENDER_OBJECT_FUNCTION: u64 = 7;
 /// render. The shadow maps are not rendered either: three renders them from
 /// `ShadowNode.updateBefore()`, which only a lit material's program reaches,
 /// and both outline materials are unlit.
+#[derive(Clone)]
 pub(crate) struct OutlineSelection {
     /// `this._selectionCache`, by `Object3D.id`.
     pub(crate) selected: Rc<HashSet<u32>>,
@@ -943,6 +953,13 @@ pub struct Renderer {
     /// as it stood after the last opaque draw. One per renderer, resized with
     /// the drawing buffer, and only ever created when something transmits.
     opaque_frame: Option<Texture>,
+    /// `PhysicalLightingModel`'s `viewportBackSideTexture` — a second
+    /// `viewportMipTexture()`, read by transmissive materials drawn with
+    /// `side === BackSide`. Same shape as [`Self::opaque_frame`], but it is a
+    /// separate node with its own `updateBefore()`, so it is copied before the
+    /// first back-side draw while the front-side copy waits for the first
+    /// front-side one. Only created when a transmissive item draws a back side.
+    back_side_frame: Option<Texture>,
     /// The pass [`Self::draw`] is building, while it builds it: where the
     /// viewport nodes' `copyFramebufferToTexture()` requests go. Saved and
     /// restored around each `draw`, so a nested render's copies stay its own.
@@ -1100,7 +1117,8 @@ pub struct Renderer {
     neutral_output: bool,
 
     /// `RenderContext.fullscreenPass` — set for the duration of a
-    /// [`Renderer::render_quad`]. `Renderer.currentSamples` reads it: a quad
+    /// [`Renderer::render_quad`], and cleared for a scene render nested in
+    /// one, by [`Renderer::with_fullscreen_pass`]. `Renderer.currentSamples` reads it: a quad
     /// drawn straight to the canvas is never multisampled, however the
     /// renderer's `antialias` option was set, because its one oversized
     /// triangle has no edge inside the viewport to antialias.
@@ -1443,6 +1461,7 @@ impl Renderer {
             mrt: None,
             frame_buffer_target: None,
             opaque_frame: None,
+            back_side_frame: None,
             screen_reads: None,
             screen_read_textures: screen_reads::Destinations::default(),
             output_buffer_type: TextureType::HalfFloat,
@@ -1806,29 +1825,7 @@ impl Renderer {
     /// — `&mut PerspectiveCamera` still coerces at the call site, so every
     /// existing caller is unchanged.
     pub fn render(&mut self, scene: &mut Scene, camera: &mut dyn RenderCamera) {
-        // `Renderer.render()`: `if ( this.info.autoReset === true )
-        // this.info.reset()`. A frame that is several renders turns
-        // `auto_reset` off and resets once itself; see [`Info::auto_reset`].
-        // A render nested in another's draw — a pass rendering from
-        // `updateBefore()` — is part of that render and does not reset it.
-        if self.info.auto_reset && self.call_depth == 0 {
-            self.info.reset();
-        }
-
-        // Before anything of this frame is looked up: return what the last
-        // frame's scene no longer uses. See `sweep_caches`.
-        let render = self.begin_frame();
-        // `renderContext.fullscreenPass = scene.isQuadMesh === true`: a scene
-        // render nested in a quad's draw is not a fullscreen pass.
-        let previous_fullscreen_pass = std::mem::replace(&mut self.fullscreen_pass, false);
-        self.poll_occlusion();
-        // `scene.updateMatrixWorld()` then `camera.updateMatrixWorld()`, both
-        // honouring `matrixAutoUpdate` / `matrixWorldAutoUpdate`.
-        scene.update_matrix_world();
-        camera.update_matrix_world();
-        self.render_scene(scene, camera);
-        self.fullscreen_pass = previous_fullscreen_pass;
-        self.end_frame(render);
+        self.render_with_camera(scene, SceneCamera::Exclusive(camera));
     }
 
     /// [`render`](Self::render) for a pass that holds its scene and camera in
@@ -1844,19 +1841,7 @@ impl Renderer {
         scene: &Scene,
         camera: &std::cell::RefCell<dyn RenderCamera>,
     ) {
-        if self.info.auto_reset && self.call_depth == 0 {
-            self.info.reset();
-        }
-        let render = self.begin_frame();
-        let previous_fullscreen_pass = std::mem::replace(&mut self.fullscreen_pass, false);
-        self.poll_occlusion();
-        scene.update_matrix_world();
-        if let Ok(mut camera) = camera.try_borrow_mut() {
-            camera.update_matrix_world();
-        }
-        self.render_scene(scene, &*camera.borrow());
-        self.fullscreen_pass = previous_fullscreen_pass;
-        self.end_frame(render);
+        self.render_with_camera(scene, SceneCamera::Shared(camera));
     }
 
     /// [`render`](Self::render) for a reflector's nested render
@@ -1865,16 +1850,46 @@ impl Renderer {
     /// reflector's own virtual camera. Part of the outer frame, as a pass's
     /// nested render is (`docs/nodes.md` §55 and §57).
     pub(crate) fn render_nested(&mut self, scene: &Scene, camera: &mut dyn RenderCamera) {
+        self.render_with_camera(scene, SceneCamera::Exclusive(camera));
+    }
+
+    /// The one body of [`render`](Self::render),
+    /// [`render_shared`](Self::render_shared) and
+    /// [`render_nested`](Self::render_nested), which differ only in how they
+    /// hold the camera.
+    fn render_with_camera(&mut self, scene: &Scene, camera: SceneCamera<'_>) {
+        // `Renderer.render()`: `if ( this.info.autoReset === true )
+        // this.info.reset()`. A frame that is several renders turns
+        // `auto_reset` off and resets once itself; see [`Info::auto_reset`].
+        // A render nested in another's draw — a pass rendering from
+        // `updateBefore()` — is part of that render and does not reset it.
         if self.info.auto_reset && self.call_depth == 0 {
             self.info.reset();
         }
+
+        // Before anything of this frame is looked up: return what the last
+        // frame's scene no longer uses. See `sweep_caches`.
         let render = self.begin_frame();
-        let previous_fullscreen_pass = std::mem::replace(&mut self.fullscreen_pass, false);
-        self.poll_occlusion();
-        scene.update_matrix_world();
-        camera.update_matrix_world();
-        self.render_scene(scene, camera);
-        self.fullscreen_pass = previous_fullscreen_pass;
+        // `renderContext.fullscreenPass = scene.isQuadMesh === true`: a scene
+        // render nested in a quad's draw is not a fullscreen pass.
+        self.with_fullscreen_pass(false, |renderer| {
+            renderer.poll_occlusion();
+            // `scene.updateMatrixWorld()` then `camera.updateMatrixWorld()`,
+            // both honouring `matrixAutoUpdate` / `matrixWorldAutoUpdate`.
+            scene.update_matrix_world();
+            match camera {
+                SceneCamera::Exclusive(camera) => {
+                    camera.update_matrix_world();
+                    renderer.render_scene(scene, camera);
+                }
+                SceneCamera::Shared(camera) => {
+                    if let Ok(mut camera) = camera.try_borrow_mut() {
+                        camera.update_matrix_world();
+                    }
+                    renderer.render_scene(scene, &*camera.borrow());
+                }
+            }
+        });
         self.end_frame(render);
     }
 
@@ -2120,19 +2135,30 @@ impl Renderer {
         // ahead of the item walk, which borrows `self` for the default
         // material — is what `ViewportTextureNode`'s constructor does; the
         // *copy* into it happens mid-pass, in `draw()`.
-        let transmits = render_list.items().any(|item| {
+        //
+        // `viewportBackSideTexture` is the same again for the materials drawn
+        // with `side === BackSide`: those set so, and the back halves of the
+        // transparent `DoubleSide` split below.
+        let (mut transmits, mut transmits_back) = (false, false);
+        for item in render_list.items() {
             let object = item.node.borrow();
-            scene
-                .override_material
-                .as_ref()
-                .or(item.material(&object))
-                .is_some_and(|material| material.transmission > 0.0)
-        });
-        let opaque_frame = transmits.then(|| {
-            let (width, height) = self.drawing_buffer_size();
-            materials::transmission::OpaqueFrame {
-                texture: self.opaque_frame_texture(width, height),
+            let Some(material) = scene.override_material.as_ref().or(item.material(&object)) else {
+                continue;
+            };
+            if material.transmission > 0.0 {
+                transmits = true;
+                transmits_back |= material.side == Side::Back
+                    || (material.transparent
+                        && material.side == Side::Double
+                        && !material.force_single_pass);
             }
+        }
+        let (width, height) = self.drawing_buffer_size();
+        let opaque_frame = transmits.then(|| materials::transmission::OpaqueFrame {
+            texture: self.opaque_frame_texture(false, width, height),
+        });
+        let back_side_frame = transmits_back.then(|| materials::transmission::OpaqueFrame {
+            texture: self.opaque_frame_texture(true, width, height),
         });
 
         // `Renderer._renderScene()`'s two gated calls, plus
@@ -2324,10 +2350,16 @@ impl Renderer {
             if self.oit == Some(crate::nodes::display::OitRenderObjects::Accumulate) {
                 material.depth_write = false;
             }
-            // `viewportOpaqueMipTexture()` — one texture for the whole pass,
-            // handed to whichever materials transmit.
+            // `getTransmissionSample()`'s `material.side === BackSide ?
+            // viewportBackSideTexture : viewportFrontSideTexture` — one
+            // texture per side for the whole pass, handed to whichever
+            // materials transmit. `draw()` copies each before the first draw
+            // that reads it.
             let item_opaque_frame = (material.transmission > 0.0)
-                .then(|| opaque_frame.clone())
+                .then(|| match material.side {
+                    Side::Back => back_side_frame.clone(),
+                    _ => opaque_frame.clone(),
+                })
                 .flatten();
 
             // `this._currentRenderObjectFunction( object, scene, camera,
@@ -3020,57 +3052,58 @@ impl Renderer {
         lights[index].shadow_blur_samples = shadow.blur_samples as f64;
         lights[index].shadow_map_size = shadow.map_size;
 
-        let previous_fullscreen_pass = std::mem::replace(&mut self.fullscreen_pass, true);
-        for (target, key, material) in steps {
-            let mut material = material;
-            material.vertex_node = Some(materials::quad_vertex_node());
-            let items = [Renderable {
-                object: None,
-                fog: None,
-                geometry: self.quad_geometry(),
-                material,
-                key,
-                // `QuadMesh` draws through its own
-                // `OrthographicCamera( - 1, 1, 1, - 1, 0, 1 )`.
-                setup: SetupContext {
-                    orthographic: true,
-                    ..SetupContext::default()
-                },
-                model_world: Matrix4::identity(),
-                instance_matrix: None,
-                instance_color: None,
-                instance_count: 1,
-                morph_influences: Vec::new(),
-                morph_base: 1.0,
-                bind_matrix: Matrix4::identity(),
-                bind_matrix_inverse: Matrix4::identity(),
-                bone_matrices: Vec::new(),
-                previous_bone_matrices: Vec::new(),
-                primitive: Primitive::TRIANGLES,
-                sub_draws: Vec::new(),
-                texture_overrides: Vec::new(),
-                group: None,
-                object_center: Vector2::new(0.5, 0.5),
-            }];
-            let uniforms = UniformContext {
-                lights: &lights,
-                ..self.quad_camera_uniforms()
-            };
-            let pass_target = self.render_target_pass(&target);
-            // `resetRendererAndSceneState()` left `setClearColor( 0x000000, 0
-            // )` in place; the full-screen triangle overwrites every texel.
-            self.draw(
-                &items,
-                uniforms,
-                &pass_target,
-                ClearOps {
-                    color: Some([0.0, 0.0, 0.0, 0.0]),
-                    depth: false,
-                    stencil: false,
-                },
-            );
-        }
-        self.fullscreen_pass = previous_fullscreen_pass;
+        // `QuadMesh.render()`: each blur is a fullscreen pass.
+        self.with_fullscreen_pass(true, |renderer| {
+            for (target, key, material) in steps {
+                let mut material = material;
+                material.vertex_node = Some(materials::quad_vertex_node());
+                let items = [Renderable {
+                    object: None,
+                    fog: None,
+                    geometry: renderer.quad_geometry(),
+                    material,
+                    key,
+                    // `QuadMesh` draws through its own
+                    // `OrthographicCamera( - 1, 1, 1, - 1, 0, 1 )`.
+                    setup: SetupContext {
+                        orthographic: true,
+                        ..SetupContext::default()
+                    },
+                    model_world: Matrix4::identity(),
+                    instance_matrix: None,
+                    instance_color: None,
+                    instance_count: 1,
+                    morph_influences: Vec::new(),
+                    morph_base: 1.0,
+                    bind_matrix: Matrix4::identity(),
+                    bind_matrix_inverse: Matrix4::identity(),
+                    bone_matrices: Vec::new(),
+                    previous_bone_matrices: Vec::new(),
+                    primitive: Primitive::TRIANGLES,
+                    sub_draws: Vec::new(),
+                    texture_overrides: Vec::new(),
+                    group: None,
+                    object_center: Vector2::new(0.5, 0.5),
+                }];
+                let uniforms = UniformContext {
+                    lights: &lights,
+                    ..renderer.quad_camera_uniforms()
+                };
+                let pass_target = renderer.render_target_pass(&target);
+                // `resetRendererAndSceneState()` left `setClearColor( 0x000000, 0
+                // )` in place; the full-screen triangle overwrites every texel.
+                renderer.draw(
+                    &items,
+                    uniforms,
+                    &pass_target,
+                    ClearOps {
+                        color: Some([0.0, 0.0, 0.0, 0.0]),
+                        depth: false,
+                        stencil: false,
+                    },
+                );
+            }
+        });
         moments
     }
 
@@ -3421,8 +3454,12 @@ impl Renderer {
     fn render_quad_mesh(&mut self, quad: &QuadMesh) {
         // `Renderer._renderScene()`: `renderContext.fullscreenPass =
         // scene.isQuadMesh === true`.
-        let previous_fullscreen_pass = std::mem::replace(&mut self.fullscreen_pass, true);
+        self.with_fullscreen_pass(true, |renderer| renderer.draw_quad_mesh(quad));
+    }
 
+    /// [`render_quad_mesh`](Self::render_quad_mesh) inside its fullscreen
+    /// pass.
+    fn draw_quad_mesh(&mut self, quad: &QuadMesh) {
         let key = MaterialKey::of(&quad.material).variant(VARIANT_QUAD);
         let mut material = quad.material.clone();
         material.vertex_node = Some(materials::quad_vertex_node());
@@ -3471,7 +3508,6 @@ impl Renderer {
             ClearOps::default()
         };
         self.render_list(&items, camera_uniforms, clear);
-        self.fullscreen_pass = previous_fullscreen_pass;
     }
 
     fn quad_camera_uniforms(&self) -> UniformContext<'static> {
@@ -3562,21 +3598,36 @@ impl Renderer {
             .cloned();
 
         // `RenderList.push()` routes `material.transmission > 0` into the
-        // transparent list, and the first such draw is where
-        // `ViewportTextureNode.updateBefore()` fires: the pass ends, the
-        // resolved colour attachment is copied into the mipped viewport
-        // texture, and a second pass loads the same attachments and draws the
-        // rest. `None` — every pass on the ladder before this one — is one
-        // pass, byte for byte what it was.
-        let transmission_split = target
-            .color_texture
-            .is_some()
-            .then(|| {
-                items
+        // transparent list, and the first draw to read a viewport texture is
+        // where its `ViewportTextureNode.updateBefore()` fires: the pass ends,
+        // the resolved colour attachment is copied into the mipped texture,
+        // and a second pass loads the same attachments and draws the rest.
+        // `updateBeforeType` is `RENDER` and `NodeFrame` keys it on the
+        // texture `updateReference()` returns, so each texture is copied once
+        // per pass. With a back-side and a front-side texture that is two
+        // copies: the front one after the back faces are drawn, which is how
+        // three's front face of a glass sphere sees the sphere's own back.
+        // Empty — every pass with nothing transmissive — is one pass, byte
+        // for byte what it was.
+        let mut transmission_copies: Vec<(usize, Texture)> = Vec::new();
+        if target.color_texture.is_some() {
+            for (index, item) in items.iter().enumerate() {
+                let Some(frame) = item
+                    .setup
+                    .viewport_opaque_mip
+                    .as_ref()
+                    .filter(|_| item.material.transmission > 0.0)
+                else {
+                    continue;
+                };
+                if !transmission_copies
                     .iter()
-                    .position(|item| item.material.transmission > 0.0)
-            })
-            .flatten();
+                    .any(|(_, texture)| texture.id() == frame.texture.id())
+                {
+                    transmission_copies.push((index, frame.texture.clone()));
+                }
+            }
+        }
 
         // The copy requests this pass's draws make; see `screen_reads.rs`.
         let outer_screen_reads = self
@@ -3901,13 +3952,13 @@ impl Renderer {
         }
 
         // Every framebuffer copy, by the index of the draw it goes before:
-        // the transmission pass's first, then the viewport nodes' in the
+        // the transmission textures' first, then the viewport nodes' in the
         // order they asked. A stable sort keeps that order within an index.
         let screen_reads = std::mem::replace(&mut self.screen_reads, outer_screen_reads)
             .expect("three-rs: draw() installed its screen reads above");
-        let mut copies: Vec<(usize, screen_reads::FramebufferCopy)> = transmission_split
-            .map(|split| (split, screen_reads::FramebufferCopy::OpaqueFrame))
+        let mut copies: Vec<(usize, screen_reads::FramebufferCopy)> = transmission_copies
             .into_iter()
+            .map(|(index, texture)| (index, screen_reads::FramebufferCopy::OpaqueFrame(texture)))
             .chain(screen_reads.copies)
             .collect();
         copies.sort_by_key(|(index, _)| *index);
@@ -7570,15 +7621,21 @@ impl Renderer {
     /// `viewportOpaqueMipTexture()`'s texture — a full mip chain over a
     /// single-sampled copy of the colour attachment, in the framebuffer
     /// target's own format so that the copy is a straight
-    /// `copyTextureToTexture`.
+    /// `copyTextureToTexture`. With `back_side`, the same for
+    /// `PhysicalLightingModel`'s `viewportBackSideTexture`, a
+    /// `viewportMipTexture()` of its own.
     ///
     /// `own_gpu` is false: the renderer allocates it, fills it from the
     /// framebuffer and generates its mips, and `ensure_texture_2d()` passes it
     /// straight through.
-    fn opaque_frame_texture(&mut self, width: u32, height: u32) -> Texture {
+    fn opaque_frame_texture(&mut self, back_side: bool, width: u32, height: u32) -> Texture {
         let format = self.output_buffer_type.color_gpu_format();
-        let existing = self
-            .opaque_frame
+        let slot = if back_side {
+            &self.back_side_frame
+        } else {
+            &self.opaque_frame
+        };
+        let existing = slot
             .as_ref()
             .filter(|texture| texture.size() == (width, height) && texture.format() == format);
         if let Some(texture) = existing {
@@ -7589,7 +7646,11 @@ impl Renderer {
         // `GPUTexture` gets from three's `_getMipLevelCount()`.
         let mip_level_count = (width.max(height) as f32).log2().floor() as u32 + 1;
         let gpu = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("three-rs viewportOpaqueMipTexture"),
+            label: Some(if back_side {
+                "three-rs viewportBackSideTexture"
+            } else {
+                "three-rs viewportOpaqueMipTexture"
+            }),
             size: wgpu::Extent3d {
                 width,
                 height,
@@ -7605,13 +7666,23 @@ impl Renderer {
             view_formats: &[],
         });
 
-        // `defaultFramebuffer.minFilter = LinearMipmapLinearFilter` plus the
-        // `generateMipmaps: true` the mip variant of the node proxy sets.
+        // `new FramebufferTexture()`, whose `magFilter` is `NearestFilter`,
+        // then `defaultFramebuffer.minFilter = LinearMipmapLinearFilter` plus
+        // the `generateMipmaps: true` the mip variant of the node proxy sets.
+        // The nearest mag filter is not cosmetic: `textureBicubicLevel` reads
+        // the `floor( lod )` level with `textureSampleLevel( …, 0 )` wherever
+        // the LOD is below 1, and at an explicit level of 0 the sampler
+        // magnifies, so three's eight taps there are point samples.
         let texture = Texture::render_target(width, height, format);
         texture.set_generate_mipmaps(true);
         texture.set_min_filter(crate::textures::MinFilter::LinearMipmapLinear);
+        texture.set_mag_filter(crate::textures::TextureFilter::Nearest);
         texture.set_gpu(gpu);
-        self.opaque_frame = Some(texture.clone());
+        if back_side {
+            self.back_side_frame = Some(texture.clone());
+        } else {
+            self.opaque_frame = Some(texture.clone());
+        }
         texture
     }
 
@@ -7619,10 +7690,7 @@ impl Renderer {
     /// `renderer.copyFramebufferToTexture( framebufferTexture )` plus the
     /// `generateMipmaps` the mip variant asks for. The source is the resolved
     /// attachment, because an MSAA texture cannot be copied from.
-    fn copy_framebuffer_to_opaque_frame(&mut self, source: &wgpu::Texture) {
-        let Some(texture) = self.opaque_frame.clone() else {
-            return;
-        };
+    fn copy_framebuffer_to_opaque_frame(&mut self, source: &wgpu::Texture, texture: &Texture) {
         let gpu = texture.with_gpu(|gpu| gpu.clone());
         let mut encoder = self
             .device

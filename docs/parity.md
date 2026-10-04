@@ -44,11 +44,11 @@ TSL by family:
 | materialx | 49 | 48 | 0 | 1 | 0 |
 | utils | 77 | 47 | 16 | 4 | 10 |
 
-Graded examples: 98 (the rows of the README's graded table, `webgpu_textures_2d-array_compressed` among them; its `rung!` spells the name with an underscore). 15 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
+Graded examples: 99 (the rows of the README's graded table, `webgpu_textures_2d-array_compressed` among them; its `rung!` spells the name with an underscore). 15 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
 
 ### Pages
 
-three ships 231 `webgpu_*` pages at 5f610f5. The README headline counts graded pages out of the gradeable ones, and the two tables below are what takes a page out of that denominator or keeps it out of the graded count (#293). A page is **N.A.** when no frame of it can be diffed against three's reference on a headless, session-less, media-less grading machine; the pieces of an N.A. page that are portable are judged as rows above, and the page itself is not a port target. A page is **ignored** when it is ported and its e2e test exists but is `#[ignore]`d because three.js itself fails its own reference screenshot on the grading machine (Intel Iris Xe, Mesa 25.3, Vulkan), so a pass or fail of the port says nothing. Of the 17 pages #293 lists, 16 are N.A. and one (`webgpu_sandbox`) turns out to be an ordinary scene and stays gradeable; 15 pages are ignored; 98 of the 215 gradeable pages are graded.
+three ships 231 `webgpu_*` pages at 5f610f5. The README headline counts graded pages out of the gradeable ones, and the two tables below are what takes a page out of that denominator or keeps it out of the graded count (#293). A page is **N.A.** when no frame of it can be diffed against three's reference on a headless, session-less, media-less grading machine; the pieces of an N.A. page that are portable are judged as rows above, and the page itself is not a port target. A page is **ignored** when it is ported and its e2e test exists but is `#[ignore]`d because three.js itself fails its own reference screenshot on the grading machine (Intel Iris Xe, Mesa 25.3, Vulkan), so a pass or fail of the port says nothing. Of the 17 pages #293 lists, 16 are N.A. and one (`webgpu_sandbox`) turns out to be an ordinary scene and stays gradeable; 15 pages are ignored; 99 of the 215 gradeable pages are graded.
 
 Three's own `test/e2e/puppeteer.js` still screenshots 13 of the 17 (it excepts only the three TSL editors and `webgpu_compute_audio`), so most have a reference JPEG; the third column says what that JPEG is a picture of and why diffing the port against it would not verify the page.
 
@@ -346,7 +346,7 @@ Ported, `#[ignore]`d. Each row gives three's own score against its reference JPE
 | `RawShaderMaterial` | N.A. | — | — | GLSL shaders |
 | `ShaderMaterial` | N.A. | — | — | GLSL shaders |
 | `PointsMaterial` | Partial | MaterialKind::Points, ::points (src/materials/mod.rs:811) | tests/renderer_points.rs; webgpu_instance_points, webgpu_compute_points | no size scalar (materialPointSize) or attenuated sprite-size branch (node_material.rs:880) |
-| `MeshPhysicalMaterial` | Partial | MaterialKind::Physical, ::physical (src/materials/mod.rs:939) | webgpu_clearcoat, webgpu_loader_gltf_sheen, webgpu_furnace_test, webgpu_loader_gltf_iridescence | no dispersion, sheen/diffuseRoughness maps, anisotropic direct BRDF; transmission off (#228) |
+| `MeshPhysicalMaterial` | Partial | MaterialKind::Physical, ::physical (src/materials/mod.rs:939) | webgpu_clearcoat, webgpu_loader_gltf_sheen, webgpu_furnace_test, webgpu_loader_gltf_iridescence, webgpu_materials_transmission | no dispersion, sheen/diffuseRoughness maps, anisotropic direct BRDF |
 | `MeshStandardMaterial` | Partial | MaterialKind::Standard, ::standard (src/materials/mod.rs:925) | webgpu_lights_physical, webgpu_loader_gltf | no displacementMap, lightMap, per-material envMapIntensity/Rotation; raw envMap ignored (needs pmrem_env) |
 | `MeshPhongMaterial` | Partial | MaterialKind::Phong, ::phong (src/materials/mod.rs:884) | webgpu_lights_phong, webgpu_shadowmap | no lightMap, specularMap, displacementMap; envMap and aoMap ignored (docs/api.md §7) |
 | `MeshToonMaterial` | Partial | MaterialKind::Toon, ::toon (src/materials/mod.rs:914) | webgpu_materials_toon | no lightMap, displacementMap; aoMap ignored |
@@ -369,7 +369,7 @@ Ported, `#[ignore]`d. Each row gives three's own score against its reference JPE
 | `MeshLambertNodeMaterial` | Partial | MeshLambertNodeMaterial alias (src/materials/mod.rs:954) | tests/room_environment.rs (kind only) | no graded render; no lightMap/specularMap/displacementMap, envMap/aoMap ignored |
 | `MeshPhongNodeMaterial` | Partial | MeshPhongNodeMaterial alias (src/materials/mod.rs:950), src/materials/phong.rs | webgpu_lights_phong | no lightMap, specularMap, displacementMap; envMap and aoMap ignored (docs/api.md §7) |
 | `MeshStandardNodeMaterial` | Partial | MeshStandardNodeMaterial alias (src/materials/mod.rs:966), src/materials/physical.rs | webgpu_lights_physical, webgpu_deferred | no displacementMap, lightMap, per-material envMapIntensity/Rotation |
-| `MeshPhysicalNodeMaterial` | Partial | MeshPhysicalNodeMaterial alias (src/materials/mod.rs:969), src/materials/physical.rs | webgpu_clearcoat, webgpu_loader_gltf_iridescence | no dispersion, sheen/diffuseRoughness maps, anisotropic direct BRDF; transmission off (#228) |
+| `MeshPhysicalNodeMaterial` | Partial | MeshPhysicalNodeMaterial alias (src/materials/mod.rs:969), src/materials/physical.rs | webgpu_clearcoat, webgpu_loader_gltf_iridescence, webgpu_materials_transmission | no dispersion, sheen/diffuseRoughness maps, anisotropic direct BRDF |
 | `MeshSSSNodeMaterial` | Absent | — | — | not ported |
 | `MeshToonNodeMaterial` | Partial | MeshToonNodeMaterial alias (src/materials/mod.rs:958), src/materials/toon.rs | webgpu_materials_toon | no lightMap, displacementMap; aoMap ignored |
 | `MeshMatcapNodeMaterial` | Absent | — | — | not ported |
@@ -1218,9 +1218,9 @@ Partial: `attenuationDistance`, `lights`, `pointShadow`, `BRDF_GGX`, `D_GGX`, `D
 | `gapSize` | Absent | — | — | needs LineDashedNodeMaterial and its lineDistance attribute (docs/lines-progress.md:100), or the useDash branch of Line2 and its instanceDistanceStart / instanceDistanceEnd attributes (src/materials/line2.rs:23) |
 | `pointWidth` | Present | point_width (src/nodes/tsl.rs:3699) | tests/nodes_tsl_batch.rs (point_width_matches) |  |
 | `ior` | Present | ior (src/nodes/tsl.rs:2854) | webgpu_furnace_test (graded) |  |
-| `transmission` | Present | transmission (src/nodes/tsl.rs:2920) | webgpu_loader_gltf_transmission (graded); webgpu_materials_transmission (0.198% off) | double-sided pass ungraded; issue 228 |
-| `thickness` | Present | thickness (src/nodes/tsl.rs:2923) | webgpu_loader_gltf_transmission (graded, thicknessTexture); webgpu_materials_transmission (0.198% off) |  |
-| `attenuationDistance` | Partial | attenuation_distance (src/nodes/tsl.rs:2926) | webgpu_materials_transmission (0.198% off) | no graded rung; issue 228 |
+| `transmission` | Present | transmission (src/nodes/tsl.rs:2920) | webgpu_materials_transmission (graded), webgpu_loader_gltf_transmission (graded), webgpu_loader_gltf_anisotropy (graded); tests/nodes_transmission_wgsl.rs | back-side and front-side viewport copies as in three (docs/nodes.md §96.3); dispersion is its own row |
+| `thickness` | Present | thickness (src/nodes/tsl.rs:2923) | webgpu_loader_gltf_transmission (graded, thicknessTexture); webgpu_materials_transmission (graded, at the default 0) |  |
+| `attenuationDistance` | Partial | attenuation_distance (src/nodes/tsl.rs:2926) | webgpu_materials_transmission (graded, at the default) | no graded page sets a finite attenuation distance |
 | `attenuationColor` | Present | attenuation_color (src/nodes/tsl.rs:2929) | webgpu_shadowmap_opacity (graded) |  |
 | `dispersion` | Absent | — | — | needs a dispersion material field and the dispersion loop of getIBLVolumeRefraction, left out of src/materials/transmission.rs:15 |
 | `retroreflectivity` | Absent | — | — | needs a retroreflectivity material field and the retroreflective lobe of PhysicalLightingModel.direct() (three r187 PhysicalLightingModel.js:689) |
@@ -1477,7 +1477,7 @@ Partial: `colorSpaceToWorking`, `negateOnBackSide`, `viewportTexture`, `viewport
 | `viewportUV` | Present | viewport_uv (src/nodes/tsl.rs:2829) | tests/nodes_tsl_batch.rs (viewport_coords_match) |  |
 | `viewportTexture` | Partial | viewport_texture (src/nodes/display/viewport_texture.rs:153) | — | defined; no gate or graded example reads the per-draw copy yet |
 | `viewportMipTexture` | Absent | — | — | issue 169 |
-| `viewportOpaqueMipTexture` | Absent | — | — | issue 169; transmission uses an internal opaque frame texture; comment only: src/materials/node_material.rs |
+| `viewportOpaqueMipTexture` | Absent | — | — | issue 169; transmission uses two internal renderer textures, the opaque frame and a back-side copy, each copied at its first read (docs/nodes.md §96.3); comment only: src/materials/node_material.rs |
 | `viewportSharedTexture` | Present | viewport_shared_texture (src/nodes/display/viewport_texture.rs:132) | webgpu_backdrop (graded); tests/nodes_display_wgsl.rs refraction_backdrop_matches_three; tests/nodes_water_wgsl.rs (Water2Mesh) | issue 169 closed |
 | `viewportDepthTexture` | Partial | viewport_depth_texture (src/nodes/display/viewport_texture.rs:173) | — | defined; no gate or graded example reads it yet |
 | `viewZToOrthographicDepth` | Present | view_z_to_orthographic_depth (src/nodes/tsl.rs:1057) | tests/nodes_tsl_batch.rs (depth_pass_matches) | through PassNode::linear_depth_node |

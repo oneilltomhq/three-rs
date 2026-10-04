@@ -151,8 +151,7 @@ pub fn from_equirectangular_texture(
     // `const currentMRT = renderer.getMRT(); renderer.setMRT( null )` — the
     // conversion writes one attachment however many the frame that asked for it
     // has.
-    let previous_mrt = renderer.mrt();
-    let previous_target = renderer.render_target();
+    let mut renderer = renderer.save_state();
     renderer.set_mrt(None);
     renderer.set_render_target(Some(face_target.clone()));
 
@@ -166,9 +165,7 @@ pub fn from_equirectangular_texture(
         renderer.render(&mut scene, &mut camera);
         renderer.copy_to_cube_layer(&face_target, &cube, layer as u32, 0);
     }
-
-    renderer.set_render_target(previous_target);
-    renderer.set_mrt(previous_mrt);
+    drop(renderer);
 
     Ok(cube)
 }

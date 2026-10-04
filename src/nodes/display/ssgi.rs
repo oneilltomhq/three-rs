@@ -959,13 +959,7 @@ impl NodeUpdate for SsgiState {
         }
 
         // `_rendererState = RendererUtils.resetRendererState( renderer, … )`.
-        let previous_target = renderer.render_target();
-        let previous_mrt = renderer.mrt();
-        let previous_auto_clear = renderer.auto_clear;
-        let previous_clear_color = renderer.clear_color();
-        let previous_clear_alpha = renderer.clear_alpha();
-        renderer.set_mrt(None);
-        renderer.auto_clear = true;
+        let mut renderer = renderer.reset_state();
         renderer.set_clear_color(Color::new(1.0, 1.0, 1.0), 1.0);
 
         renderer.set_render_target(Some(self.target.clone()));
@@ -973,10 +967,7 @@ impl NodeUpdate for SsgiState {
         renderer.set_render_target(None);
 
         // `RendererUtils.restoreRendererState( renderer, _rendererState )`.
-        renderer.set_render_target(previous_target);
-        renderer.set_mrt(previous_mrt);
-        renderer.set_clear_color(previous_clear_color, previous_clear_alpha);
-        renderer.auto_clear = previous_auto_clear;
+        drop(renderer);
         true
     }
 }

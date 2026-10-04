@@ -51,7 +51,7 @@ use std::rc::Rc;
 
 use crate::cameras::{PerspectiveCamera, RenderCamera};
 use crate::materials::MeshBasicNodeMaterial;
-use crate::math::{Color, Matrix4};
+use crate::math::Matrix4;
 use crate::nodes::frame::register_texture_update;
 use crate::nodes::node::{SettableValue, TextureSource, Type};
 use crate::nodes::tsl::{
@@ -379,14 +379,7 @@ impl NodeUpdate for TaauState {
         let (width, height) = renderer.drawing_buffer_size();
 
         // `_rendererState = RendererUtils.resetRendererState( renderer, … )`.
-        let previous_target = renderer.render_target();
-        let previous_mrt = renderer.mrt();
-        let previous_auto_clear = renderer.auto_clear;
-        let previous_clear_color = renderer.clear_color();
-        let previous_clear_alpha = renderer.clear_alpha();
-        renderer.set_mrt(None);
-        renderer.set_clear_color(Color::new(0.0, 0.0, 0.0), 1.0);
-        renderer.auto_clear = true;
+        let mut renderer = renderer.reset_state();
 
         let needs_restart = self.history.size() != (width, height);
         self.set_size(width, height);
@@ -438,10 +431,7 @@ impl NodeUpdate for TaauState {
         }
 
         // `RendererUtils.restoreRendererState( renderer, _rendererState )`.
-        renderer.set_render_target(previous_target);
-        renderer.set_mrt(previous_mrt);
-        renderer.set_clear_color(previous_clear_color, previous_clear_alpha);
-        renderer.auto_clear = previous_auto_clear;
+        drop(renderer);
         true
     }
 }

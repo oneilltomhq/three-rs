@@ -661,16 +661,9 @@ impl PassState {
         self.camera_near.1.set(vec![near]);
         self.camera_far.1.set(vec![far]);
 
-        let previous = renderer.render_target();
-        let previous_mrt = renderer.mrt();
-        let previous_auto_clear_depth = renderer.auto_clear_depth;
-        let previous_opaque = renderer.opaque;
-        let previous_transparent = renderer.transparent;
-        let previous_lighting = renderer.lighting_enabled;
-        let previous_context_shadow = renderer.context_shadow.take();
-        let previous_context_ao = renderer.context_ao.take();
-        let previous_layers = renderer.camera_layers;
-        let previous_function = renderer.render_object_function.clone();
+        // `const currentRenderTarget = renderer.getRenderTarget()` and the
+        // rest of the save, restored when the scope drops.
+        let mut renderer = renderer.save_state();
 
         renderer.set_render_target(Some(self.render_target.clone()));
         renderer.set_mrt(self.mrt.borrow().clone());
@@ -682,33 +675,18 @@ impl PassState {
         // .getFlowContextData(), ...this.contextNode.getFlowContextData() } )`
         // — the pass's `getShadow` and `getAO` each win over an outer one,
         // and an outer one survives a pass that sets none.
-        renderer.context_shadow = self
-            .context_shadow
-            .borrow()
-            .clone()
-            .or_else(|| previous_context_shadow.clone());
-        renderer.context_ao = self
-            .context_ao
-            .borrow()
-            .clone()
-            .or_else(|| previous_context_ao.clone());
+        if let Some(shadow) = self.context_shadow.borrow().clone() {
+            renderer.context_shadow = Some(shadow);
+        }
+        if let Some(ao) = self.context_ao.borrow().clone() {
+            renderer.context_ao = Some(ao);
+        }
         renderer.camera_layers = *self.layers.borrow();
         if let Some(function) = self.render_object_function.borrow().clone() {
             renderer.render_object_function = Some(function);
         }
 
-        render(renderer);
-
-        renderer.set_render_target(previous);
-        renderer.set_mrt(previous_mrt);
-        renderer.auto_clear_depth = previous_auto_clear_depth;
-        renderer.opaque = previous_opaque;
-        renderer.transparent = previous_transparent;
-        renderer.lighting_enabled = previous_lighting;
-        renderer.context_shadow = previous_context_shadow;
-        renderer.context_ao = previous_context_ao;
-        renderer.camera_layers = previous_layers;
-        renderer.render_object_function = previous_function;
+        render(&mut renderer);
     }
 }
 

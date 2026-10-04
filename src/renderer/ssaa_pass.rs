@@ -225,11 +225,17 @@ impl SsaaPassNode {
         self.pass.render_target().set_size(width, height);
         self.sample_render_target.set_size(width, height);
 
-        let previous_target = renderer.render_target();
-        let previous_auto_clear = renderer.auto_clear;
+        // `currentRenderTarget`, `currentMRT`, `currentAutoClear`: the
+        // scope puts them back when it ends. The clear colour is read here
+        // for the first sample's `setClearColor( currentClearColor,
+        // currentClearAlpha )`.
+        let mut renderer = renderer.save_state();
         let previous_clear_color = renderer.clear_color();
         let previous_clear_alpha = renderer.clear_alpha();
 
+        // `renderer.setMRT( this.getMRT() )`: the samples render with the
+        // pass's own MRT, not the one the frame had.
+        renderer.set_mrt(self.pass.mrt());
         // `renderer.autoClear = false`: every pass below loads, and the only
         // things that clear are the explicit `clear()` calls.
         renderer.auto_clear = false;
@@ -312,9 +318,6 @@ impl SsaaPassNode {
         if original.is_none() {
             camera.clear_view_offset();
         }
-
-        renderer.set_render_target(previous_target);
-        renderer.auto_clear = previous_auto_clear;
     }
 }
 

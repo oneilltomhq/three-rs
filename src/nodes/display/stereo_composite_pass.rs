@@ -1,7 +1,8 @@
 //! Port of `three.js/examples/jsm/tsl/display/StereoCompositePassNode.js`,
 //! the abstract base of [`AnaglyphPassNode`](super::AnaglyphPassNode) and
-//! [`ParallaxBarrierPassNode`](super::ParallaxBarrierPassNode), and of the
-//! two `RendererUtils` functions every stereo pass brackets its render with.
+//! [`ParallaxBarrierPassNode`](super::ParallaxBarrierPassNode). Every stereo
+//! pass brackets its render with `RendererUtils.resetRendererState()` and
+//! `restoreRendererState()`, which are the renderer's `reset_state()` scope.
 //!
 //! Three's class is a `PassNode` subclass: its `renderTarget` is the pass's,
 //! its `getTextureNode()` the pass's, and `PassNode.setup()` still sets
@@ -23,60 +24,12 @@ use std::rc::Rc;
 
 use crate::cameras::{PerspectiveCamera, StereoCamera};
 use crate::materials::MeshBasicNodeMaterial;
-use crate::math::{Color, CoordinateSystem};
+use crate::math::CoordinateSystem;
 use crate::nodes::frame::register_texture_update;
 use crate::nodes::{NodeRef, NodeUpdate, NodeUpdateType};
 use crate::objects::QuadMesh;
 use crate::renderer::{PassNode, RenderTarget, RenderTargetOptions, Renderer, SceneRef};
 use crate::textures::{Texture, TextureFilter, TextureType};
-
-/// What `RendererUtils.resetRendererState()` saves and
-/// `restoreRendererState()` puts back, as far as a stereo pass can change
-/// it.
-///
-/// Three saves the whole renderer state (tone mapping, exposure, output
-/// colour space, pixel ratio, scissor test, …) and resets five things: the
-/// MRT, the render-object function, the clear colour and alpha, and
-/// `autoClear`. Nothing between the two calls of a stereo pass touches the
-/// rest, so restoring it would write back what is already there. The render
-/// target is saved too, as `restoreRendererState()` restores it.
-pub(super) struct RendererState {
-    render_target: Option<RenderTarget>,
-    mrt: Option<crate::nodes::MrtNode>,
-    render_object_function: Option<Rc<MeshBasicNodeMaterial>>,
-    auto_clear: bool,
-    clear_color: Color,
-    clear_alpha: f64,
-}
-
-impl RendererState {
-    /// `RendererUtils.resetRendererState( renderer, state )`: save, then
-    /// `setMRT( null )`, `setRenderObjectFunction( null )`,
-    /// `setClearColor( 0x000000, 1 )` and `autoClear = true`.
-    pub(super) fn reset(renderer: &mut Renderer) -> Self {
-        let state = Self {
-            render_target: renderer.render_target(),
-            mrt: renderer.mrt(),
-            render_object_function: renderer.toon_outline.take(),
-            auto_clear: renderer.auto_clear,
-            clear_color: renderer.clear_color(),
-            clear_alpha: renderer.clear_alpha(),
-        };
-        renderer.set_mrt(None);
-        renderer.set_clear_color(Color::new(0.0, 0.0, 0.0), 1.0);
-        renderer.auto_clear = true;
-        state
-    }
-
-    /// `RendererUtils.restoreRendererState( renderer, state )`.
-    pub(super) fn restore(self, renderer: &mut Renderer) {
-        renderer.set_render_target(self.render_target);
-        renderer.set_mrt(self.mrt);
-        renderer.toon_outline = self.render_object_function;
-        renderer.set_clear_color(self.clear_color, self.clear_alpha);
-        renderer.auto_clear = self.auto_clear;
-    }
-}
 
 /// The renderer's `coordinateSystem`, which the stereo passes copy onto
 /// their eye cameras. A `WebGPURenderer`'s is always WebGPU's.
@@ -238,7 +191,7 @@ impl NodeUpdate for CompositeState {
 
     /// `StereoCompositePassNode.updateBefore( frame )`.
     fn update_before(&self, renderer: &mut Renderer) -> bool {
-        let state = RendererState::reset(renderer);
+        let mut renderer = renderer.reset_state();
 
         //
 
@@ -268,7 +221,7 @@ impl NodeUpdate for CompositeState {
         renderer.render_quad(&self.quad.borrow());
 
         // restore
-        state.restore(renderer);
+        drop(renderer);
         true
     }
 

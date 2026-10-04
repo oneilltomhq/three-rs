@@ -6219,15 +6219,12 @@ With a zero-alpha clear, the blend leaves a line pixel's alpha at its blend
 weight. `renderOutput`'s unpremultiply then lifts that pixel back to the
 line's full colour, and the anti-aliasing is undone.
 
-**State save and restore.** Both nodes save and then restore these:
-
-- the render target and its mip level;
-- the MRT;
-- the clear colour and alpha;
-- `auto_clear`.
-
-Three's `RendererUtils.resetRendererState()` / `restoreRendererState()` do
-the same. SMAA resizes its three targets to `drawing_buffer_size()` every
+**State save and restore.** Both nodes render inside the renderer's
+`reset_state()` scope (`src/renderer/renderer_state.rs`, #252), which is
+three's `RendererUtils.resetRendererState()`: it saves the renderer's whole
+per-render state, then clears the MRT and the render-object function, sets
+an opaque black clear colour and turns `auto_clear` on. Dropping the scope
+is `restoreRendererState()`. SMAA resizes its three targets to `drawing_buffer_size()` every
 frame. That is a no-op once the size is current.
 
 **SMAA's lookup textures.** `SMAANode.js` embeds them as base64 PNGs.
@@ -7980,9 +7977,6 @@ same order in `f64`. Changing `algorithm` or `colorMode` writes the two
 - `material.contextNode = context( builder.getSharedContext() )` on the
   composite quads. The port's quad materials build in their own context, as
   every other display node's do.
-- The full `resetRendererState()`. The port saves and restores only what a
-  stereo pass changes: the render target, MRT, render-object function, clear
-  colour and alpha, and `autoClear`.
 - `dispose()`. The targets and materials are dropped with the node.
 
 ## 82. `OITPassNode` (`webgpu_oit`)
@@ -9614,3 +9608,129 @@ screenshot: in `init()` after setting `autoRotate`, through its explicit
 `render()` in `init()`, and in the single animation frame the harness fires.
 The port makes the same three calls. Dispersion and retroreflection, the last
 two `PhysicalLightingModel` flags, are still off for every material.
+## 96. `webgpu_materials_transmission` — an alpha map, and two transmission copies
+
+The transmission sphere page (`examples/webgpu_materials_transmission.rs`,
+`docs/webgpu_materials_transmission-progress.md`) is a `transmission: 1`,
+`DoubleSide`, `transparent` sphere in front of the royal esplanade, with no
+lights. It reuses §26's transmission graph whole. It adds an alpha map, and it
+showed two renderer gaps in how the transmission textures are filled. Graded
+at 16 of 100000; `tests/nodes_transmission_wgsl.rs` gates both halves of the
+split against three's `m12` (back) and `m14` (front).
+
+### 96.1 `alphaMap` is `materialOpacity`'s second operand, read red
+
+`MaterialNode.js`' `OPACITY` scope is
+
+```js
+const opacityNode = this.getFloat( scope );
+if ( material.alphaMap && material.alphaMap.isTexture === true ) {
+    node = opacityNode.mul( this.getTexture( 'alpha' ) );
+}
+```
+
+`opacityNode` is a `float` and `getTexture()` is a `vec4`, so the product is a
+`vec4`. The scope's type is `float`, so the builder narrows it on the way out,
+and narrowing takes the **first** component. Three's dump writes it as
+`DiffuseColor.w = ( vec4<f32>( DiffuseColor.w ) * ( vec4<f32>( opacity ) *
+alphaSample ) ).x;`. An `alphaMap` on the WebGPU path is therefore read
+through its *red* channel. `WebGLRenderer` reads green
+(`diffuseColor.a *= texture2D( alphaMap, vAlphaMapUv ).g`). The port follows
+the node path (`node_material::material_opacity_for()`), and the gate checks
+the two lines. On this page the map is white or fully transparent, so the
+channels agree; on a coloured map they would not.
+
+### 96.2 The page's canvas texture
+
+`generateTexture()` is a 2×2 canvas, cleared to `rgba( 0, 0, 0, 0 )` and then
+`fillRect( 0, 1, 2, 1 )` in white, so the *bottom* row is opaque. As a
+`CanvasTexture` it has `flipY = true`, `NoColorSpace` and mipmaps. The page sets
+`magFilter = NearestFilter`, `wrapS = wrapT = RepeatWrapping` and
+`repeat.set( 1, 3.5 )`. The port writes the same four texels top row first and
+lets the uploader's `flipY` do what the canvas upload does. The 3.5 repeats over
+the sphere's `v` make the seven bands.
+
+### 96.3 Two transmission textures, each copied at its first read
+
+`getTransmissionSample()` picks its source by the material's side
+(`PhysicalLightingModel.js`):
+
+```js
+const viewportBackSideTexture = viewportMipTexture();
+const viewportFrontSideTexture = viewportOpaqueMipTexture();
+// …
+const vTexture = material.side === BackSide ? viewportBackSideTexture : viewportFrontSideTexture;
+```
+
+They are two `ViewportTextureNode`s, with two `FramebufferTexture`s. Each node's
+`updateBefore()` copies the framebuffer into its texture and generates mips.
+`updateBeforeType` is `RENDER`, and `NodeFrame` keys it on the texture that
+`updateReference()` returns, so each texture is copied once per render, at the
+first draw that reads it. `_renderTransparents()` draws the transmissive
+`DoubleSide` list with `side = BackSide` first and then the transparent list
+with `side = FrontSide`. So:
+
+- the back texture is copied before the back faces go down, and holds the
+  opaque frame (here, the background);
+- the front texture is copied *after* the back faces, so the front face of the
+  glass refracts the sphere's own back. The back face holds the ceiling lights'
+  reflections and the blue and red at the left limb.
+
+The port had one texture, copied before the first transmissive draw and bound
+to both halves. That left the lower opaque band of the sphere about 33 levels
+darker than three's, and scored 208. The renderer now keeps a second mipped
+texture (`Renderer::back_side_frame`) for materials drawn `BackSide`. Each item
+gets the texture for its side. `draw()` queues one copy per distinct texture,
+at the index of the first item that reads it. Copying the same texture twice
+in one pass is what `NodeFrame` prevents. Most pages are unchanged: a
+front-only transmissive scene still makes one copy, at the same draw.
+
+What the port still does not do is `RenderList.transparentDoublePass`. Three
+splits every transmissive `DoubleSide` material, `transparent` or not, and draws
+*all* back faces before *any* front face. The port splits only transparent
+ones (`_renderObjectDirect()`'s rule), per object, in list order. A single
+object draws in the same order either way. Two transmissive spheres, or an
+opaque `DoubleSide` glass, would not. No graded page has either.
+
+### 96.4 The copies' nearest mag filter
+
+`new FramebufferTexture()` sets `magFilter = NearestFilter`.
+`ViewportTextureNode` then overrides only `minFilter`
+(`LinearMipmapLinearFilter`). The port used to make the copy linear in both.
+This matters: `textureBicubicLevel` reads the `floor( lod )` level with an
+explicit `textureSampleLevel( …, level )`. Wherever the LOD is below 1, that is
+level 0, where the sampler magnifies, so three's eight taps there are point
+samples. With the fix the page went from 208 to 205 pixels. The copy timing in
+§96.3 accounts for the rest.
+
+### 96.5 The LOD
+
+"Transmission with `roughness: 0`" sounds like a level-0 read and is not one.
+`log2( cameraViewport.z ) * applyIorToRoughness( Roughness, ior )` is
+`9.64 * Roughness` at 800 px wide. `Roughness` is `max( roughness, 0.045 )`
+plus the geometric roughness from `dpdx( normalViewGeometry )`, and
+`applyIorToRoughness` scales it by `clamp( 2 * ior - 2, 0, 1 )`, 1 at
+`ior: 1.5`. The sphere reads about mip 0.5 at its centre and climbs steeply
+towards the limb. Every transmissive pixel on the page is a mipped read,
+blended between `floor` and `ceil` by `fract( lod )`.
+
+### 96.6 Remaining differences in the shader
+
+These are equivalent, and the gate's module comment lists them:
+
+- Three writes `let nodeConstN` where the port writes `nodeVarN` (§8).
+- Three reads one `specularIntensity` uniform for both `SpecularColor` and
+  `SpecularF90`. The port reads two uniforms with the same value.
+- `textureBicubicLevel`: three packs the two levels' sizes into one `vec4`
+  (`xy` for `floor( lod )`, `zw` for `ceil( lod )`). The port computes each
+  level separately, with the same arithmetic per component.
+
+The flip is static in both: the back half writes
+`normalView = ( normalViewGeometry * vec3<f32>( -1.0 ) )`.
+
+### 96.7 What this page does *not* test
+
+It is still a scene with no lights. No graded example calls
+`PhysicalLightingModel.direct()` on a transmissive material, so transmission
+under a light is untested. So are dispersion and the multi-object
+`transparentDoublePass` order (§96.3).

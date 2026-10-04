@@ -118,6 +118,9 @@ impl Renderer {
     }
 
     /// `ReflectorBaseNode.updateBefore( frame )`.
+    ///
+    /// `_inReflector` is set on entry and cleared on the way out, whichever
+    /// way [`render_reflection`](Self::render_reflection) leaves.
     fn reflector_update_before(
         &mut self,
         reflector: &Reflector,
@@ -130,7 +133,19 @@ impl Renderer {
         }
 
         self.in_reflector = true;
+        self.render_reflection(reflector, scene, camera, object);
+        self.in_reflector = false;
+    }
 
+    /// The body of `ReflectorBaseNode.updateBefore()` between setting and
+    /// clearing `_inReflector`.
+    fn render_reflection(
+        &mut self,
+        reflector: &Reflector,
+        scene: &Scene,
+        camera: &dyn RenderCamera,
+        object: &Node,
+    ) {
         let target = reflector.borrow().target.clone();
 
         // `getVirtualCamera( camera )` / `getRenderTarget( virtualCamera )`.
@@ -191,7 +206,6 @@ impl Renderer {
 
         if is_facing_away && !reflector.borrow().force_update {
             if !reflector.borrow().has_output {
-                self.in_reflector = false;
                 reflector
                     .borrow_mut()
                     .virtual_cameras
@@ -277,31 +291,27 @@ impl Renderer {
 
         set_material_visible(object, false);
 
-        let current_render_target = self.render_target.clone();
-        let current_mrt = self.mrt.clone();
-        let current_auto_clear = self.auto_clear;
+        // `currentRenderTarget`, `currentMRT` and `currentAutoClear`, put back
+        // when the scope ends.
+        {
+            let mut renderer = self.save_state();
 
-        self.set_mrt(None);
-        self.set_render_target(Some(render_target));
-        self.auto_clear = true;
+            renderer.set_mrt(None);
+            renderer.set_render_target(Some(render_target));
+            renderer.auto_clear = true;
 
-        if needs_clear {
-            self.clear(true, true);
+            if needs_clear {
+                renderer.clear(true, true);
 
-            reflector.borrow_mut().has_output = false;
-        } else {
-            self.render_nested(scene, &mut virtual_camera);
+                reflector.borrow_mut().has_output = false;
+            } else {
+                renderer.render_nested(scene, &mut virtual_camera);
 
-            reflector.borrow_mut().has_output = true;
+                reflector.borrow_mut().has_output = true;
+            }
         }
 
-        self.set_mrt(current_mrt);
-        self.set_render_target(current_render_target);
-        self.auto_clear = current_auto_clear;
-
         set_material_visible(object, true);
-
-        self.in_reflector = false;
 
         let mut base = reflector.borrow_mut();
         base.force_update = false;
