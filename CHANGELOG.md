@@ -450,6 +450,19 @@ have their own sections after the release they ship with. The format follows [Ke
   `tools/dump-pages/sharpen.html` in `tests/nodes_display_wgsl.rs`, and
   `tests/sharpen_frames.rs` checks on the GPU that it steepens a soft edge
   without moving flat regions. See `docs/nodes.md` §86.
+- **`recurrent_denoise()` / `RecurrentDenoiseNode`** (`nodes::display`), a
+  port of `examples/jsm/tsl/display/RecurrentDenoiseNode.js`: the
+  edge-aware eight-tap Vogel-disk denoiser of the SSR-denoise stack, in
+  `'diffuse'` or `'specular'` mode, with luma, plane, lobe-normal, albedo,
+  roughness and ray-length or AO edge stopping, and an optional Karis
+  temporal blend that writes the frame weight to alpha. Every three uniform
+  is a public `SettableValue`; `set_alpha_source` rebuilds the shader. Both
+  of `tools/dump-pages/recurrent_denoise.html`'s quads (diffuse with AO,
+  and the page's specular configuration) are gated against three's dump in
+  `tests/nodes_display_wgsl.rs`, with function gates for the layouted
+  helpers, and `tests/recurrent_denoise_frames.rs` checks on the GPU that it
+  cuts a noisy face's variance without moving its mean or its silhouette,
+  and keeps cutting it as frames accumulate. See `docs/nodes.md` §88.
 
 ### Changed
 

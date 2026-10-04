@@ -8519,3 +8519,152 @@ darkens and its shoulder lightens, and the flat regions do not move. At 1
 the edge moves less in total than at 0. With `denoise`, no pixel moves
 further than without it. After a resize the target follows the drawing
 buffer.
+
+## 88. `RecurrentDenoiseNode` (`webgpu_postprocessing_ssr_denoise`)
+
+### 88.1 What three does
+
+`recurrentDenoise( inputTexture, camera, options )` is a plain `Node` with
+`updateBeforeType = FRAME`. It owns one half-float target with no depth
+buffer, and its texture node is `passTexture( this, target.texture )`.
+`updateBefore()` sizes the target to the drawing buffer and remembers
+whether that changed it. It copies the camera's projection, its inverse,
+`matrixWorldInverse` and `fov`, and sets `_noiseIndex` to the frame id.
+When the input is a pass texture it asks for that pass first
+(`frame.updateBeforeNode( textureNode.passNode )`), because the quad is
+drawn here and not through the pipeline's output graph. A restart inits
+and clears the target. Then one quad, `RecurrentDenoise`, is drawn with the
+renderer's state reset around it.
+
+The options are `depth`, `normal` (packed, unpacked by the node),
+`metalRoughness` (x metalness, y roughness), `diffuse`, `raw`, `mode`
+(`'diffuse'` or `'specular'`) and `accumulate`. `alphaSource`
+(`'raylength'`, `'ao'` or `'none'`) is a plain property that `setup()`
+reads, so it is compiled into the shader.
+
+The fragment is `denoiseFn( uv() )`, an inline `Fn` that discards the
+background (`depth >= 1`) and runs `runDenoise` otherwise:
+
+- **The centre.** It reads the view and world normals, the input texel,
+  the view position, the roughness and metalness, and the raw texel.
+  `frameNum = 1 / texel.a` gives
+  `aggressivity = 1 - getTemporalVarianceFactor( frameNum, 1 - strength )`.
+- **Neighbourhood stats.** `getNeighborhoodStats` is a layouted `Fn` local
+  to `setup()`. Over the raw texel and its four axis neighbours it takes
+  an inverse-length-weighted mean ray length, where an environment miss
+  counts as 0.25 and sets a flag. When `adaptiveTrust > 0` it also keeps a
+  running luma mean and deviation. `'raylength'` calls it unconditionally.
+  The other sources call it only when `adaptiveTrust > 0`, for the luma
+  terms.
+- **The radius.** `radius · 0.1` is scaled by ray length, view depth and
+  `sqrt( roughness )` (`'specular'`), or by AO² and view depth
+  (`'diffuse'`). It then closes toward 0.001 of itself as `aggressivity`
+  rises.
+- **The kernel frame.** `'specular'` spans the plane across the reflection
+  of the specular dominant direction, with the tangent skewed by roughness
+  at grazing angles. `'diffuse'` spans the tangent plane, from
+  `normalize( cross( up, n ) )`.
+- **The loop.** There are eight taps on a golden-angle Vogel disk, rotated
+  per pixel by the analytic R² noise (`bindAnalyticNoise( resolution, 83 )`
+  at `_noiseIndex`). Each tap is placed in view space and projected back to
+  screen space, then mirrored into the frame. Its weight is
+  `exp( -( kernelDiff · aggressivity + planeDistance · depthScale ) )`
+  times `lobeNormalWeight`. `kernelDiff` sums four terms:
+  - luma, always;
+  - albedo, `diffuseColorDistance` scaled by metalness, only when
+    `diffuse` is bound;
+  - alpha, which is the AO ratio, or the hit-distance-factor difference
+    with environment misses accepted when the neighbourhood has one;
+  - roughness, in `'specular'` mode.
+
+  After each tap, `radiusShrink` and `polarBias` feed back into the next.
+  In the first five frames the weight leans toward dark taps, against
+  fireflies. With `smoothDisocclusions`, a neighbour that is further along
+  than the centre also pulls its frame count.
+- **The resolve.** The colours are normalised. With `accumulate`, the frame
+  weight `a` goes to alpha, and the colour is
+  `karisTemporalBlend( denoised, denoisedRaw, a, … )`, an inverse-luminance
+  blend whose flicker weighting is backed off where the neighbourhood is
+  calm. A missing `raw` uses `mix()` instead. Without `accumulate`, the
+  input's alpha passes through.
+
+Thirteen module-level `Fn`s carry the maths. Twelve have layouts. `mapAo`,
+which is `pow( x, 0.1 )`, has none and inlines.
+
+### 88.2 The port
+
+`nodes::display::recurrent_denoise( &Texture, camera, RecurrentDenoiseOptions )`
+takes the input as a texture, which is what three's `toTextureNode()` reads
+it through. The G-buffer options are `SampleFn`s (§65), which is three's
+`node.sample( uv )`. `depth` is a `DepthTexture`, and `raw` is a `Texture`.
+`set_alpha_source` rebuilds the quad material, as `SsrNode`'s
+`set_blur_quality` does. The thirteen public uniforms are `SettableValue`s
+with three's defaults. `smooth_disocclusions` is a bool uniform.
+`RecurrentDenoiseState` implements `NodeUpdate` and is registered as the
+updater of its target's texture. The input's pass is found in the frame's
+texture-update registry (§57) and run through `update_before_node`, as
+`SsrNode` does. Each layouted `Fn` is an `#[inline(never)]` helper cached in
+a `thread_local`. The exception is `getNeighborhoodStats`, which closes over
+the raw texture, the resolution and `alphaSource`, so each material builds
+its own.
+
+`tools/dump-pages/recurrent_denoise.html` builds a scene pass with the
+page's MRT: `diffuseColor` carries metalness in alpha, and the packed normal
+carries roughness. Over it runs a diffuse denoiser with `alphaSource = 'ao'`,
+and then, as the output node, the page's specular configuration with
+`alphaSource = 'raylength'` and `accumulate`, reading the first. The dump's
+`m09` (diffuse) and `m05` (specular) are the fixtures of the gates:
+
+- `recurrent_denoise_diffuse_matches_three` and
+  `recurrent_denoise_specular_matches_three` gate the two bodies.
+- Function gates cover `getNeighborhoodStats` in both of its variants,
+  `karisTemporalBlend`, `lobeNormalFalloff`, `vogelDisk`,
+  `diffuseColorDistance`, `computeHitDistFactor` and
+  `getSpecularDominantDirection`.
+
+Two details of the dump page differ from the brief:
+
+- **`raw` is bound on the diffuse node.** In r187 a missing `raw` always
+  throws, because `getNeighborhoodStats` is built for every `alphaSource`
+  and calls `texture( null )`. So the page passes the scene colour as
+  `raw`.
+- **The specular node reads the diffuse node directly**, as the real page
+  reads its temporal reprojection, so there is no `convertToTexture()`
+  between them.
+
+Like three, the port declares the ray-length sums of `getNeighborhoodStats`
+only when they are read.
+
+What differs from three:
+
+- **A missing `raw`.** Three throws, as above. The port reads the input
+  texture in its place, which is the fallback the source's own comment
+  describes, and keeps three's `mix()` branch for the temporal blend.
+- **`contextNode`.** `material.contextNode = context(
+  builder.getSharedContext() )` is not ported. The quad material is built in
+  the constructor, as `SharpenNode`'s is (§86).
+- **`dispose()`** consumes the node. The texture registry holds it weakly,
+  so the target's GPU texture goes with its last handle.
+- **The camera** is a `PerspectiveCamera`, the only kind three copies a
+  `fov` from.
+
+One behaviour of three's is kept and worth knowing. In `'diffuse'` mode, a
+view normal exactly along the view axis makes `normalize( cross( up, n ) )`
+the normalisation of a zero vector. The `length < 1e-6` fallback does not
+catch that result, so every tap lands off the surface and weighs nothing,
+and the pixel passes through unfiltered.
+
+`tests/recurrent_denoise_frames.rs` renders a box turned off the view axis.
+Its unlit grey is modulated by ±10 % of a hash of the pixel and a
+per-frame seed. The denoiser reads the beauty as `raw`, and its input is a
+history texture that the test refills from the node's output after every
+frame. The test advances the alpha from `1 / n` to `1 / ( n + 1 )`, which
+is what `TemporalReprojectNode` does with a still camera. The test checks
+the following:
+
+- One frame cuts the face's variance to under a quarter of the input's
+  (24.2 to 4.1) and keeps its mean within three levels.
+- The silhouette stays within two pixels.
+- Over thirteen frames of fresh noise the variance keeps dropping
+  (4.1, 1.1, 0.6, 0.35), and no texel is NaN.
+- A resize restarts the target at the new size.
