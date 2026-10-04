@@ -110,6 +110,13 @@ pub struct PassState {
     /// `PixelationPassNode.pixelSize` — the target is the drawing buffer's
     /// size divided by this, floored. 1 for every other pass.
     size_divisor: std::cell::Cell<u32>,
+    /// `PassNode._resolutionScale` — the target is `Math.floor( size *
+    /// resolutionScale )`. 1 by default; `RetroPassNode` sets 0.25.
+    resolution_scale: Cell<f64>,
+    /// The render-object function the pass installs on the renderer for the
+    /// length of its own render, as `RetroPassNode.updateBefore()` does
+    /// around `super.updateBefore()`. `None` leaves the renderer's as it is.
+    render_object_function: RefCell<Option<Rc<dyn super::RenderObjectFunction>>>,
     /// `PassNode.opaque` / `.transparent` / `lighting.enabled`.
     opaque: Cell<bool>,
     transparent: Cell<bool>,
@@ -252,6 +259,8 @@ impl PassNode {
             owns_depth_texture: options.depth_texture.is_none(),
             layers: RefCell::new(None),
             size_divisor: std::cell::Cell::new(1),
+            resolution_scale: Cell::new(1.0),
+            render_object_function: RefCell::new(None),
             opaque: Cell::new(true),
             transparent: Cell::new(true),
             lighting_enabled: Cell::new(true),
@@ -287,6 +296,29 @@ impl PassNode {
     /// overrides `setSize()` in three.js.
     pub(crate) fn set_size_divisor(&self, divisor: u32) {
         self.size_divisor.set(divisor);
+    }
+
+    /// `passNode.setResolutionScale( resolutionScale )` — the render target
+    /// becomes `Math.floor( drawingBuffer * resolutionScale )` on the next
+    /// render. `RetroPassNode` renders at a quarter of the canvas this way.
+    pub fn set_resolution_scale(&self, resolution_scale: f64) {
+        self.resolution_scale.set(resolution_scale);
+    }
+
+    /// `passNode.getResolutionScale()`.
+    pub fn resolution_scale(&self) -> f64 {
+        self.resolution_scale.get()
+    }
+
+    /// Install `function` on the renderer for the length of every render of
+    /// this pass — `renderer.setRenderObjectFunction( … )` around
+    /// `super.updateBefore( frame )`, with the previous function put back
+    /// after.
+    pub(crate) fn set_render_object_function(
+        &self,
+        function: Option<Rc<dyn super::RenderObjectFunction>>,
+    ) {
+        *self.render_object_function.borrow_mut() = function;
     }
 
     /// The pass's depth attachment, sampled at `coord` — the tap
@@ -562,6 +594,20 @@ impl PassNode {
             renderer.render(scene, camera)
         });
     }
+
+    /// `PassNode.updateBefore()`'s bracket — the target sized to the
+    /// drawing buffer, its samples, the previous textures, `cameraNear` /
+    /// `cameraFar`, `setRenderTarget()` / `setMRT()` and their restore —
+    /// around a render of the caller's: `StereoPassNode`'s two eyes.
+    pub(crate) fn render_with(
+        &self,
+        renderer: &mut Renderer,
+        near: f64,
+        far: f64,
+        render: impl FnOnce(&mut Renderer),
+    ) {
+        self.0.render_with(renderer, near, far, render);
+    }
 }
 
 impl PassState {
@@ -572,7 +618,8 @@ impl PassState {
     /// `render` is the `renderer.render( this.scene, this.camera )` call, so
     /// that a pass holding its scene in a `RefCell` can render it through a
     /// shared borrow (see [`update_before`](NodeUpdate::update_before)).
-    fn render_with(
+    /// `OITPassNode` renders twice inside it.
+    pub(crate) fn render_with(
         &self,
         renderer: &mut Renderer,
         near: f64,
@@ -584,6 +631,20 @@ impl PassState {
         // before `PassNode.setSize()` — a divisor of 1 is `PassNode`'s own.
         let divisor = self.size_divisor.get().max(1);
         let (width, height) = (width / divisor, height / divisor);
+        // `PassNode.setSize()`: `Math.floor( this._width *
+        // this._resolutionScale )`, where `updateBefore()` has set `_width`
+        // from `renderer.getDrawingBufferSize()`, which carries the pixel
+        // ratio. Kept at one texel or more: a zero-sized target is invalid
+        // in wgpu, where three's WebGPU backend would fail the frame.
+        let scale = self.resolution_scale.get();
+        let (width, height) = if scale == 1.0 {
+            (width, height)
+        } else {
+            (
+                ((f64::from(width) * scale).floor() as u32).max(1),
+                ((f64::from(height) * scale).floor() as u32).max(1),
+            )
+        };
         self.render_target
             .set_size_keeping_depth(width, height, !self.owns_depth_texture);
         // `PassNode.setup()`: `renderTarget.samples = renderer.samples`.
@@ -609,6 +670,7 @@ impl PassState {
         let previous_context_shadow = renderer.context_shadow.take();
         let previous_context_ao = renderer.context_ao.take();
         let previous_layers = renderer.camera_layers;
+        let previous_function = renderer.render_object_function.clone();
 
         renderer.set_render_target(Some(self.render_target.clone()));
         renderer.set_mrt(self.mrt.borrow().clone());
@@ -631,6 +693,9 @@ impl PassState {
             .clone()
             .or_else(|| previous_context_ao.clone());
         renderer.camera_layers = *self.layers.borrow();
+        if let Some(function) = self.render_object_function.borrow().clone() {
+            renderer.render_object_function = Some(function);
+        }
 
         render(renderer);
 
@@ -643,6 +708,7 @@ impl PassState {
         renderer.context_shadow = previous_context_shadow;
         renderer.context_ao = previous_context_ao;
         renderer.camera_layers = previous_layers;
+        renderer.render_object_function = previous_function;
     }
 }
 

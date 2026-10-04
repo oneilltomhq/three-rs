@@ -205,6 +205,28 @@ impl std::hash::Hash for OutputContext {
 pub struct MrtContext {
     pub node: crate::nodes::MrtNode,
     pub attachments: Vec<String>,
+    /// `builder.getOutputType( index )` per attachment — the type
+    /// `MRTNode.setup()` converts that member to. Empty is `vec4` for every
+    /// attachment, which is every `RGBAFormat` target.
+    pub output_types: Vec<crate::nodes::Type>,
+}
+
+impl MrtContext {
+    /// `node` over `render_target`, as the renderer resolves it for a render
+    /// into that target: its attachment names, and `getOutputType( index )`
+    /// for each attachment ([`RenderTarget::output_types`]).
+    ///
+    /// [`RenderTarget::output_types`]: crate::renderer::RenderTarget::output_types
+    pub fn for_target(
+        node: crate::nodes::MrtNode,
+        render_target: &crate::renderer::RenderTarget,
+    ) -> Self {
+        Self {
+            node,
+            attachments: render_target.attachment_names(),
+            output_types: render_target.output_types(),
+        }
+    }
 }
 
 /// `Renderer._getShadowNodes( material )` composed with
@@ -326,7 +348,9 @@ fn setup_diffuse_color(
     fragment: &mut Vec<NodeRef>,
 ) {
     let color = match &material.color_node {
-        Some(node) => to_vec4(node.clone()),
+        // A deferred `Fn()` colour runs here, in this material's context
+        // (see `resolve_fn_call`).
+        Some(node) => to_vec4(resolve_fn_call(node)),
         // `materialColor` is a vec3 (times `map` when there is one) and stays
         // one until `diffuseColor.assign()` widens it, which is what puts the
         // `vec4<f32>( … , 1.0 )` on the outside of the instance-colour product
@@ -486,6 +510,12 @@ fn setup_tangent(
     // lighting flow reaches resolves to the G-buffer texture instead of to the
     // geometry. See `docs/nodes.md` §27.
     crate::nodes::tsl::with_override_nodes(material.context_overrides.as_ref(), || {
+        // `material.contextNode = context( { … } )`: its keys are in force for
+        // the material's whole setup, so every map tap made below sees them.
+        let _context = material
+            .context_node
+            .as_ref()
+            .map(crate::nodes::builder::push_context_value);
         setup_overridden(material, ctx, fog)
     })
 }
@@ -790,7 +820,7 @@ fn setup_inner(
             Some(material_mrt) => context.node.merge(material_mrt),
             None => context.node.clone(),
         };
-        merged.members(&context.attachments)
+        merged.members(&context.attachments, &context.output_types)
     });
 
     // --- the vertex flow
@@ -823,13 +853,16 @@ fn setup_inner(
         .map(crate::nodes::tsl::resolve_fn_call);
     // `material.outputNode = outputStruct( … )`: the struct *is* the fragment
     // stage's result, written member by member as an MRT's is, but with each
-    // member's own type (see `MaterialFlow::mrt_typed`).
-    let (mrt, mrt_typed, material_output) = match material_output {
+    // member's own type: each member carries it (see `MaterialFlow::mrt`).
+    let (mrt, material_output) = match material_output {
         Some(node) => match node.node() {
-            crate::nodes::Node::OutputStruct { members } => (Some(members.clone()), true, None),
-            _ => (mrt, false, Some(node)),
+            crate::nodes::Node::OutputStruct { members } => (
+                Some(members.iter().map(|m| (m.clone(), m.ty())).collect()),
+                None,
+            ),
+            _ => (mrt, Some(node)),
         },
-        None => (mrt, false, None),
+        None => (mrt, None),
     };
     let (output_assign, output_node) = match &ctx.output {
         Some(context) => (
@@ -854,7 +887,6 @@ fn setup_inner(
         output_assign,
         output_node,
         mrt,
-        mrt_typed,
         emit_output_property: material.fragment_node.is_none(),
         vertex_statements: Vec::new(),
         position,
@@ -1068,8 +1100,26 @@ pub fn background_environment_color_node(
 /// `vec4( backgroundNode ).mul( backgroundIntensity )`. `vec4()` of a node
 /// that already is one is the node itself — `webgpu_equirectangular`'s
 /// `texture( map, equirectUV(), 0 )` — and of a colour it appends `1.0`.
+///
+/// A background node held in an argument-less inline `Fn()` call (see
+/// `tsl::resolve_fn_call`) stays deferred: the whole colour is wrapped in a
+/// call of its own, which `setup_diffuse_color` runs inside the skybox
+/// material's build. three.js runs every `Fn` body there, so `normalWorld` in
+/// `webgpu_postprocessing_retro`'s sky reads the `BackSide` material's
+/// negated `normalView`; built eagerly, it would read the front-sided one.
 #[doc(hidden)]
 pub fn background_node_color_node(node: NodeRef) -> NodeRef {
+    if let crate::nodes::Node::Call { def, args } = node.node() {
+        if !def.layout && args.is_empty() {
+            let deferred = node.clone();
+            return call(
+                &inline_fn(0, Type::Vec4, move |_| {
+                    background_node_color_node(resolve_fn_call(&deferred))
+                }),
+                Vec::new(),
+            );
+        }
+    }
     let color = match node.ty() {
         Type::Vec4 => node,
         _ => vec4_join(vec![node, float(1.0)]),

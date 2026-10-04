@@ -8,7 +8,10 @@
 # Vulkan, except those with a reason after the name, which the reason explains.
 # A name that is not a test target fails both jobs.
 
+three-rs/lut_3d_frames
 three-rs/nodes_frame
+three-rs/oit_frames
+three-rs/outline_frames
 three-rs/pmrem_equirect
 three-rs/pmrem_scene
 three-rs/renderer_blending
@@ -31,6 +34,8 @@ three-rs/renderer_sprites
 three-rs/renderer_textures
 three-rs/renderer_vertex_colors
 three-rs/renderer_viewport
+three-rs/retro_frames
+three-rs/stereo_frames
 three-rs/ssgi_frames
 three-rs/sss_frames
 three-rs/traa_frames

@@ -312,6 +312,70 @@ have their own sections after the release they ship with. The format follows [Ke
   `depth_texture_load`, `all`, `view_z_to_perspective_depth` and
   `get_view_position`. Also `Renderer::init_render_target` and
   `RenderPipeline::claim_view_offset`. (#165)
+- **`retro_pass`** (`nodes::display`), `RetroPassNode.js`: a scene pass at a
+  quarter of the canvas, nearest-filtered, that draws classic materials with
+  snapped vertices, level-0 textures and optional affine mapping. A node
+  material is drawn as itself, as in three. See `docs/nodes.md` §79.
+- **The CRT effects** of `CRT.js` (`barrel_uv`, `barrel_mask`,
+  `color_bleeding`, `scanlines`, `vignette`), `circle` from `Shape.js`, and
+  `bayer_dither` from `Bayer.js`.
+- **`film`, `sepia` and `bleach`**, from `FilmNode.js`, `Sepia.js` and
+  `BleachBypass.js`. No three page uses them, so they are gated against
+  `tools/dump-pages/film_sepia_bleach.html`. See `docs/nodes.md` §80.
+- **`tsl::replace_default_uv`** and **`MeshBasicNodeMaterial::context_node`**.
+  `texture()` now takes its uv from a `getUV` in the build context, and a
+  `getTextureLevel` makes it sample at that level.
+- **`PassNode::set_resolution_scale`** and a crate-private per-draw
+  render-object function on `PassNode`.
+- **glTF `KHR_materials_unlit`**: such a material loads as a basic material.
+- **`webgpu_postprocessing_retro`** in the native viewer. three.js misses its
+  own reference for the page on this machine (1503 of 100000 pixels), so its
+  e2e rung is ignored. Three's dump gates its two post-processing shaders,
+  and `tests/retro_frames.rs` checks the pass on the GPU.
+- **`oit_pass`** (`nodes::display`), `OITPassNode.js`: weighted blended
+  order-independent transparency. Transparent `NormalBlending` materials
+  accumulate into an `rgba16float` / `r8unorm` pair that shares the pass's
+  depth, and the composite does not depend on draw order.
+  `webgpu_oit` is graded at 0 of 100000 pixels. Its shaders are gated against
+  three's dump and `tests/oit_frames.rs` checks order independence on the
+  GPU. See `docs/nodes.md` §82.
+- **`BlendMode` is public** (`materials`), with `BlendMode::new( blending )`
+  and `From<Blending>`. `MrtNode::set_clear_color` / `clear_color` are three's
+  `setClearColor` / `getClearColor`: a per-attachment clear value.
+- **`RenderTarget::set_texture_name( 0, name )`** names the first
+  attachment, which used to answer only to `output` and panic otherwise.
+- **`StereoCamera`** (`cameras`), a port of `StereoCamera.js`, and
+  **`addons::camera_utils::frame_corners`**, `CameraUtils.frameCorners()`.
+  Both are checked against three's own code run under node
+  (`tools/stereo_camera_reference.mjs`).
+- **The stereo display passes** (`nodes::display`): `stereo_pass`,
+  `anaglyph_pass` (all seven `AnaglyphAlgorithm`s in all three
+  `AnaglyphColorMode`s) and `parallax_barrier_pass`. The two composite quads
+  are gated against three's dumps, and `tests/stereo_frames.rs` checks where
+  each eye lands. See `docs/nodes.md` §81.
+- **`webgpu_display_stereo`** is graded: 0 of 100000 pixels.
+- **`outline`** (`nodes::display`), `OutlineNode.js`: selection outlines,
+  with visible and hidden edges, `edgeThickness`, `edgeGlow` and
+  `downSampleRatio`. Its two scene renders go through a crate-private
+  renderer hook that stands in for `setRenderObjectFunction()`. The depth
+  and mask scene materials, the copy, edge-detection, X-blur and composite
+  quads, and the page's output are gated against three's dump; the sprite
+  depth and mask materials (the page has no sprites, so the dump has none)
+  and the Y blurs (one module with the X blur in three) are not.
+  `tests/outline_frames.rs` checks what a selection draws.
+- **`webgpu_postprocessing_outline`** is graded: 15 of 100000 pixels, the
+  same as three's own frame. Nothing is selected in the graded frame.
+- **`lut_3d`** (`nodes::display`), `Lut3DNode.js`, and
+  **`tsl::texture_3d_sampled`**, `texture3D( texture )` with no level.
+- **`LutCubeLoader`**, **`Lut3dlLoader`** and **`LutImageLoader`**
+  (`loaders`). Each is checked byte for byte against three's own loader,
+  quirks included (`tests/loaders_lut.rs`).
+- **`webgpu_postprocessing_3dlut`** is graded: 0 of 100000 pixels.
+  `tests/lut_3d_frames.rs` checks intensity and table swaps.
+- **`ObjLoader`** (`loaders`), `OBJLoader.js` for meshes: `v`, `vn`, `vt`,
+  `f`, `o`, `g`, `s`, `usemtl` and `mtllib`. `l` and `p` elements are
+  refused. There is no `MTLLoader`. Checked against three's parse
+  (`tests/loaders_obj.rs`).
 - **`ssr`** (`nodes::display`), `SSRNode.js`: screen-space reflections, a
   march through the depth buffer with roughness taken from a blurred mip
   chain. `stochastic`, `binaryRefine`, `reflectNonMetals`,
@@ -342,7 +406,8 @@ have their own sections after the release they ship with. The format follows [Ke
 - **`webgpu_postprocessing_dof_basic`** is graded: 36 of 100000 pixels. It
   is the page's own `boxBlur` + `smoothstep` mix, not `DepthOfFieldNode`.
 - **`tsl::output_struct()`**, `outputStruct()` as a material's `outputNode`.
-  Each member keeps its own type, where an `mrt()` member is a `vec4`.
+  Each member keeps its own type, where an `mrt()` member takes its
+  attachment's type.
 - **Red render targets**: `RenderTarget::set_red_format()`. A texture node
   over a one-channel map is now a `float` node read as `.x`, as three's
   `getTextureType()` makes it.
@@ -369,6 +434,17 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Changed
 
+- **`MrtNode::set_blend_mode` takes `impl Into<BlendMode>`** rather than a
+  `Blending`, and returns `&mut Self` so calls chain. `blend_mode()` returns
+  a `BlendMode`. A bare `Blending` still converts. Under an MRT, a target's
+  first attachment now follows `getBlendMode( texture.name )` as in three:
+  the material's blending only when it is named `output`, and no blending
+  for any other unset name. Members take their attachment's channel count as
+  their type, so a one-channel attachment gets an `f32` output.
+- A plain texture sample built outside the fragment stage emits
+  `textureSampleLevel( …, 0 )`, as three's `_generateTextureSample()` does.
+  It used to emit `textureSample`, which WGSL rejects in a vertex shader.
+  The 3dlut page's smoke vertex shader is gated against three's dump.
 - **`InstancedBufferAttribute.array` is private**, read through `array()` and
   written through `array_mut()`, which bumps the new `version()`;
   `set_needs_update()` and `id()` join them. `set_matrix_at` / `set_color_at`
@@ -428,6 +504,12 @@ have their own sections after the release they ship with. The format follows [Ke
   it, as `BasicLightingModel` does.
 - **Skinned shadow casters** are skinned in directional and spot shadow maps.
   Point-light shadows of skinned meshes are still unskinned. (#163)
+- A texture sampled outside the fragment stage, such as in a `positionNode`,
+  emits `textureSampleLevel( …, 0 )`, as three does. It used to emit
+  `textureSample`, which WGSL rejects in a vertex shader.
+- A background that is an inline `Fn()` call is built inside the skybox
+  material, as three builds every `Fn` body. So `normalWorld` in it is the
+  back-side normal.
 
 ## [0.2.0] - 2026-09-29
 

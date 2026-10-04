@@ -284,6 +284,7 @@ Sky, webgpu_sky, "../../examples/webgpu_sky.rs";
 Backdrop, webgpu_backdrop, "../../examples/webgpu_backdrop.rs";
 PostprocessingMotionBlur, webgpu_postprocessing_motion_blur, "../../examples/webgpu_postprocessing_motion_blur.rs";
 PostprocessingTraa, webgpu_postprocessing_traa, "../../examples/webgpu_postprocessing_traa.rs";
+DisplayStereo, webgpu_display_stereo, "../../examples/webgpu_display_stereo.rs";
 Ocean, webgpu_ocean, "../../examples/webgpu_ocean.rs";
 Water, webgpu_water, "../../examples/webgpu_water.rs";
 PostprocessingAo, webgpu_postprocessing_ao, "../../examples/webgpu_postprocessing_ao.rs";
@@ -295,7 +296,11 @@ PostprocessingSsr, webgpu_postprocessing_ssr, "../../examples/webgpu_postprocess
 PostprocessingSmaa, webgpu_postprocessing_smaa, "../../examples/webgpu_postprocessing_smaa.rs";
 PostprocessingPixel, webgpu_postprocessing_pixel, "../../examples/webgpu_postprocessing_pixel.rs";
 PostprocessingSsgi, webgpu_postprocessing_ssgi, "../../examples/webgpu_postprocessing_ssgi.rs";
-PostprocessingSss, webgpu_postprocessing_sss, "../../examples/webgpu_postprocessing_sss.rs";}
+PostprocessingSss, webgpu_postprocessing_sss, "../../examples/webgpu_postprocessing_sss.rs";
+Postprocessing3dlut, webgpu_postprocessing_3dlut, "../../examples/webgpu_postprocessing_3dlut.rs";
+PostprocessingOutline, webgpu_postprocessing_outline, "../../examples/webgpu_postprocessing_outline.rs";
+Oit, webgpu_oit, "../../examples/webgpu_oit.rs";
+PostprocessingRetro, webgpu_postprocessing_retro, "../../examples/webgpu_postprocessing_retro.rs";}
 
 impl Which {
     /// The name with or without its `webgpu_` prefix, or its 1-based index in

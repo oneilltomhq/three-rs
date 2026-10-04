@@ -839,6 +839,136 @@ shaders are gated against three's dump instead (`dof_*` in
 Its depth of field is a `boxBlur` of the pass, mixed in by
 `smoothstep( min, max, | viewZ - focus.z | )`.
 
+## Selection outlines (`webgpu_postprocessing_outline`)
+
+`outline()` takes the scene and camera itself, because it renders them
+again:
+
+```rust
+let outline_pass = outline(
+    scene.clone(),
+    camera.clone(),
+    OutlineParams {
+        selected_objects: vec![],
+        edge_thickness: edge_thickness_node,
+        edge_glow: edge_glow_node,
+        ..OutlineParams::default()
+    },
+);
+let outline_color = outline_pass
+    .visible_edge()
+    .mul(visible_edge_color)
+    .add(outline_pass.hidden_edge().mul(hidden_edge_color))
+    .mul(edge_strength);
+// The page also pulses `outline_color` with `osc_sine` when
+// `pulsePeriod > 0`.
+render_pipeline.output_node = Some(outline_color.add(scene_pass.node()));
+// later, from a raycast:
+outline_pass.set_selected_objects(vec![hit.object.clone()]);
+```
+
+Each frame with a selection, the node renders the scene twice. The first
+render draws everything not selected, for depth. The second draws only the
+selection, testing it against that depth. Then come seven quads, ending in
+a composite whose red channel is the visible edge and whose green channel
+is the hidden edge. With nothing selected it draws nothing.
+
+The two scene renders need three's `setRenderObjectFunction()`, which the
+port does not have. The renderer has a crate-private hook in its place,
+`Renderer.outline_selection`, set only for the length of those two renders.
+`docs/nodes.md` §72 has the details.
+
+The rung grades the page as three's harness sees it, at 15 pixels, the
+same as three's own frame. The pointer never moves there, so nothing is
+selected. The selected passes are gated on their shaders against three's
+dump, and on `tests/outline_frames.rs`.
+
+## Colour grading with a 3D LUT (`webgpu_postprocessing_3dlut`)
+
+```rust
+let lut = LutCubeLoader::new().load(dir.join("Bourbon 64.CUBE"))?;
+let lut_pass = lut_3d(
+    render_output(scene_pass.node(), renderer.tone_mapping),
+    &texture_3d_sampled(&lut.texture_3d),
+    f64::from(lut.size),
+    intensity_node,
+);
+render_pipeline.output_color_transform = false;
+render_pipeline.output_node = Some(lut_pass.node());
+```
+
+`LutCubeLoader`, `Lut3dlLoader` and `LutImageLoader` are the three loaders
+the page uses. Each is checked byte for byte against three's own loader.
+`texture_3d_sampled` is `texture3D( texture )` with no level. The table is
+fixed when the node is built, so to change table, build a new `Lut3DNode`
+and set it as the pipeline's output. Three assigns `lutNode.value` instead.
+See `docs/nodes.md` §73.
+## A scene pass drawn as a PS1 would (`webgpu_postprocessing_retro`)
+
+`retro_pass` is a scene pass at a quarter of the canvas, nearest-filtered,
+that draws every classic material with snapped vertices and level-0 textures.
+The CRT functions then work on its texture:
+
+```rust
+let retro = retro_pass(
+    scene.clone(),
+    camera.clone(),
+    RetroPassOptions::default().affine_distortion(affine_distortion),
+);
+
+let mut output = retro.node();
+output = replace_default_uv(barrel_uv(curvature.clone(), uv()), output);
+output = color_bleeding(output, bleeding.add(distorted_delta));
+output = bayer_dither(output, color_depth_steps.clone());
+output = posterize(output, color_depth_steps);
+output = vignette(output, vignette_intensity, float(0.6), uv());
+output = scanlines(output, intensity, screen_size().y().mul(density), speed, uv());
+render_pipeline.output_node = Some(output);
+```
+
+**The pass swaps the materials.** Three's `RetroPassNode` installs a
+render-object function for the length of its own render. The port's
+`PassNode` can hold one too (`RenderObjectFunction`, crate-private), and the
+renderer asks it once per draw, the background's included. A material with
+no node slots set (one `GltfLoader` made, say) is drawn with the retro vertex,
+colour and context nodes. A node material is drawn as itself, which is what
+three's property copy amounts to. `docs/nodes.md` §79 has the details.
+
+**`replace_default_uv` reaches only taps built later.** It puts `getUV` in
+the builder context. The retro pass's texture reads it at build time, so it
+is distorted. A tap that already has its uv, `pass( … )`'s for instance,
+keeps it. `color_bleeding` makes an `rtt()` of its input, so the barrel
+distortion is rendered once into that target and the three bleed taps read
+the result.
+
+**The resolution scale.** `PassNode::set_resolution_scale( 0.25 )` makes the
+target `floor( size · 0.25 )`, at least one texel. It is on every
+`PassNode`, not just the retro one.
+
+`set_filter_textures( true )` keeps mipmaps on the next frame. Three's page
+follows it with `retro.dispose()` to drop its material cache. The port
+derives the material per draw and has no cache to drop.
+
+**There is no graded rung.** three.js itself misses its own reference
+screenshot for this page on this machine (1503 of 100 000 pixels against a
+0.1% limit), and the port scores the same 1503. So the e2e rung exists but is
+ignored. The page's two post-processing shaders are gated against three's
+dump in `tests/nodes_display_wgsl.rs`. `tests/retro_frames.rs` checks the
+pass on the GPU:
+
+- the target is a quarter of the canvas;
+- the frame is made of 4×4 blocks;
+- textures are level 0, and filtered with `set_filter_textures( true )`;
+- affine mapping moves the texture;
+- the sky's `normalWorld` is the back-side one.
+
+`docs/webgpu_postprocessing_retro-progress.md` has the scores. The example
+is in the native viewer (`viewer postprocessing_retro`).
+
+`FilmNode`, `Sepia.js` and `BleachBypass.js` are ported as `film`, `sepia`
+and `bleach`. No three page uses them, so they are gated against a dump page
+of the repo's own (`docs/nodes.md` §80).
+
 ## The display nodes of #144
 
 `src/nodes/display/` now also has these ports of

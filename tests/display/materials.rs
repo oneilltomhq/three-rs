@@ -3,21 +3,28 @@
 //! checks them against `tests/fixtures/nodes_display/`, and by
 //! `examples/dump_wgsl.rs`, which prints them.
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use three_rs::loaders::LutCubeLoader;
 use three_rs::materials::{quad_vertex_node, render_output, MeshBasicNodeMaterial};
 use three_rs::nodes::display::convert_to_texture;
 use three_rs::nodes::display::{
-    after_image, ao, bilateral_blur, box_blur, depth_aware_blend, dof, dot_screen, fxaa,
-    gaussian_blur, godrays, hash_blur_with, lensflare, motion_blur, pixelation_pass, rgb_shift,
-    rtt, smaa, sobel, ssgi, ssr, sss, traa, viewport_shared_texture_at, BoxBlurOptions,
-    DepthAwareBlendOptions, GaussianBlurOptions, HashBlurOptions, LensflareParams, SsrOptions,
+    after_image, anaglyph_pass, ao, barrel_uv, bayer_dither, bilateral_blur, bleach, box_blur,
+    circle, color_bleeding, depth_aware_blend, dof, dot_screen, film, fxaa, gaussian_blur, godrays,
+    hash_blur_with, lensflare, lut_3d, motion_blur, outline, parallax_barrier_pass,
+    pixelation_pass, retro_pass, rgb_shift, rtt, scanlines, sepia, smaa, sobel, ssgi, ssr, sss,
+    traa, viewport_shared_texture_at, BoxBlurOptions, DepthAwareBlendOptions, GaussianBlurOptions,
+    HashBlurOptions, LensflareParams, OutlineParams, RetroPassOptions, SsrOptions,
 };
 use three_rs::nodes::tsl::{
-    distance, float, pass_depth_texture, perspective_depth_to_view_z, screen_uv, texture_uv,
+    distance, float, osc_sine, pass_depth_texture, perspective_depth_to_view_z, posterize,
+    replace_default_uv, screen_size, screen_uv, texture_3d_sampled, texture_uv, time,
     uniform_value, uv, vec2, vec4_join,
 };
 use three_rs::nodes::Type;
 use three_rs::textures::{DepthTexture, Texture};
-use three_rs::{Color, PerspectiveCamera, PointLight, ToneMapping};
+use three_rs::{Color, PerspectiveCamera, PointLight, Scene, ToneMapping};
 
 /// One quad: the name the gate reports it by, the three.js dump file it is
 /// checked against, and the material.
@@ -199,6 +206,129 @@ pub fn display_quads() -> Vec<DisplayQuad> {
         fixture: "webgpu_postprocessing_traa_m05_traa_resolve.wgsl",
         material: resolve,
     });
+
+    // webgpu_display_stereo `m06` with the effect set to Anaglyph:
+    // `anaglyphPass( scene, camera )`'s composite quad, which mixes the two
+    // eye targets with the default Dubois red/cyan matrices. `stereoPass` has
+    // no quad of its own (it renders both eyes straight into its target).
+    let stereo_camera = || {
+        std::rc::Rc::new(std::cell::RefCell::new(three_rs::PerspectiveCamera::new(
+            60.0, 1.6, 0.1, 100.0,
+        )))
+    };
+    let stereo_scene = || std::rc::Rc::new(std::cell::RefCell::new(three_rs::Scene::new()));
+    let mut anaglyph = anaglyph_pass(stereo_scene(), stereo_camera()).quad_material();
+    anaglyph.vertex_node = Some(quad_vertex_node());
+    quads.push(DisplayQuad {
+        label: "anaglyph",
+        fixture: "webgpu_display_stereo_anaglyph_m06_anaglyph.wgsl",
+        material: anaglyph,
+    });
+
+    // webgpu_display_stereo `m06` with the effect set to ParallaxBarrier:
+    // `parallaxBarrierPass( scene, camera )`'s interleaving quad.
+    let mut barrier = parallax_barrier_pass(stereo_scene(), stereo_camera()).quad_material();
+    barrier.vertex_node = Some(quad_vertex_node());
+    quads.push(DisplayQuad {
+        label: "parallax_barrier",
+        fixture: "webgpu_display_stereo_parallax_barrier_m06_parallax_barrier.wgsl",
+        material: barrier,
+    });
+
+    // webgpu_postprocessing_3dlut `m06`: `lut3D( renderOutput( scenePass ),
+    // texture3D( lut.texture3D ), lut.texture3D.image.width, uniform( 1 ) )`
+    // as the `RenderPipeline`'s output with `outputColorTransform = false`.
+    // The table is a 2³ identity `.CUBE`; its size is a uniform either way.
+    let identity = (0..8)
+        .map(|i| format!("{} {} {}\n", i & 1, (i >> 1) & 1, i >> 2))
+        .collect::<String>();
+    let lut = LutCubeLoader::new()
+        .parse(&format!("LUT_3D_SIZE 2\n{identity}"))
+        .expect("a 2³ table");
+    quads.push(quad(
+        "lut_3d",
+        "webgpu_postprocessing_3dlut_m06_lut_3d.wgsl",
+        lut_3d(
+            render_output(texture_uv(&input(), uv()), ToneMapping::None),
+            &texture_3d_sampled(&lut.texture_3d),
+            f64::from(lut.size),
+            uniform_value(Type::F32, vec![1.0]),
+        )
+        .node(),
+    ));
+
+    // tools/dump-pages/outline_selected.html — webgpu_postprocessing_outline
+    // with the torus selected before the first frame — `m01` to `m11`:
+    // `OutlineNode`'s depth and prepare-mask scene materials and its quads,
+    // with the page's `edgeGlow` and `edgeThickness` uniforms. The sprite
+    // variants (`m02`, `m04`) are not in the dump: the page has no sprites.
+    // The X and Y draws of each blur are one module in three; the port's Y
+    // materials differ only in the texture and the baked direction.
+    let outline_pass = outline(
+        Rc::new(RefCell::new(Scene::new())),
+        Rc::new(RefCell::new(PerspectiveCamera::new(45.0, 1.6, 0.1, 100.0))),
+        OutlineParams {
+            selected_objects: Vec::new(),
+            edge_glow: uniform_value(Type::F32, vec![0.0]),
+            edge_thickness: uniform_value(Type::F32, vec![1.0]),
+            ..OutlineParams::default()
+        },
+    );
+    let materials = outline_pass.materials();
+    for (label, fixture, material, is_quad) in [
+        (
+            "outline_depth",
+            "outline_selected_m01_outline_depth.wgsl",
+            materials[0],
+            false,
+        ),
+        (
+            "outline_prepare_mask",
+            "outline_selected_m03_outline_prepare_mask.wgsl",
+            materials[2],
+            false,
+        ),
+        (
+            "outline_copy",
+            "outline_selected_m05_outline_copy.wgsl",
+            materials[4],
+            true,
+        ),
+        (
+            "outline_edge_detection",
+            "outline_selected_m07_outline_edge_detection.wgsl",
+            materials[5],
+            true,
+        ),
+        (
+            "outline_separable_blur",
+            "outline_selected_m09_outline_separable_blur.wgsl",
+            materials[6],
+            true,
+        ),
+        (
+            "outline_separable_blur2",
+            "outline_selected_m10_outline_separable_blur2.wgsl",
+            materials[8],
+            true,
+        ),
+        (
+            "outline_composite",
+            "outline_selected_m11_outline_composite.wgsl",
+            materials[10],
+            true,
+        ),
+    ] {
+        let mut material = material.clone();
+        if is_quad {
+            material.vertex_node = Some(quad_vertex_node());
+        }
+        quads.push(DisplayQuad {
+            label,
+            fixture,
+            material,
+        });
+    }
 
     // webgpu_postprocessing_sss `m08`: `sss( prePassDepth, camera, dirLight
     // )`'s quad, `SSS`. The page turns temporal filtering on before its first
@@ -556,6 +686,118 @@ pub fn display_quads() -> Vec<DisplayQuad> {
         fixture: "webgpu_postprocessing_ssgi_m11_traa_resolve.wgsl",
         material: resolve,
     });
+
+    // webgpu_postprocessing_outline `m09`: the page's `renderPipeline.outputNode
+    // = outlinePulse.add( scenePass )`, through the default output transform.
+    let color_uniform = |hex| {
+        let c = Color::from_hex(hex);
+        uniform_value(Type::Vec3, vec![c.r, c.g, c.b])
+    };
+    let pulse_period = uniform_value(Type::F32, vec![0.0]);
+    let period = time().div(pulse_period.clone()).mul(float(2.0));
+    let osc = osc_sine(period).mul(float(0.5)).add(float(0.5));
+    let outline_color = outline_pass
+        .visible_edge()
+        .mul(color_uniform(0xffffff))
+        .add(outline_pass.hidden_edge().mul(color_uniform(0x4e3636)))
+        .mul(uniform_value(Type::F32, vec![3.0]));
+    let outline_pulse = pulse_period
+        .greater_than(float(0.0))
+        .select(outline_color.clone().mul(osc), outline_color);
+    quads.push(quad(
+        "outline_output",
+        "webgpu_postprocessing_outline_m09_output.wgsl",
+        render_output(
+            outline_pulse.add(texture_uv(&input(), uv())),
+            ToneMapping::None,
+        ),
+    ));
+
+    // webgpu_oit `m06`: `oitPass( scene, camera )` as the `RenderPipeline`'s
+    // output, so under `renderOutput()` with no tone mapping — the composite
+    // of the beauty, `accum` and `revealage` textures.
+    let oit = three_rs::nodes::display::oit_pass(
+        std::rc::Rc::new(std::cell::RefCell::new(three_rs::Scene::new())),
+        std::rc::Rc::new(std::cell::RefCell::new(three_rs::PerspectiveCamera::new(
+            45.0, 1.6, 0.1, 100.0,
+        ))),
+    );
+    quads.push(quad(
+        "oit_composite",
+        "webgpu_oit_m06_composite.wgsl",
+        render_output(oit.node(), ToneMapping::None),
+    ));
+
+    // webgpu_postprocessing_retro `m08` and `m10`: the page's pipeline with
+    // its initial uniforms. `m08` is the `RTT` that `colorBleeding()`'s
+    // `convertToTexture()` makes of the retro pass read through
+    // `replaceDefaultUV( barrelUV( curvature ) )`: an unfilterable (nearest)
+    // texture, so a clamped `textureLoad`. `m10` is the `RenderPipeline`'s
+    // output: the bleed taps of that texture, Bayer, posterize, vignette and
+    // scanlines, under the sRGB output transform.
+    let f32_uniform = |value: f64| uniform_value(Type::F32, vec![value]);
+    let curvature = f32_uniform(0.02);
+    let color_depth_steps = f32_uniform(32.0);
+    let retro = retro_pass(
+        std::rc::Rc::new(std::cell::RefCell::new(three_rs::Scene::new())),
+        std::rc::Rc::new(std::cell::RefCell::new(three_rs::PerspectiveCamera::new(
+            25.0, 1.6, 0.1, 100.0,
+        ))),
+        RetroPassOptions::default().affine_distortion(f32_uniform(0.0)),
+    );
+    let distorted = replace_default_uv(barrel_uv(curvature.clone(), uv()), retro.node());
+    quads.push(quad(
+        "retro_barrel",
+        "webgpu_postprocessing_retro_m08_retro_barrel.wgsl",
+        distorted.clone(),
+    ));
+    let distorted_delta = circle(curvature.add(0.1).mul(10.0), float(1.0), uv())
+        .mul(curvature)
+        .mul(0.05);
+    let mut crt = color_bleeding(distorted, f32_uniform(0.001).add(distorted_delta));
+    crt = bayer_dither(crt, color_depth_steps.clone());
+    crt = posterize(crt, color_depth_steps);
+    crt = three_rs::nodes::display::vignette(crt, f32_uniform(0.3), float(0.6), uv());
+    crt = scanlines(
+        crt,
+        f32_uniform(0.3),
+        screen_size().y().mul(f32_uniform(1.0)),
+        f32_uniform(0.0),
+        uv(),
+    );
+    quads.push(quad(
+        "retro_crt",
+        "webgpu_postprocessing_retro_m10_retro_crt.wgsl",
+        render_output(crt, ToneMapping::None),
+    ));
+
+    // `tools/dump-pages/film_sepia_bleach.html` `m03`, `m05`, `m07` and
+    // `m09`: `bleach( scenePass, uniform( 0.8 ) )`, `sepia()` of its texture
+    // and `film()` of that, with no intensity, each converted to a texture,
+    // then `film( …, uniform( 0.5 ) )` as the `RenderPipeline`'s output.
+    quads.push(quad(
+        "bleach_bypass",
+        "film_sepia_bleach_m03_bleach_bypass.wgsl",
+        bleach(texture_uv(&input(), uv()), f32_uniform(0.8)),
+    ));
+    quads.push(quad(
+        "sepia",
+        "film_sepia_bleach_m05_sepia.wgsl",
+        sepia(texture_uv(&input(), uv())),
+    ));
+    quads.push(quad(
+        "film_no_intensity",
+        "film_sepia_bleach_m07_film_no_intensity.wgsl",
+        film(texture_uv(&input(), uv()), None, None),
+    ));
+    quads.push(quad(
+        "film",
+        "film_sepia_bleach_m09_film.wgsl",
+        render_output(
+            film(texture_uv(&input(), uv()), Some(f32_uniform(0.5)), None),
+            ToneMapping::None,
+        ),
+    ));
 
     quads
 }
