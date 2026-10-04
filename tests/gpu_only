@@ -29,6 +29,7 @@ three-rs/renderer_points
 three-rs/renderer_program_cache
 three-rs/renderer_sprites
 three-rs/renderer_textures
+three-rs/renderer_typed_attributes
 three-rs/renderer_vertex_colors
 three-rs/renderer_viewport
 three-rs/ssgi_frames
