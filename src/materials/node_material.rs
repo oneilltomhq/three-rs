@@ -787,6 +787,7 @@ fn setup_inner(
         emit_output_property: material.fragment_node.is_none(),
         vertex_statements: Vec::new(),
         position,
+        geometry_has_tangent: ctx.has_tangent_attribute,
     }
 }
 

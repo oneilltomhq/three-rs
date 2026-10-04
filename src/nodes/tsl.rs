@@ -2657,16 +2657,22 @@ accessor!(
 /// `clipSpace` — `Position.js`' `Fn( builder => builder.context.clipSpace
 /// .toVarying( 'v_clipSpace' ) ).once()()`: the material's clip-space vertex
 /// output (its `vertexNode`, else `modelViewProjection`), carried into the
-/// fragment stage. Fragment stage only, as in three, which warns and yields
-/// `vec4()` elsewhere; read from a vertex-stage node it would feed the vertex
-/// output back into itself.
+/// fragment stage. Fragment stage only, as in three: set up from a
+/// vertex-stage node it warns once and yields `vec4()`, where reading the
+/// varying would feed the vertex output back into itself.
 ///
 /// The vertex output is not known when the node is made — a material's
 /// `vertex_node` is set independently of its `fragment_node` — so the varying
 /// wraps a [`CustomNode`] that reads `builder.context.clipSpace` at build
 /// time, which [`NodeBuilder::build`](crate::nodes::NodeBuilder::build)
 /// installs from the flow's position, as `NodeMaterial.setup()` does.
+///
+/// Cached in a plain cell, and not filled outside the sub-build layers as an
+/// `accessor!` is: nothing in it can take a layer prefix (it holds no var,
+/// and the port never prefixes a varying's name), and the stage test runs
+/// at build time, not here.
 pub fn clip_space() -> NodeRef {
+    /// `builder.context.clipSpace`, the varying's value.
     struct ClipSpace;
     impl CustomNode for ClipSpace {
         fn type_name(&self) -> &'static str {
@@ -2681,8 +2687,40 @@ pub fn clip_space() -> NodeRef {
                 .unwrap_or_else(|| vec4(0.0, 0.0, 0.0, 0.0))
         }
     }
+    /// The `Fn`'s stage test, around the varying.
+    struct ClipSpaceFn(NodeRef);
+    impl CustomNode for ClipSpaceFn {
+        fn type_name(&self) -> &'static str {
+            "ClipSpaceFn"
+        }
+        fn node_type(&self) -> Type {
+            Type::Vec4
+        }
+        // An inlined `Fn()` call: `ShaderCallNodeInternal` is never cached in
+        // a var of its own, so `clipSpace` read twice is the varying twice.
+        fn is_cacheable(&self) -> bool {
+            false
+        }
+        fn setup(&self, builder: &crate::nodes::NodeBuilder) -> NodeRef {
+            if builder.is_fragment_stage() {
+                return self.0.clone();
+            }
+            thread_local! { static WARNED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) }; }
+            if !WARNED.with(|w| w.replace(true)) {
+                eprintln!("three-rs: TSL: `clipSpace` is only available in fragment stage.");
+            }
+            vec4(0.0, 0.0, 0.0, 0.0)
+        }
+    }
     thread_local! { static CELL: Lazy<NodeRef> = const { Lazy::new() }; }
-    CELL.with(|c| c.get(|| to_varying(Some("v_clipSpace"), custom(ClipSpace))))
+    CELL.with(|c| {
+        c.get(|| {
+            custom(ClipSpaceFn(to_varying(
+                Some("v_clipSpace"),
+                custom(ClipSpace),
+            )))
+        })
+    })
 }
 /// `positionView` — `Position.js`' `Fn( builder =>
 /// builder.context.setupPositionView() ).once( [ 'POSITION', 'VERTEX' ] )`.
@@ -2728,7 +2766,10 @@ accessor!(
 /// `positionViewDirection`.
 ///
 /// Not an `accessor!`: `overrideNodes` can replace it wholesale (§27), and a
-/// singleton cell would hand the replacement to the next material too.
+/// singleton cell would hand the replacement to the next material too. The
+/// cell is still filled outside any sub-build layer, as an `accessor!` is,
+/// so the first caller's layer (`reflect_view` in the `NORMAL` layer, say)
+/// does not prefix the var for every later one.
 pub fn position_view_direction() -> NodeRef {
     if let Some(node) = override_node(|o| &o.position_view_direction) {
         return node;
@@ -2736,27 +2777,27 @@ pub fn position_view_direction() -> NodeRef {
     thread_local! { static CELL: Lazy<NodeRef> = const { Lazy::new() }; }
     CELL.with(|c| {
         c.get(|| {
-            to_var(
-                Some("positionViewDirection"),
-                to_varying(Some("v_positionViewDirection"), position_view().negate()).normalize(),
-            )
+            outside_sub_build(|| {
+                to_var(
+                    Some("positionViewDirection"),
+                    to_varying(Some("v_positionViewDirection"), position_view().negate())
+                        .normalize(),
+                )
+            })
         })
     })
 }
-/// `normalFlat` — `positionView.dFdx().cross( positionView.dFdy() ).normalize()
-/// .toVar( 'normalFlat' )`. `dpdy()` carries WGSL's sign flip, so this prints as
-/// `normalize( cross( dpdx( v_positionView ), - dpdy( v_positionView ) ) )`.
-pub fn normal_flat() -> NodeRef {
-    thread_local! { static CELL: Lazy<NodeRef> = const { Lazy::new() }; }
-    CELL.with(|c| {
-        c.get(|| {
-            to_var(
-                Some("normalFlat"),
-                cross(dpdx(position_view()), dpdy(position_view())).normalize(),
-            )
-        })
-    })
-}
+accessor!(
+    /// `normalFlat` — `positionView.dFdx().cross( positionView.dFdy() )
+    /// .normalize().toVar( 'normalFlat' )`. `dpdy()` carries WGSL's sign
+    /// flip, so this prints as `normalize( cross( dpdx( v_positionView ), -
+    /// dpdy( v_positionView ) ) )`.
+    normal_flat,
+    to_var(
+        Some("normalFlat"),
+        cross(dpdx(position_view()), dpdy(position_view())).normalize()
+    )
+);
 
 /// `normalViewGeometry` — `Fn( builder => builder.isFlatShading() ? normalFlat :
 /// transformNormalToView( normalLocal ).toVarying( 'v_normalViewGeometry'
@@ -2954,17 +2995,22 @@ fn tangent_attribute_frame() -> (NodeRef, NodeRef) {
 
     // One varying for both layers: three creates it in the shared `VERTEX`
     // sub-build, so the `NORMAL` layer reads the same `v_tangentView` rather
-    // than declaring a prefixed one of its own.
+    // than declaring a prefixed one of its own. Filled outside any layer, as
+    // an `accessor!` is. Nothing in it takes a prefix today (a varying's name
+    // never does, and `modelViewMatrix` is an `accessor!`), so this only keeps
+    // a future var inside from inheriting the first caller's layer.
     thread_local! { static TANGENT_VARYING: Lazy<NodeRef> = const { Lazy::new() }; }
     let tangent = TANGENT_VARYING
         .with(|c| {
             c.get(|| {
-                to_varying(
-                    Some("v_tangentView"),
-                    model_view_matrix()
-                        .mul(vec4_join(vec![tangent_local, float(0.0)]))
-                        .xyz(),
-                )
+                outside_sub_build(|| {
+                    to_varying(
+                        Some("v_tangentView"),
+                        model_view_matrix()
+                            .mul(vec4_join(vec![tangent_local, float(0.0)]))
+                            .xyz(),
+                    )
+                })
             })
         })
         .normalize();
@@ -3198,15 +3244,20 @@ pub fn refract_view() -> NodeRef {
         )
     })
 }
-accessor!(
-    /// `reflectVector` — `reflectView.transformDirection( cameraWorldMatrix )
-    /// .toVar( 'reflectVector' )`, in world space.
-    reflect_vector,
-    to_var(
-        Some("reflectVector"),
-        transform_direction(camera_world_matrix(), reflect_view())
-    )
-);
+/// `reflectVector` — `reflectView.transformDirection( cameraWorldMatrix )
+/// .toVar( 'reflectVector' )`, in world space. Keyed on the normal like
+/// [`reflect_view`], which it reads.
+pub fn reflect_vector() -> NodeRef {
+    thread_local! {
+        static CELL: RefCell<HashMap<NormalViewKey, NodeRef>> = RefCell::new(HashMap::new());
+    }
+    keyed_by_normal(&CELL, || {
+        to_var(
+            Some("reflectVector"),
+            transform_direction(camera_world_matrix(), reflect_view()),
+        )
+    })
+}
 /// `refractVector` — `refractView.transformDirection( cameraWorldMatrix )
 /// .toVar( 'refractVector' )`, in world space.
 pub fn refract_vector() -> NodeRef {
@@ -4498,13 +4549,24 @@ fn object_matrix_world(object: &crate::core::Node, name: &'static str) -> LiveVa
 }
 
 /// `objectDirection( object3d )` — `Object3DNode( DIRECTION, object3d )`:
-/// `object3d`'s world direction, an object-group `vec3`. Each call is a
-/// uniform of its own, as each `Object3DNode` is in three.
+/// `object3d.getWorldDirection()`, an object-group `vec3`. As in three, the
+/// read refreshes `object3d`'s world matrix (`updateWorldMatrix( true, false
+/// )`) first, and a camera's direction is negated (`Camera.getWorldDirection()`),
+/// so a camera yields the way it looks. Each call is a uniform of its own, as
+/// each `Object3DNode` is in three.
 pub fn object_direction(object: &crate::core::Node) -> NodeRef {
-    object_3d_uniform(
-        Object3DScope::Direction,
-        Some(object_matrix_world(object, "objectDirection")),
-    )
+    let object = object.downgrade();
+    let direction = LiveValue::new(move || {
+        let object = object
+            .upgrade()
+            .unwrap_or_else(|| panic!("three-rs: objectDirection( object ) outlived its object"));
+        let mut direction = object.get_world_direction();
+        if object.borrow().is_camera {
+            direction.negate();
+        }
+        vec![direction.x, direction.y, direction.z]
+    });
+    object_3d_uniform(Object3DScope::Direction, Some(direction))
 }
 
 /// `objectPosition( object3d )` — `Object3DNode( POSITION, object3d )`:

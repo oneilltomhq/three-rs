@@ -434,7 +434,10 @@ pub enum UniformSource {
         /// Which value of the object.
         scope: Object3DScope,
         /// The explicit object's `matrixWorld`, or `None` for the object the
-        /// draw is for.
+        /// draw is for. For [`Object3DScope::Direction`] it is instead the
+        /// world direction itself, three components, since
+        /// `getWorldDirection()` refreshes the object's world matrix and
+        /// negates for a camera, which only the object can tell.
         object: Option<LiveValue>,
     },
 }
