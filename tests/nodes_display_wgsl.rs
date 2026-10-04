@@ -701,6 +701,37 @@ fn ssr_resolve_matches_three() {
     check("ssr_resolve", Region::Body);
 }
 
+/// `tools/dump-pages/ssr_stochastic.html` A: the stochastic path — GGX
+/// sample, jittered march, edge fade toward the BRDF-sampled environment
+/// and the miss fallback.
+#[test]
+fn ssr_stochastic_matches_three() {
+    check("ssr_stochastic", Region::Body);
+}
+
+/// `computeScreenBorderFactor`, the stochastic path's edge fade, a `Fn`
+/// with a layout.
+#[test]
+fn ssr_screen_border_factor_matches_three() {
+    check(
+        "ssr_stochastic",
+        Region::Function("computeScreenBorderFactor"),
+    );
+}
+
+/// B: the page's `envImportanceSampling` and `binaryRefine`, `stepExponent
+/// = 3` and a history (multi-bounce reprojection).
+#[test]
+fn ssr_stochastic_refine_matches_three() {
+    check("ssr_stochastic_refine", Region::Body);
+}
+
+/// C: the mirror path with `reflectNonMetals` — no metalness discard.
+#[test]
+fn ssr_reflect_non_metals_matches_three() {
+    check("ssr_reflect_non_metals", Region::Body);
+}
+
 #[test]
 fn smaa_edges_matches_three() {
     check("smaa_edges", Region::Body);
@@ -1146,4 +1177,186 @@ fn film_matches_three() {
 #[test]
 fn film_no_intensity_matches_three() {
     check("film_no_intensity", Region::Body);
+}
+
+#[test]
+fn temporal_reproject_seed_matches_three() {
+    check("temporal_reproject_seed", Region::Body);
+}
+
+#[test]
+fn temporal_reproject_resolve_matches_three() {
+    check("temporal_reproject_resolve", Region::Body);
+}
+
+#[test]
+fn temporal_reproject_resolve_specular_matches_three() {
+    check("temporal_reproject_resolve_specular", Region::Body);
+}
+
+#[test]
+fn temporal_reproject_layout_fns_match_three() {
+    for name in [
+        "beautyTexelFromScreen",
+        "velocityToUVOffset",
+        "clipToAABB",
+        "projectWorldToUV",
+    ] {
+        check(
+            "temporal_reproject_resolve_specular",
+            Region::Function(name),
+        );
+    }
+}
+
+#[test]
+fn specular_ggx_reflection_sample_matches_three() {
+    check("specular_ggx_reflection_sample", Region::Body);
+}
+
+#[test]
+fn specular_sample_ggx_vndf_matches_three() {
+    check(
+        "specular_ggx_reflection_sample",
+        Region::Function("SampleGGXVNDF"),
+    );
+}
+
+#[test]
+fn specular_helpers_matches_three() {
+    check("specular_helpers", Region::Body);
+}
+
+#[test]
+fn specular_equirect_uv_to_dir_matches_three() {
+    check("specular_helpers", Region::Function("equirectUvToDir"));
+}
+
+#[test]
+fn specular_equirect_dir_pdf_matches_three() {
+    check("specular_helpers", Region::Function("equirectDirPdf"));
+}
+
+#[test]
+fn specular_mis_power_heuristic_matches_three() {
+    check("specular_helpers", Region::Function("misPowerHeuristic"));
+}
+
+#[test]
+fn specular_dominant_factor_matches_three() {
+    check(
+        "specular_helpers",
+        Region::Function("getSpecularDominantFactor"),
+    );
+}
+
+#[test]
+fn analytic_noise_matches_three() {
+    check("analytic_noise", Region::Body);
+}
+
+#[test]
+fn env_sample_reflect_matches_three() {
+    check("env_sample_reflect", Region::Body);
+}
+
+#[test]
+fn env_sample_brdf_matches_three() {
+    check("env_sample_brdf", Region::Body);
+}
+
+#[test]
+fn env_sample_mis_matches_three() {
+    check("env_sample_mis", Region::Body);
+}
+
+#[test]
+fn env_sample_mis_equirect_dir_pdf_matches_three() {
+    check("env_sample_mis", Region::Function("equirectDirPdf"));
+}
+
+#[test]
+fn env_sample_mis_power_heuristic_matches_three() {
+    check("env_sample_mis", Region::Function("misPowerHeuristic"));
+}
+
+#[test]
+fn sharpen_rcas_matches_three() {
+    check("sharpen_rcas", Region::Body);
+}
+
+#[test]
+fn sharpen_rcas_denoise_matches_three() {
+    check("sharpen_rcas_denoise", Region::Body);
+}
+
+#[test]
+fn recurrent_denoise_diffuse_matches_three() {
+    check("recurrent_denoise_diffuse", Region::Body);
+}
+
+#[test]
+fn recurrent_denoise_specular_matches_three() {
+    check("recurrent_denoise_specular", Region::Body);
+}
+
+#[test]
+fn recurrent_denoise_diffuse_neighborhood_stats_matches_three() {
+    check(
+        "recurrent_denoise_diffuse",
+        Region::Function("getNeighborhoodStats"),
+    );
+}
+
+#[test]
+fn recurrent_denoise_get_neighborhood_stats_matches_three() {
+    check(
+        "recurrent_denoise_specular",
+        Region::Function("getNeighborhoodStats"),
+    );
+}
+
+#[test]
+fn recurrent_denoise_karis_temporal_blend_matches_three() {
+    check(
+        "recurrent_denoise_specular",
+        Region::Function("karisTemporalBlend"),
+    );
+}
+
+#[test]
+fn recurrent_denoise_lobe_normal_falloff_matches_three() {
+    check(
+        "recurrent_denoise_specular",
+        Region::Function("lobeNormalFalloff"),
+    );
+}
+
+#[test]
+fn recurrent_denoise_vogel_disk_matches_three() {
+    check("recurrent_denoise_specular", Region::Function("vogelDisk"));
+}
+
+#[test]
+fn recurrent_denoise_diffuse_color_distance_matches_three() {
+    check(
+        "recurrent_denoise_specular",
+        Region::Function("diffuseColorDistance"),
+    );
+}
+
+#[test]
+fn recurrent_denoise_compute_hit_dist_factor_matches_three() {
+    check(
+        "recurrent_denoise_specular",
+        Region::Function("computeHitDistFactor"),
+    );
+}
+
+#[test]
+fn recurrent_denoise_specular_dominant_direction_matches_three() {
+    check(
+        "recurrent_denoise_specular",
+        Region::Function("getSpecularDominantDirection"),
+    );
 }

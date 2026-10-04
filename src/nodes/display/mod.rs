@@ -29,6 +29,7 @@ mod gaussian_blur;
 mod godrays;
 mod gtao;
 mod hash_blur;
+mod importance_sampled_environment;
 mod lensflare;
 mod lut_3d;
 mod motion_blur;
@@ -37,11 +38,13 @@ mod outline;
 mod parallax_barrier_pass;
 mod pixelation_pass;
 mod radial_blur;
+mod recurrent_denoise;
 mod retro_pass;
 mod rgb_shift;
 mod rtt;
 mod sepia;
 mod shape;
+mod sharpen;
 mod smaa;
 mod sobel;
 mod ssgi;
@@ -49,6 +52,7 @@ mod ssr;
 mod sss;
 mod stereo_composite_pass;
 mod stereo_pass;
+mod temporal_reproject;
 mod toon_outline_pass;
 mod traa;
 mod transition;
@@ -74,6 +78,9 @@ pub use gaussian_blur::{gaussian_blur, GaussianBlurNode, GaussianBlurOptions};
 pub use godrays::{godrays, GodraysNode};
 pub use gtao::{ao, GtaoNode};
 pub use hash_blur::{hash_blur, hash_blur_with, HashBlurOptions};
+pub use importance_sampled_environment::{
+    EnvMapCdfGenerator, EnvironmentLobe, ImportanceSampledEnvironment,
+};
 pub use lensflare::{lensflare, LensflareNode, LensflareParams};
 pub use lut_3d::{lut_3d, Lut3DNode};
 pub use motion_blur::motion_blur;
@@ -82,17 +89,25 @@ pub use outline::{outline, OutlineNode, OutlineParams, OutlineState};
 pub use parallax_barrier_pass::{parallax_barrier_pass, ParallaxBarrierPassNode};
 pub use pixelation_pass::{pixelation_pass, PixelationPassNode};
 pub use radial_blur::{radial_blur, RadialBlurOptions};
+pub use recurrent_denoise::{
+    recurrent_denoise, DenoiseAlphaSource, DenoiseMode, RecurrentDenoiseNode,
+    RecurrentDenoiseOptions,
+};
 pub use retro_pass::{retro_pass, RetroPassNode, RetroPassOptions};
 pub use rgb_shift::rgb_shift;
 pub use rtt::{convert_to_texture, rtt, RttNode};
 pub use sepia::sepia;
 pub use shape::circle;
+pub use sharpen::{sharpen, SharpenNode};
 pub use smaa::{smaa, SmaaNode};
 pub use sobel::{sobel, SobelOperatorNode};
 pub use ssgi::{ssgi, SsgiNode};
 pub use ssr::{ssr, SampleFn, SsrNode, SsrOptions};
 pub use sss::{sss, SssNode};
 pub use stereo_pass::{stereo_pass, StereoPassNode};
+pub use temporal_reproject::{
+    temporal_reproject, TemporalReprojectMode, TemporalReprojectNode, TemporalReprojectOptions,
+};
 pub use toon_outline_pass::{toon_outline_pass, ToonOutlinePassNode};
 pub use traa::{traa, TraaNode};
 pub use transition::transition;

@@ -6222,13 +6222,97 @@ the crate's PNG decoder.
 - The search texture is `NearestFilter`, so its taps are `textureLoad`, as
   in three's dump.
 
-### 65.3 Not ported
+### 65.3 The stochastic path
 
-All of these are options the page leaves at their defaults:
+**What three does.** `stochastic: true` is `SSRNode`'s second generation,
+the form `webgpu_postprocessing_ssr_denoise` uses. The same `SSRNode.SSR`
+quad changes in these places, each an `if ( this.stochastic … )` at build
+time:
 
-- `stochastic`;
-- `reflectNonMetals`, `binaryRefine` and `screenEdgeFadeBlack`;
-- `setHistory()` and `diffuseNode`;
+- *The ray.* `bindAnalyticNoise( resolution, 47 )( uv, _noiseIndex )`
+  gives each pixel four numbers, and `_noiseIndex` advances by one every
+  frame. `Xi.y` is pulled toward the lobe's top by `mirrorBias` (default
+  0.5), and `ggxReflectionSample( N, V, roughness, metalness, albedo, Xi )`
+  draws the reflected direction from the GGX lobe. The albedo is
+  `diffuseNode.sample( uv ).rgb` when there is a diffuse node. A sample
+  below the surface is drawn again with `fract( Xi · 8 )`. The sample's
+  weight replaces the mirror path's metalness, attenuation and Fresnel
+  terms, and nothing is discarded for being a non-metal.
+- *The march.* It takes `quality · 64` steps (at least 1), spaced
+  `( ( i + noise.z − 0.5 ) / steps )^stepExponent` along the ray rather than
+  one texel apart. There is no normal test and no `maxDistance` break at a
+  candidate. With `binaryRefine`, the bracketing step is then bisected eight
+  times, after the loop rather than inside it.
+- *The hit.* The alpha is the world distance times
+  `getSpecularDominantFactor( NdotV, roughness )`. Near the screen's edge
+  (`computeScreenBorderFactor`, a `Fn` with a layout) the colour fades
+  toward the environment over `screenEdgeFade · glossiness`, or to black
+  with `screenEdgeFadeBlack`.
+- *A miss.* It returns the environment lobe times `environmentIntensity`
+  (default π), with `ENV_RAY_LENGTH` in alpha. The lookup is
+  `ImportanceSampledEnvironment`'s BRDF form, or its MIS form with
+  `envImportanceSampling` (second noise seed 59). Without an environment
+  the miss is black.
+- *Multi-bounce.* `setHistory( history, velocity )` adds the previous
+  frame's denoised reflection at the hit, reprojected by the velocity and
+  damped by `1 − history.a`.
+
+`getTextureNode()` is the raw SSR target, and no copy or blur quad runs.
+
+**The port.** `SsrOptions` gains `stochastic`, `reflect_non_metals`,
+`environment`, `env_importance_sampling`, `diffuse` and `binary_refine`
+(builders `with_*`), so `ssr()` keeps its signature. `SsrNode` adds:
+
+- the uniforms `mirror_bias`, `screen_edge_fade`, `environment_intensity`
+  and `env_map_intensity()`;
+- `set_env_map()`, `set_history( &Texture, &Texture )` and
+  `clear_history()`;
+- `render_target()` and `stochastic()`;
+- getters and setters for `binary_refine`, `reflect_non_metals`,
+  `step_exponent` and `screen_edge_fade_black`.
+
+Those four setters and the two history and environment calls rebuild the
+SSR material, as three's do. `set_history` takes the denoiser's target
+texture where three also accepts the node. `updateBefore()`'s camera world
+position and noise index are kept current as three keeps them. The march is
+one set of `#[inline(never)]` helpers for both paths, branching where three
+does.
+
+`tools/dump-pages/ssr_stochastic.html` builds three quads:
+
+| Quad | Options | Fixture | Gate |
+|---|---|---|---|
+| a | stochastic, diffuse, BRDF environment | `ssr_stochastic_m10_ssr_stochastic` | `ssr_stochastic_matches_three`, `ssr_screen_border_factor_matches_three` |
+| b | the page's options (MIS, `binaryRefine`), `stepExponent` 3, a history | `ssr_stochastic_m14_ssr_stochastic_refine` | `ssr_stochastic_refine_matches_three` |
+| c | mirror path, `reflectNonMetals` | `ssr_stochastic_m16_ssr_reflect_non_metals` | `ssr_reflect_non_metals_matches_three` |
+
+The four gates from §65.2 pass unchanged. `tests/ssr_stochastic_frames.rs`
+checks the render:
+
+- a mirror floor shows a white box exactly where its mirror image lands;
+- nothing else is lit;
+- hits carry a positive ray length in alpha;
+- two consecutive frames differ but have the same mean;
+- nothing is NaN;
+- `intensity = 0` leaves no colour.
+
+The builder gained a **struct-typed var**. `ggxReflectionSample( … )
+.toVar()` declares `var nodeVarN : StructType0;`, because a `to_var` of a
+value that carries a struct is declared as that struct.
+
+**Differences.** The fingerprint ignores these, and none is in SSR's own
+graph:
+
+- Helpers that existed before this port emit `nodeVarN = …` where three
+  emits `let nodeConstN = …`. These are `get_view_position`, the analytic
+  noise and the environment lookups' intermediates.
+- Three's `let nodeVar14 = nodeVar14;` texture re-declarations are not
+  emitted.
+- `ImportanceSampledEnvironment`'s BRDF lookup fetches the texel before its
+  `max( 0.0, dot( … ) )` terms, where three fetches it after them.
+
+**Still not ported:**
+
 - `resolutionScale ≠ 1`;
 - an orthographic camera;
 - a logarithmic depth buffer.
@@ -8329,3 +8413,478 @@ workgroups of 64 run 128 times, and the guarded stores stay in range.
   three's and the step mode against an `instancedArray` twin. The attribute's
   `@location` is still the port's first-use order (§8): it is 0, where three
   puts it at 1 after `position`.
+
+## 85. `SpecularHelpers.js`, `RNoise.js` and `ImportanceSampledEnvironment`
+
+### 85.1 What three does
+
+These three files are shared by the SSR-denoise stack
+(`webgpu_postprocessing_ssr_denoise`): `SSRNode`'s stochastic mode,
+`RecurrentDenoiseNode` and the environment fallback for rays that leave the
+screen.
+
+- `examples/jsm/tsl/utils/SpecularHelpers.js` exports two constants and a set
+  of microfacet `Fn`s:
+  - `ENV_RAY_LENGTH` (1e4) is the ray length SSR writes for an environment
+    miss. `ENV_RAY_LENGTH_THRESHOLD` (1e3) is the test that separates misses
+    from hits.
+  - Five `Fn`s have a layout and become real WGSL functions:
+    `SampleGGXVNDF` (bounded-VNDF GGX sampling, spherical-cap form),
+    `getSpecularDominantFactor`, `equirectUvToDir`, `equirectDirPdf` and
+    `misPowerHeuristic`.
+  - The rest are plain `Fn`s whose bodies, `toVar()`s included, inline at
+    every call: `D_GTR`, `SmithG`, `GeometryTerm`, `GGXVNDFPdf`, `F_Schlick`
+    and `ggxReflectionSample`. The last returns a `struct()` of `reflectDir`,
+    `sampleWeight`, `pdf`, `NdotV`, `alpha` and `f0`.
+- `examples/jsm/tsl/utils/RNoise.js` exports `bindAnalyticNoise( resolution,
+  seed )`. It returns a plain `Fn( [ uv, sampleIndex ] )` giving four
+  independent R² dimensions: continuous over pixels for index 0, and
+  tile-shifted into a 32×32 period for every other index.
+- `examples/jsm/tsl/display/ImportanceSampledEnvironment.js` has two classes:
+  - `EnvMapCDFGenerator` works on the CPU. `preprocessEnvMap()` clones the
+    equirect map as RGBA half floats (float data converted as is, 8-bit data
+    divided by 255, a `flipY` map's rows reversed). `updateFrom()` weights
+    every texel by its Rec. 709 luminance alone; there is no `sin θ` term.
+    It builds row and column CDFs in `Float32Array`s and inverts them by
+    binary search into two `RedFormat` `HalfFloatType` `DataTexture`s with
+    linear filtering, clamped on both axes:
+    - the `height × 1` marginal table;
+    - the `width × height` conditional table.
+
+    The map itself repeats in `s` and is clamped in `t`.
+  - `ImportanceSampledEnvironment` owns a generator and the `totalSum`,
+    `size` and `intensity` uniforms. Its lookups are `sampleReflect`,
+    `sampleEnvironmentBRDF` and `sampleEnvironmentMIS`. The MIS lookup
+    combines the BRDF ray with a CDF-drawn direction under the power
+    heuristic, inside `If( alpha > 0.01 )` and `If( envNdotL > 0.001 )`.
+    Every map read is `texture( map, uv ).level( 0 )`. The `DataTexture` is
+    `NearestFilter`, so that read is a `textureLoad` at `u32( 0.0 )`.
+
+### 85.2 The port
+
+- `crate::nodes::tsl` holds the helpers under snake_case names (e.g.
+  `d_gtr`, `ggx_reflection_sample`, `mis_power_heuristic`), plus
+  `ggx_reflection_struct()` for reading the sample's members. Each keeps
+  three's layout or no-layout shape.
+- RNoise is `bind_analytic_noise( resolution, seed )`, which returns an
+  `impl Fn( uv, sample_index ) -> NodeRef`.
+- `crate::nodes::display` holds `EnvMapCdfGenerator`,
+  `ImportanceSampledEnvironment` and `EnvironmentLobe`, the struct three
+  passes the BRDF and MIS lookups. `intensity()` is a `SettableValue`.
+
+**The WGSL gates.** No page isolates these files, so
+`tools/dump-pages/specular_helpers.html` builds six `convertToTexture()`
+quads over an 8×4 float equirect. All the tests are in
+`tests/nodes_display_wgsl.rs`:
+
+- `m01`: `specular_ggx_reflection_sample` and `specular_sample_ggx_vndf`.
+- `m03`: `specular_helpers`, plus function gates for `equirectUvToDir`,
+  `equirectDirPdf`, `misPowerHeuristic` and `getSpecularDominantFactor`.
+- `m04`: `analytic_noise`.
+- `m05`, `m06` and `m08`: `env_sample_reflect`, `env_sample_brdf` and
+  `env_sample_mis`, plus that module's `equirectDirPdf` and
+  `misPowerHeuristic` functions.
+
+The MIS path passes the `vec2` CDF UV to `equirectUV()`, and then uses the
+`vec2` result as a direction. The port keeps both, so its
+`vec3<f32>( nodeVar34, 0.0 ).z` and `vec3<f32>( nodeVar35, 0.0 )` widenings
+are three's `vec3<f32>( nodeConst3, 0.0 ).z` and
+`vec3<f32>( nodeConst4, 0.0 )`. Inside the two `If`s, three declares these
+shared temporaries as `let nodeConstN`, while the port assigns module
+`nodeVarN`s. The values and the fingerprint are the same.
+
+**The CPU tables.** The module's unit tests check the tables for a 4×2
+image against hand-computed values from three's arithmetic. They cover:
+
+- the plain case;
+- a `flipY` map;
+- a second same-size update.
+
+**Two gaps closed on the way.**
+
+- `texture_level` on a `NearestFilter` 2D map used to emit a sampler-less
+  `textureSampleLevel`. It now takes three's `generateTextureLod()` path: a
+  `textureLoad` at `u32( level )` against a cached
+  `textureDimensions( t, u32( level ) )`.
+- `Texture::data_r16float` adds the `RedFormat` `HalfFloatType`
+  `DataTexture` the tables use.
+
+**Differences.**
+
+- *Texture identity.* Three's `updateFrom()` makes new textures and points
+  the existing nodes at them (`node.value = texture`). A texture node here
+  holds its `Texture` and has no `value` to reassign. So a later
+  `update_from` with an environment of the same size writes into the
+  textures already bound. One of a different size allocates new textures,
+  which only graphs built after it read, because the renderer cannot resize
+  a texture in place.
+- *Dispose.* `dispose()` drops the handles. A texture's GPU copy goes with
+  its last handle.
+- *Missing environment.* Building a lookup before `update_from` panics.
+- *The struct `toVar()`.* The dump page calls `ggxReflectionSample( … )
+  .toVar()`, and three copies the struct into a second var
+  (`nodeVar50 = nodeVar49`) before reading members. The port reads them off
+  the struct var `ggx_reflection_sample` builds, because a struct-typed
+  `to_var` was not supported when this landed (§65.3 has since added it).
+  The fingerprint is the same.
+
+## 86. `SharpenNode` (`webgpu_postprocessing_ssr_denoise`)
+
+### 86.1 What three does
+
+`sharpen( node, sharpness = 0.2, denoise = false )` is a `SharpenNode` over
+`convertToTexture( node )`. It is a plain `Node` with
+`updateBeforeType = FRAME`, not a `TempNode`. It owns one half-float target
+with no depth buffer, and its texture node is
+`passTexture( this, target.texture )`. `updateBefore()` sizes the target to
+the drawing buffer, then draws one quad, `Sharpen_RCAS`, into it with the
+renderer's state reset around the draw.
+
+The quad is AMD FidelityFX FSR 1's RCAS, as one inline `Fn()` with no layout:
+
+- **The cross.** It finds the integer texel
+  `ivec2( int( floor( uv · textureSize ) ) )` and `textureLoad`s it and its
+  four edge neighbours.
+- **The lobe.** It is negative, `max( -0.1875, min( max( lobeRGB ), 0 ) )`.
+  The limiters are `min( ring, centre ) / ( 4 · max( ring ) )` and
+  `( 1 - max( ring, centre ) ) / ( 4 · min( ring ) - 4 )`, so the result
+  cannot leave the range of the ring and the centre. The lobe is then scaled
+  by `con = exp2( -sharpness )`, so `sharpness` is in stops. 0 is the
+  strongest setting, and each unit halves it. Three's doc comment says that
+  2 is "no sharpening", but 2 is a quarter of the strength of 0.
+- **Denoise.** `nzFactor` is `1 - 0.5 · saturate( |ring luma mean - centre
+  luma| / luma range )`. `denoise.equal( true ).select( lobe · nzFactor,
+  lobe )` applies it. The flag is `nodeObject( false )`, a constant, so the
+  shader branches on `false == true`.
+- **The resolve.** It is `( lobe · Σ ring + centre ) / ( 4 · lobe + 1 )`,
+  and the centre's alpha is kept.
+
+A number for `sharpness` is `nodeObject( 0.2 )`, a constant. The dump folds
+it into the shader as `const nodeConst1 = exp2( ( - 0.2 ) )`, so a page that
+passes a number has no uniform for it.
+
+### 86.2 The port
+
+`nodes::display::sharpen( node, sharpness, denoise )` wraps `node` in
+`convert_to_texture` and keeps that `RttNode` alive in the node's state.
+`SharpenNode::new( &Texture, sharpness, denoise )` is the constructor over a
+texture already in hand, which is the case where three's `convertToTexture()`
+passes a pass texture through. `sharpness` is `impl Into<NodeRef>`, which is
+three's `(number|Node<float>)`. A Rust number is a constant, as in three. A
+`uniform_settable` node is a value written between frames.
+`tests/sharpen_frames.rs` drives it that way. `denoise` is a `bool`, which is
+the constant three makes of it. `SharpenState` implements `NodeUpdate` and is
+registered as the updater of the target's texture, as `TraaState` is (§63).
+`set_size` is there, though `update_before` resizes every frame as three
+does.
+
+No graded page reaches it yet. `webgpu_postprocessing_ssr_denoise` calls it
+once, as `sharpen( traa( … ), 0 )`, behind SSR, a denoiser and TRAA.
+`tools/dump-pages/sharpen.html` isolates both variants:
+`sharpen( scenePass, 0.2 )`, then `sharpen( a, 0.5, true )` over the `RTT` that
+three's `convertToTexture()` makes of the first. The dump's `m03` and `m06`
+are the fixtures of `sharpen_rcas_matches_three` and
+`sharpen_rcas_denoise_matches_three`.
+
+The port's WGSL is three's line for line, with two cosmetic differences:
+
+- Three's `toConst()`s join the `Fn`'s stack where they are made. So
+  `rcas()` lists them in a `block` in the JS order, which declares `con`
+  second, `RCAS_LIMIT` after the ring's min and max, and so on. Without the
+  block, the port would declare each one at its first read, inside the
+  `select`'s two arms, and the centre tap would be read three times.
+- Three declares the two all-constant values, `exp2( -0.2 )` and `0.1875`,
+  as `const`. The port declares them as `let`. The five lumas are `nodeVar`s
+  where three has `let nodeConst`s, which is the usual single-assignment
+  difference (§8).
+
+`tests/sharpen_frames.rs` sharpens a soft grey edge read straight to the
+canvas. At sharpness 30 the output is the input. At 0 the foot of the edge
+darkens and its shoulder lightens, and the flat regions do not move. At 1
+the edge moves less in total than at 0. With `denoise`, no pixel moves
+further than without it. After a resize the target follows the drawing
+buffer.
+
+## 87. `TemporalReprojectNode` (`webgpu_postprocessing_ssr_denoise`)
+
+### 87.1 What three does
+
+`temporalReproject( beauty, depth, normal, velocity, camera, options )` is the
+temporal stage of `webgpu_postprocessing_ssr_denoise`'s denoiser. It is a
+`Node` with `updateBeforeType = FRAME`, and its texture node is
+`passTexture( this, resolve.texture )`. The options are `mode` (`'diffuse'`
+or `'specular'`), `accumulate` (default `false`) and `hitPointReprojection`
+(default `mode === 'specular'`). The uniforms are `maxFrames` (32),
+`hitPointReprojection`, `clampIntensity` (1) and `flickerSuppression` (1).
+
+- **Targets.** There are two half-float targets. The history also carries a
+  `DepthTexture`, which becomes the previous frame's depth after a copy. The
+  resolve is what the node outputs. A clone of the normal texture holds the
+  previous frame's normals.
+- **`updateBefore()`.** It rolls the current camera matrices into the
+  previous ones and reads the camera. On a size change it resizes the
+  targets, re-clones the normal and draws the seed quad (the beauty, clamped
+  at zero) into the history. It renders the resolve quad and, with
+  `accumulate`, copies the resolve into the history. Last, it copies the
+  scene's depth and normal into the previous ones.
+- **The history binding.** One `texture()` node reads the history. Its value
+  is the internal history or, with `accumulate: false`, the texture given to
+  `setHistoryTexture()` (on the page, the denoiser's output). On the frame
+  after a resize, the external history is stale, so the freshly seeded
+  internal one is bound for that frame (`_syncHistoryTextureBinding`).
+- **The resolve.**
+  - It discards the background (depth ≥ 1).
+  - It reprojects along the velocity attachment with a 4-tap bilinear fetch.
+    Each tap is weighted by how close the previous frame's reconstructed
+    position lies to the current surface's plane, and how well the previous
+    normal agrees.
+  - It clips the history to the YCoCg mean ± γσ of the 3×3 neighbourhood.
+    γ widens with stillness, and the samples are compressed by luminance
+    first.
+  - It lowers the confidence for reprojection stretch, clip distance and
+    motion.
+  - It writes the history colour with `1 / frameCount` in alpha. That alpha
+    is the weight the downstream accumulating pass gives the current frame.
+  - In `'specular'` mode, a Welford pass over the beauty's alpha (the SSR ray
+    length) adds a second history at the reflection's parallax hit point,
+    blended over the surface one by edge, curvature and environment
+    probability.
+- **The view offset.** `setup()` claims `renderPipelineState.viewOffsetOwner`
+  without jittering: before the pipeline it hands the camera's projection to
+  `velocity.setProjectionMatrix()`, and after it clears it.
+
+### 87.2 The port
+
+`nodes::display::temporal_reproject` builds the same graph.
+
+**Gates.** The dump page `tools/dump-pages/temporal_reproject.html` builds
+two nodes over one scene pass with an `output`, packed `normal` and
+`velocity` MRT:
+
+- `convertToTexture( temporalReproject( … ) )` with the defaults;
+- the page's configuration, `{ mode: 'specular', accumulate: false }`, with
+  `setHistoryTexture()` given the first node.
+
+`tests/nodes_display_wgsl.rs` gates three of the modules:
+
+- `temporal_reproject_seed`: the seed quad (`m03`);
+- `temporal_reproject_resolve`: the diffuse resolve (`m05`);
+- `temporal_reproject_resolve_specular`: the specular resolve (`m09`). It is
+  structurally different from the diffuse one, so it is gated too;
+- `temporal_reproject_layout_fns`: the four `Fn`s with layouts,
+  `beautyTexelFromScreen`, `velocityToUVOffset`, `clipToAABB` and
+  `projectWorldToUV`.
+
+The other module-level `Fn`s inline in three, and each is an
+`#[inline(never)]` helper here. In the diffuse resolve, the neighbourhood is
+only read, so three emits it where it is first read; in the specular one,
+`stdDevRayLength` is assigned, so it is a variable declared up front. The
+port does the same (`to_var_intent` in specular mode only).
+
+Three's `originalHistoryColor = vec3( historyColor.rgb )` is the same node as
+`historyColor.rgb`. The clip-distance confidence therefore reads the colour
+after it is pulled towards the clipped one, and so does the port.
+
+`tests/temporal_reproject_frames.rs` runs `traa_frames`'s white box on the
+GPU and checks the following:
+
+- **The first frame is the beauty.** It has no usable previous depth, so
+  every tap is rejected. The alpha is `1 / 2`.
+- **The history ages with `accumulate`.** The box's alpha falls as
+  `1 / (n + 1)` over eight frames, while its colour, the inside and the
+  outside stay as they were.
+- **A resize restarts the history.**
+- **An all-black external history (`accumulate: false`).** It is replaced
+  by the seeded internal one on the first frame and after a resize. On the
+  second frame it is accepted across the box, where it is pulled halfway to
+  `1 / 11` (the beauty, compressed by the neighbourhood's scale and
+  decompressed by the history's), and the background stays black.
+
+**Differences:**
+
+- **The history binding.** A texture node here binds its texture when the
+  graph is built. So `set_history_texture()` builds a second resolve quad
+  over the external texture, and `update_before()` picks between the two
+  quads where three swaps the node's value.
+- **The previous depth.** It is the history target's `DepthTexture` from the
+  start, as in `traa.rs`. Three starts from a 1×1 placeholder and repoints
+  the uniform after the first copy. Either way, the first frame reads an
+  unusable depth and falls back to the beauty.
+- **The seed draw.** The seed quad is drawn into the history with its
+  depth attached, so it clears that depth. The copy at the end of the same
+  `update_before()` overwrites it.
+- **The previous normal.** It is a render target of the normal's format, so
+  it can be allocated and copied into, and it is resized on every restart.
+- **The copies' guard.** The copies run when the normal attachment matches
+  the drawing buffer. Three's guard is that the depth has an image; on its
+  pages, the two coincide.
+- **The view-offset hooks.** As with TRAA, `TemporalReprojectNode::attach(
+  &mut RenderPipeline )` installs them behind `claim_view_offset()`.
+  `_needsPostProcessingSync` has no counterpart, because the hooks exist
+  before the first frame.
+- **`dispose()`.** It drops the three targets' GPU textures and returns them
+  to 1×1, so a node rendered again starts a fresh history.
+- **`ENV_RAY_LENGTH` and `ENV_RAY_LENGTH_THRESHOLD`.** `SpecularHelpers.js`'s
+  constants are private `const`s in the module until the `specular-helpers`
+  branch lands them in `nodes::tsl`.
+- **New TSL functions.** `texture_load_transformed` and
+  `depth_texture_load_transformed` are three's `textureLoad( texture( map ),
+  coord )`, whose coordinate goes through the map's uv transform. The taps
+  read the history, previous depth and previous normal that way.
+
+**Not ported:**
+
+- an orthographic camera;
+- a logarithmic or reversed depth buffer;
+- a beauty that is an arbitrary node (three's `convertToTexture()`): pass a
+  texture;
+- a `RecurrentDenoiseNode` as the history: pass its texture.
+
+## 88. `RecurrentDenoiseNode` (`webgpu_postprocessing_ssr_denoise`)
+
+### 88.1 What three does
+
+`recurrentDenoise( inputTexture, camera, options )` is a plain `Node` with
+`updateBeforeType = FRAME`. It owns one half-float target with no depth
+buffer, and its texture node is `passTexture( this, target.texture )`.
+`updateBefore()` sizes the target to the drawing buffer and remembers
+whether that changed it. It copies the camera's projection, its inverse,
+`matrixWorldInverse` and `fov`, and sets `_noiseIndex` to the frame id.
+When the input is a pass texture it asks for that pass first
+(`frame.updateBeforeNode( textureNode.passNode )`), because the quad is
+drawn here and not through the pipeline's output graph. A restart inits
+and clears the target. Then one quad, `RecurrentDenoise`, is drawn with the
+renderer's state reset around it.
+
+The options are `depth`, `normal` (packed, unpacked by the node),
+`metalRoughness` (x metalness, y roughness), `diffuse`, `raw`, `mode`
+(`'diffuse'` or `'specular'`) and `accumulate`. `alphaSource`
+(`'raylength'`, `'ao'` or `'none'`) is a plain property that `setup()`
+reads, so it is compiled into the shader.
+
+The fragment is `denoiseFn( uv() )`, an inline `Fn` that discards the
+background (`depth >= 1`) and runs `runDenoise` otherwise:
+
+- **The centre.** It reads the view and world normals, the input texel,
+  the view position, the roughness and metalness, and the raw texel.
+  `frameNum = 1 / texel.a` gives
+  `aggressivity = 1 - getTemporalVarianceFactor( frameNum, 1 - strength )`.
+- **Neighbourhood stats.** `getNeighborhoodStats` is a layouted `Fn` local
+  to `setup()`. Over the raw texel and its four axis neighbours it takes
+  an inverse-length-weighted mean ray length, where an environment miss
+  counts as 0.25 and sets a flag. When `adaptiveTrust > 0` it also keeps a
+  running luma mean and deviation. `'raylength'` calls it unconditionally.
+  The other sources call it only when `adaptiveTrust > 0`, for the luma
+  terms.
+- **The radius.** `radius · 0.1` is scaled by ray length, view depth and
+  `sqrt( roughness )` (`'specular'`), or by AO² and view depth
+  (`'diffuse'`). It then closes toward 0.001 of itself as `aggressivity`
+  rises.
+- **The kernel frame.** `'specular'` spans the plane across the reflection
+  of the specular dominant direction, with the tangent skewed by roughness
+  at grazing angles. `'diffuse'` spans the tangent plane, from
+  `normalize( cross( up, n ) )`.
+- **The loop.** There are eight taps on a golden-angle Vogel disk, rotated
+  per pixel by the analytic R² noise (`bindAnalyticNoise( resolution, 83 )`
+  at `_noiseIndex`). Each tap is placed in view space and projected back to
+  screen space, then mirrored into the frame. Its weight is
+  `exp( -( kernelDiff · aggressivity + planeDistance · depthScale ) )`
+  times `lobeNormalWeight`. `kernelDiff` sums four terms:
+  - luma, always;
+  - albedo, `diffuseColorDistance` scaled by metalness, only when
+    `diffuse` is bound;
+  - alpha, which is the AO ratio, or the hit-distance-factor difference
+    with environment misses accepted when the neighbourhood has one;
+  - roughness, in `'specular'` mode.
+
+  After each tap, `radiusShrink` and `polarBias` feed back into the next.
+  In the first five frames the weight leans toward dark taps, against
+  fireflies. With `smoothDisocclusions`, a neighbour that is further along
+  than the centre also pulls its frame count.
+- **The resolve.** The colours are normalised. With `accumulate`, the frame
+  weight `a` goes to alpha, and the colour is
+  `karisTemporalBlend( denoised, denoisedRaw, a, … )`, an inverse-luminance
+  blend whose flicker weighting is backed off where the neighbourhood is
+  calm. A missing `raw` uses `mix()` instead. Without `accumulate`, the
+  input's alpha passes through.
+
+Thirteen module-level `Fn`s carry the maths. Twelve have layouts. `mapAo`,
+which is `pow( x, 0.1 )`, has none and inlines.
+
+### 88.2 The port
+
+`nodes::display::recurrent_denoise( &Texture, camera, RecurrentDenoiseOptions )`
+takes the input as a texture, which is what three's `toTextureNode()` reads
+it through. The G-buffer options are `SampleFn`s (§65), which is three's
+`node.sample( uv )`. `depth` is a `DepthTexture`, and `raw` is a `Texture`.
+`set_alpha_source` rebuilds the quad material, as `SsrNode`'s
+`set_blur_quality` does. The thirteen public uniforms are `SettableValue`s
+with three's defaults. `smooth_disocclusions` is a bool uniform.
+`RecurrentDenoiseState` implements `NodeUpdate` and is registered as the
+updater of its target's texture. The input's pass is found in the frame's
+texture-update registry (§57) and run through `update_before_node`, as
+`SsrNode` does. Each layouted `Fn` is an `#[inline(never)]` helper cached in
+a `thread_local`. The exception is `getNeighborhoodStats`, which closes over
+the raw texture, the resolution and `alphaSource`, so each material builds
+its own.
+
+`tools/dump-pages/recurrent_denoise.html` builds a scene pass with the
+page's MRT: `diffuseColor` carries metalness in alpha, and the packed normal
+carries roughness. Over it runs a diffuse denoiser with `alphaSource = 'ao'`,
+and then, as the output node, the page's specular configuration with
+`alphaSource = 'raylength'` and `accumulate`, reading the first. The dump's
+`m09` (diffuse) and `m05` (specular) are the fixtures of the gates:
+
+- `recurrent_denoise_diffuse_matches_three` and
+  `recurrent_denoise_specular_matches_three` gate the two bodies.
+- Function gates cover `getNeighborhoodStats` in both of its variants,
+  `karisTemporalBlend`, `lobeNormalFalloff`, `vogelDisk`,
+  `diffuseColorDistance`, `computeHitDistFactor` and
+  `getSpecularDominantDirection`.
+
+Two details of the dump page differ from the brief:
+
+- **`raw` is bound on the diffuse node.** In r187 a missing `raw` always
+  throws, because `getNeighborhoodStats` is built for every `alphaSource`
+  and calls `texture( null )`. So the page passes the scene colour as
+  `raw`.
+- **The specular node reads the diffuse node directly**, as the real page
+  reads its temporal reprojection, so there is no `convertToTexture()`
+  between them.
+
+Like three, the port declares the ray-length sums of `getNeighborhoodStats`
+only when they are read.
+
+What differs from three:
+
+- **A missing `raw`.** Three throws, as above. The port reads the input
+  texture in its place, which is the fallback the source's own comment
+  describes, and keeps three's `mix()` branch for the temporal blend.
+- **`contextNode`.** `material.contextNode = context(
+  builder.getSharedContext() )` is not ported. The quad material is built in
+  the constructor, as `SharpenNode`'s is (§86).
+- **`dispose()`** consumes the node. The texture registry holds it weakly,
+  so the target's GPU texture goes with its last handle.
+- **The camera** is a `PerspectiveCamera`, the only kind three copies a
+  `fov` from.
+
+One behaviour of three's is kept and worth knowing. In `'diffuse'` mode, a
+view normal exactly along the view axis makes `normalize( cross( up, n ) )`
+the normalisation of a zero vector. The `length < 1e-6` fallback does not
+catch that result, so every tap lands off the surface and weighs nothing,
+and the pixel passes through unfiltered.
+
+`tests/recurrent_denoise_frames.rs` renders a box turned off the view axis.
+Its unlit grey is modulated by ±10 % of a hash of the pixel and a
+per-frame seed. The denoiser reads the beauty as `raw`, and its input is a
+history texture that the test refills from the node's output after every
+frame. The test advances the alpha from `1 / n` to `1 / ( n + 1 )`, which
+is what `TemporalReprojectNode` does with a still camera. The test checks
+the following:
+
+- One frame cuts the face's variance to under a quarter of the input's
+  (24.2 to 4.1) and keeps its mean within three levels.
+- The silhouette stays within two pixels.
+- Over thirteen frames of fresh noise the variance keeps dropping
+  (4.1, 1.1, 0.6, 0.35), and no texel is NaN.
+- A resize restarts the target at the new size.

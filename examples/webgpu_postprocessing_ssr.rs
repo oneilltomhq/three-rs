@@ -39,9 +39,9 @@ pub const INNER_HEIGHT: f64 = 500.0;
 /// the page, so the canvas is at CSS size.
 pub const DPR: f64 = 1.0;
 
-/// The page's `params`, the GUI's starting values. `binary_refine`,
-/// `roughness` (the model folder's slider) and `enabled` are only read by the
-/// GUI, which is not ported.
+/// The page's `params`, the GUI's starting values. `roughness` (the model
+/// folder's slider) and `enabled` are only read by the GUI, which is not
+/// ported.
 pub struct Params {
     pub quality: f64,
     pub blur_quality: u32,
@@ -220,8 +220,7 @@ pub fn update_parameters(app: &App) {
     app.ssr_pass.max_distance().set(vec![PARAMS.max_distance]);
     app.ssr_pass.intensity().set(vec![PARAMS.intensity]);
     app.ssr_pass.thickness().set(vec![PARAMS.thickness]);
-    // `ssrPass.binaryRefine = params.binaryRefine` is not ported: the page
-    // starts it at `false`, `SSRNode`'s default and the one path ported.
+    app.ssr_pass.set_binary_refine(PARAMS.binary_refine);
 }
 
 /// The page's `animate()`.

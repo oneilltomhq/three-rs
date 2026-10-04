@@ -13,18 +13,23 @@ use three_rs::nodes::display::{
     after_image, anaglyph_pass, ao, barrel_uv, bayer_dither, bilateral_blur, bleach, box_blur,
     circle, color_bleeding, depth_aware_blend, dof, dot_screen, film, fxaa, gaussian_blur, godrays,
     hash_blur_with, lensflare, lut_3d, motion_blur, outline, parallax_barrier_pass,
-    pixelation_pass, retro_pass, rgb_shift, rtt, scanlines, sepia, smaa, sobel, ssgi, ssr, sss,
-    traa, viewport_shared_texture_at, BoxBlurOptions, DepthAwareBlendOptions, GaussianBlurOptions,
-    HashBlurOptions, LensflareParams, OutlineParams, RetroPassOptions, SsrOptions,
+    pixelation_pass, recurrent_denoise, retro_pass, rgb_shift, rtt, scanlines, sepia, smaa, sobel,
+    ssgi, ssr, sss, temporal_reproject, traa, viewport_shared_texture_at, BoxBlurOptions,
+    DenoiseAlphaSource, DenoiseMode, DepthAwareBlendOptions, EnvironmentLobe, GaussianBlurOptions,
+    HashBlurOptions, ImportanceSampledEnvironment, LensflareParams, OutlineParams,
+    RecurrentDenoiseOptions, RetroPassOptions, SampleFn, SharpenNode, SsrOptions,
+    TemporalReprojectMode, TemporalReprojectOptions,
 };
 use three_rs::nodes::tsl::{
-    distance, float, osc_sine, pass_depth_texture, perspective_depth_to_view_z, posterize,
-    replace_default_uv, screen_size, screen_uv, texture_3d_sampled, texture_uv, time,
-    uniform_value, uv, vec2, vec4_join,
+    bind_analytic_noise, d_gtr, distance, equirect_dir_pdf, equirect_uv_to_dir, f_schlick, float,
+    geometry_term, get_specular_dominant_factor, ggx_reflection_sample, ggx_reflection_struct, int,
+    mis_power_heuristic, osc_sine, pass_depth_texture, perspective_depth_to_view_z, posterize,
+    replace_default_uv, screen_size, screen_uv, smith_g, struct_get, texture_3d_sampled,
+    texture_uv, time, uniform_value, uv, vec2, vec2_join, vec3, vec3_join, vec4_join,
 };
 use three_rs::nodes::Type;
-use three_rs::textures::{DepthTexture, Texture};
-use three_rs::{Color, PerspectiveCamera, PointLight, Scene, ToneMapping};
+use three_rs::textures::{DepthTexture, MinFilter, Texture, TextureFilter};
+use three_rs::{Color, Matrix4, PerspectiveCamera, PointLight, Scene, ToneMapping};
 
 /// One quad: the name the gate reports it by, the three.js dump file it is
 /// checked against, and the material.
@@ -576,7 +581,7 @@ pub fn display_quads() -> Vec<DisplayQuad> {
         (
             "ssr",
             "webgpu_postprocessing_ssr_m21_ssr.wgsl",
-            ssr_node.quad_material().clone(),
+            ssr_node.quad_material(),
         ),
         (
             "ssr_copy",
@@ -605,6 +610,93 @@ pub fn display_quads() -> Vec<DisplayQuad> {
         "webgpu_postprocessing_ssr_m26_ssr_resolve.wgsl",
         texture_uv(&scene_color, uv()).add(vec4_join(vec![ssr_node.node().rgb(), float(1.0)])),
     ));
+
+    // tools/dump-pages/ssr_stochastic.html `m10`, `m14`, `m16`: three
+    // `SSRNode.SSR` passes over the page's MRT, with `sceneNormal` its
+    // `sample( ( uv ) => unpackRGBToNormal( normal.sample( uv ).rgb ) )`,
+    // `metalnessNode: diffuseColor.a` and `roughnessNode: normal.a`.
+    let normal = input();
+    let diffuse = input();
+    let hdr = equirect_hdr();
+    let sampled_normal = {
+        let normal = normal.clone();
+        move || -> three_rs::nodes::display::SampleFn {
+            let normal = normal.clone();
+            Rc::new(move |coord| texture_uv(&normal, coord).rgb().mul(2.0).sub(1.0))
+        }
+    };
+    let sampled_diffuse = || -> three_rs::nodes::display::SampleFn {
+        let diffuse = diffuse.clone();
+        Rc::new(move |coord| texture_uv(&diffuse, coord))
+    };
+    let options = || {
+        SsrOptions::new(
+            texture_uv(&diffuse, uv()).w(),
+            Some(texture_uv(&normal, uv()).w()),
+        )
+    };
+    let camera = || Rc::new(RefCell::new(PerspectiveCamera::new(50.0, 1.6, 0.1, 50.0)));
+    // A: `{ stochastic: true, diffuseNode, environmentNode: hdr,
+    // envImportanceSampling: false, binaryRefine: false }`.
+    let ssr_a = ssr(
+        &scene_color,
+        &DepthTexture::new(),
+        sampled_normal(),
+        options()
+            .with_stochastic(true)
+            .with_diffuse(sampled_diffuse())
+            .with_environment(&hdr),
+        camera(),
+    );
+    // B: the page's `envImportanceSampling: true, binaryRefine: true`, its
+    // `stepExponent = 3`, and `setHistory( A's target, velocity )`.
+    let ssr_b = ssr(
+        &scene_color,
+        &DepthTexture::new(),
+        sampled_normal(),
+        options()
+            .with_stochastic(true)
+            .with_diffuse(sampled_diffuse())
+            .with_environment(&hdr)
+            .with_env_importance_sampling(true)
+            .with_binary_refine(true),
+        camera(),
+    );
+    ssr_b.set_step_exponent(3.0);
+    ssr_b.set_history(&ssr_a.render_target().texture(), &input());
+    // C: `{ stochastic: false, reflectNonMetals: true }`.
+    let ssr_c = ssr(
+        &scene_color,
+        &DepthTexture::new(),
+        sampled_normal(),
+        options().with_reflect_non_metals(true),
+        camera(),
+    );
+    for (label, fixture, node) in [
+        (
+            "ssr_stochastic",
+            "ssr_stochastic_m10_ssr_stochastic.wgsl",
+            &ssr_a,
+        ),
+        (
+            "ssr_stochastic_refine",
+            "ssr_stochastic_m14_ssr_stochastic_refine.wgsl",
+            &ssr_b,
+        ),
+        (
+            "ssr_reflect_non_metals",
+            "ssr_stochastic_m16_ssr_reflect_non_metals.wgsl",
+            &ssr_c,
+        ),
+    ] {
+        let mut material = node.quad_material();
+        material.vertex_node = Some(quad_vertex_node());
+        quads.push(DisplayQuad {
+            label,
+            fixture,
+            material,
+        });
+    }
 
     // webgpu_postprocessing_ssr `m28`, `m30`, `m32`: `smaa( … )`'s edges,
     // weights and blend passes over the page's `RTT`.
@@ -799,5 +891,290 @@ pub fn display_quads() -> Vec<DisplayQuad> {
         ),
     ));
 
+    // tools/dump-pages/temporal_reproject.html: `m03` is the seed quad
+    // (`TemporalReproject.seed`) of the first node, `convertToTexture(
+    // temporalReproject( scenePassColor, depth, normal, velocity, camera ) )`
+    // with the defaults, and `m05` its resolve quad; `m09` is the resolve of
+    // the page's configuration, `{ mode: 'specular', accumulate: false }`
+    // with `setHistoryTexture()` given another texture.
+    let reproject_camera = || {
+        std::rc::Rc::new(std::cell::RefCell::new(three_rs::PerspectiveCamera::new(
+            70.0, 1.0, 0.1, 10.0,
+        )))
+    };
+    let diffuse = temporal_reproject(
+        &input(),
+        &DepthTexture::new(),
+        &input(),
+        &input(),
+        reproject_camera(),
+        TemporalReprojectOptions::default(),
+    );
+    let mut seed = diffuse.seed_material();
+    seed.vertex_node = Some(quad_vertex_node());
+    quads.push(DisplayQuad {
+        label: "temporal_reproject_seed",
+        fixture: "temporal_reproject_m03_seed.wgsl",
+        material: seed,
+    });
+    let mut resolve = diffuse.quad_material();
+    resolve.vertex_node = Some(quad_vertex_node());
+    quads.push(DisplayQuad {
+        label: "temporal_reproject_resolve",
+        fixture: "temporal_reproject_m05_resolve.wgsl",
+        material: resolve,
+    });
+    let specular = temporal_reproject(
+        &input(),
+        &DepthTexture::new(),
+        &input(),
+        &input(),
+        reproject_camera(),
+        TemporalReprojectOptions {
+            mode: TemporalReprojectMode::Specular,
+            accumulate: false,
+            ..TemporalReprojectOptions::default()
+        },
+    );
+    specular.set_history_texture(Some(&input()));
+    let mut resolve = specular.quad_material();
+    resolve.vertex_node = Some(quad_vertex_node());
+    quads.push(DisplayQuad {
+        label: "temporal_reproject_resolve_specular",
+        fixture: "temporal_reproject_m09_resolve_specular.wgsl",
+        material: resolve,
+    });
+    // `tools/dump-pages/sharpen.html` `m03` and `m06`: `sharpen( scenePass,
+    // 0.2 )`'s RCAS quad, then `sharpen( a, 0.5, true )`'s over the `RTT`
+    // three's `convertToTexture()` makes of the first.
+    for (label, fixture, sharpness, denoise) in [
+        ("sharpen_rcas", "sharpen_m03_rcas.wgsl", 0.2, false),
+        (
+            "sharpen_rcas_denoise",
+            "sharpen_m06_rcas_denoise.wgsl",
+            0.5,
+            true,
+        ),
+    ] {
+        let mut material = SharpenNode::new(&input(), float(sharpness), denoise)
+            .quad_material()
+            .clone();
+        material.vertex_node = Some(quad_vertex_node());
+        quads.push(DisplayQuad {
+            label,
+            fixture,
+            material,
+        });
+    }
+    recurrent_denoise_quads(&mut quads);
+    specular_helpers_quads(&mut quads);
+
     quads
+}
+
+/// `tools/dump-pages/recurrent_denoise.html` `m09` and `m05`: the diffuse
+/// denoiser over the scene pass (`alphaSource = 'ao'`, the beauty as its own
+/// raw input) and the page's specular configuration reading the first's
+/// output (`alphaSource = 'raylength'`, `accumulate`, every G-buffer bound).
+fn recurrent_denoise_quads(quads: &mut Vec<DisplayQuad>) {
+    let camera = Rc::new(RefCell::new(PerspectiveCamera::new(35.0, 1.6, 0.1, 50.0)));
+    let scene_color = input();
+    let depth = DepthTexture::new();
+    let normal_tex = input();
+    let diffuse_tex = input();
+    let normal: SampleFn = {
+        let normal_tex = normal_tex.clone();
+        Rc::new(move |coord| texture_uv(&normal_tex, coord))
+    };
+
+    let diffuse_denoise = recurrent_denoise(
+        &scene_color,
+        camera.clone(),
+        RecurrentDenoiseOptions {
+            depth: Some(depth.clone()),
+            normal: Some(normal.clone()),
+            raw: Some(scene_color.clone()),
+            ..Default::default()
+        },
+    );
+    diffuse_denoise.set_alpha_source(DenoiseAlphaSource::Ao);
+
+    let metal_roughness: SampleFn = {
+        let (diffuse_tex, normal_tex) = (diffuse_tex.clone(), normal_tex.clone());
+        Rc::new(move |coord: three_rs::nodes::NodeRef| {
+            vec2_join(vec![
+                texture_uv(&diffuse_tex, coord.clone()).w(),
+                texture_uv(&normal_tex, coord).w(),
+            ])
+        })
+    };
+    let diffuse: SampleFn = {
+        let diffuse_tex = diffuse_tex.clone();
+        Rc::new(move |coord| texture_uv(&diffuse_tex, coord))
+    };
+    let specular_denoise = recurrent_denoise(
+        &diffuse_denoise.texture(),
+        camera,
+        RecurrentDenoiseOptions {
+            depth: Some(depth),
+            normal: Some(normal),
+            metal_roughness: Some(metal_roughness),
+            diffuse: Some(diffuse),
+            raw: Some(scene_color),
+            mode: DenoiseMode::Specular,
+            accumulate: true,
+        },
+    );
+    specular_denoise.set_alpha_source(DenoiseAlphaSource::RayLength);
+
+    for (label, fixture, node) in [
+        (
+            "recurrent_denoise_diffuse",
+            "recurrent_denoise_m09_diffuse.wgsl",
+            &diffuse_denoise,
+        ),
+        (
+            "recurrent_denoise_specular",
+            "recurrent_denoise_m05_specular.wgsl",
+            &specular_denoise,
+        ),
+    ] {
+        let mut material = node.quad_material();
+        material.vertex_node = Some(quad_vertex_node());
+        quads.push(DisplayQuad {
+            label,
+            fixture,
+            material,
+        });
+    }
+}
+
+/// `tools/dump-pages/specular_helpers.html`: one `convertToTexture()` quad
+/// per helper group of `SpecularHelpers.js`, `RNoise.js` and
+/// `ImportanceSampledEnvironment.js`.
+fn specular_helpers_quads(quads: &mut Vec<DisplayQuad>) {
+    // `m01`: `ggxReflectionSample( N, V, p.x, p.y, vec3( 0.9, 0.6, 0.3 ),
+    // vec4( p, p.yx ) )`, every member of the result read.
+    let p = uv();
+    let n = vec3_join(vec![p.sub(0.5), float(1.0)]).normalize();
+    let v = vec3_join(vec![p.swizzle("yx").sub(0.5), float(1.0)]).normalize();
+    let sample = ggx_reflection_sample(
+        n,
+        v,
+        p.x(),
+        p.y(),
+        vec3(0.9, 0.6, 0.3),
+        vec4_join(vec![p.clone(), p.swizzle("yx")]),
+    );
+    let layout = ggx_reflection_struct();
+    let get = |name: &str| struct_get(&sample, &layout, name);
+    quads.push(quad(
+        "specular_ggx_reflection_sample",
+        "specular_helpers_m01_ggx_reflection_sample.wgsl",
+        vec4_join(vec![
+            get("reflectDir").add(get("sampleWeight")).add(get("f0")),
+            get("pdf").add(get("NdotV")).add(get("alpha")),
+        ]),
+    ));
+
+    // `m03`: the scalar BRDF terms and the equirect helpers in one colour.
+    let p = uv();
+    let dir = equirect_uv_to_dir(p.clone());
+    let pdf = equirect_dir_pdf(dir.clone());
+    let w = mis_power_heuristic(pdf, p.x());
+    let d = d_gtr(p.x(), p.y(), float(2.0));
+    let g1 = smith_g(p.y(), p.x());
+    let g = geometry_term(p.x(), p.y(), float(0.5));
+    let f = f_schlick(vec3(0.04, 0.04, 0.04), p.y());
+    let sdf = get_specular_dominant_factor(p.y(), p.x());
+    quads.push(quad(
+        "specular_helpers",
+        "specular_helpers_m03_specular_helpers.wgsl",
+        vec4_join(vec![dir.mul(w).add(f), d.add(g1).add(g).add(sdf)]),
+    ));
+
+    // `m04`: `bindAnalyticNoise( uniform( vec2( 800, 500 ) ), 47 )( uv(),
+    // int( 3 ) )`.
+    let noise = bind_analytic_noise(uniform_value(Type::Vec2, vec![800.0, 500.0]), 47);
+    quads.push(quad(
+        "analytic_noise",
+        "specular_helpers_m04_analytic_noise.wgsl",
+        noise(uv(), int(3)),
+    ));
+
+    environment_quads(quads);
+}
+
+/// The 8×4 float equirect HDR of `tools/dump-pages/specular_helpers.html`
+/// and `ssr_stochastic.html`: a gradient with one hot texel at (2, 2).
+fn equirect_hdr() -> Texture {
+    let (width, height) = (8, 4);
+    let mut pixels = Vec::with_capacity(width * height * 4);
+    for y in 0..height {
+        for x in 0..width {
+            let hot = if x == 2 && y == 2 { 20.0 } else { 0.0 };
+            pixels.extend([
+                0.2 + 0.05 * x as f32 + hot,
+                0.3 + 0.1 * y as f32 + hot * 0.8,
+                0.5 + hot * 0.4,
+                1.0,
+            ]);
+        }
+    }
+    let hdr = Texture::data_rgba32float(width as u32, height as u32, &pixels);
+    // `new DataTexture()`'s `NearestFilter` default (`data_rgba32float`
+    // picks linear), which the map's clone keeps: three reads it with
+    // `textureLoad`.
+    hdr.set_min_filter(MinFilter::Nearest);
+    hdr.set_mag_filter(TextureFilter::Nearest);
+    hdr
+}
+
+/// Quads D–F of `specular_helpers.html`: an 8×4 float equirect with a hot
+/// texel at ( 2, 2 ), looked up through `ImportanceSampledEnvironment`.
+fn environment_quads(quads: &mut Vec<DisplayQuad>) {
+    let hdr = equirect_hdr();
+    let camera_world_matrix = uniform_value(Type::Mat4, Matrix4::identity().elements.to_vec());
+    let view_reflect_dir = || vec3_join(vec![uv().sub(0.5), float(-1.0)]).normalize();
+    let lobe = || EnvironmentLobe {
+        camera_world_matrix: camera_world_matrix.clone(),
+        view_reflect_dir: view_reflect_dir(),
+        n: vec3_join(vec![uv().swizzle("yx").sub(0.5), float(1.0)]).normalize(),
+        v: vec3(0.0, 0.0, 1.0),
+        alpha: uv().x().mul(uv().x()),
+        f0: vec3(0.04, 0.04, 0.04),
+    };
+
+    // `m05` (D) and `m06` (E): `new ImportanceSampledEnvironment( false )`.
+    let mut environment = ImportanceSampledEnvironment::new(false);
+    environment.update_from(&hdr);
+    quads.push(quad(
+        "env_sample_reflect",
+        "specular_helpers_m05_env_sample_reflect.wgsl",
+        vec4_join(vec![
+            environment.sample_reflect(&camera_world_matrix, view_reflect_dir(), None),
+            float(1.0),
+        ]),
+    ));
+    quads.push(quad(
+        "env_sample_brdf",
+        "specular_helpers_m06_env_sample_brdf.wgsl",
+        vec4_join(vec![
+            environment.sample_environment_brdf(&lobe()),
+            float(1.0),
+        ]),
+    ));
+
+    // `m08` (F): `new ImportanceSampledEnvironment( true )`, the MIS path.
+    let mut importance = ImportanceSampledEnvironment::new(true);
+    importance.update_from(&hdr);
+    let xi2 = vec4_join(vec![uv(), uv().swizzle("yx")]);
+    quads.push(quad(
+        "env_sample_mis",
+        "specular_helpers_m08_env_sample_mis.wgsl",
+        vec4_join(vec![
+            importance.sample_environment_mis(&lobe(), xi2),
+            float(1.0),
+        ]),
+    ));
 }
