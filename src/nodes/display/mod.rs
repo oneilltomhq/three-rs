@@ -38,6 +38,7 @@ mod outline;
 mod parallax_barrier_pass;
 mod pixelation_pass;
 mod radial_blur;
+mod recurrent_denoise;
 mod retro_pass;
 mod rgb_shift;
 mod rtt;
@@ -87,6 +88,10 @@ pub use outline::{outline, OutlineNode, OutlineParams, OutlineState};
 pub use parallax_barrier_pass::{parallax_barrier_pass, ParallaxBarrierPassNode};
 pub use pixelation_pass::{pixelation_pass, PixelationPassNode};
 pub use radial_blur::{radial_blur, RadialBlurOptions};
+pub use recurrent_denoise::{
+    recurrent_denoise, DenoiseAlphaSource, DenoiseMode, RecurrentDenoiseNode,
+    RecurrentDenoiseOptions,
+};
 pub use retro_pass::{retro_pass, RetroPassNode, RetroPassOptions};
 pub use rgb_shift::rgb_shift;
 pub use rtt::{convert_to_texture, rtt, RttNode};

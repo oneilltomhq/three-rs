@@ -1228,3 +1228,74 @@ fn sharpen_rcas_matches_three() {
 fn sharpen_rcas_denoise_matches_three() {
     check("sharpen_rcas_denoise", Region::Body);
 }
+
+#[test]
+fn recurrent_denoise_diffuse_matches_three() {
+    check("recurrent_denoise_diffuse", Region::Body);
+}
+
+#[test]
+fn recurrent_denoise_specular_matches_three() {
+    check("recurrent_denoise_specular", Region::Body);
+}
+
+#[test]
+fn recurrent_denoise_diffuse_neighborhood_stats_matches_three() {
+    check(
+        "recurrent_denoise_diffuse",
+        Region::Function("getNeighborhoodStats"),
+    );
+}
+
+#[test]
+fn recurrent_denoise_get_neighborhood_stats_matches_three() {
+    check(
+        "recurrent_denoise_specular",
+        Region::Function("getNeighborhoodStats"),
+    );
+}
+
+#[test]
+fn recurrent_denoise_karis_temporal_blend_matches_three() {
+    check(
+        "recurrent_denoise_specular",
+        Region::Function("karisTemporalBlend"),
+    );
+}
+
+#[test]
+fn recurrent_denoise_lobe_normal_falloff_matches_three() {
+    check(
+        "recurrent_denoise_specular",
+        Region::Function("lobeNormalFalloff"),
+    );
+}
+
+#[test]
+fn recurrent_denoise_vogel_disk_matches_three() {
+    check("recurrent_denoise_specular", Region::Function("vogelDisk"));
+}
+
+#[test]
+fn recurrent_denoise_diffuse_color_distance_matches_three() {
+    check(
+        "recurrent_denoise_specular",
+        Region::Function("diffuseColorDistance"),
+    );
+}
+
+#[test]
+fn recurrent_denoise_compute_hit_dist_factor_matches_three() {
+    check(
+        "recurrent_denoise_specular",
+        Region::Function("computeHitDistFactor"),
+    );
+}
+
+#[test]
+fn recurrent_denoise_specular_dominant_direction_matches_three() {
+    check(
+        "recurrent_denoise_specular",
+        Region::Function("getSpecularDominantDirection"),
+    );
+}
