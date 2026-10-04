@@ -11,7 +11,7 @@ This matrix judges every exported name in three.js revision 5f610f5 (r187) — `
 | geometries | 21 | 19 | 0 | 2 | 0 | 90% |
 | extras | 21 | 17 | 0 | 2 | 2 | 89% |
 | animation | 14 | 13 | 1 | 0 | 0 | 93% |
-| cameras | 6 | 5 | 0 | 1 | 0 | 83% |
+| cameras | 6 | 6 | 0 | 0 | 0 | 100% |
 | scenes | 3 | 3 | 0 | 0 | 0 | 100% |
 | objects | 14 | 11 | 0 | 2 | 1 | 85% |
 | lights | 11 | 7 | 1 | 3 | 0 | 64% |
@@ -26,8 +26,8 @@ This matrix judges every exported name in three.js revision 5f610f5 (r187) — `
 | addons/controls | 9 | 0 | 2 | 7 | 0 | 0% |
 | addons/loaders | 71 | 6 | 2 | 63 | 0 | 8% |
 | addons/postprocessing | 30 | 0 | 0 | 0 | 30 | — |
-| addons/other | 102 | 11 | 4 | 64 | 23 | 14% |
-| **total** | **1315** | **651** | **122** | **425** | **117** | **54%** |
+| addons/other | 102 | 12 | 4 | 63 | 23 | 15% |
+| **total** | **1315** | **653** | **122** | **423** | **117** | **55%** |
 
 TSL by family:
 
@@ -44,7 +44,7 @@ TSL by family:
 | materialx | 49 | 48 | 0 | 1 | 0 |
 | utils | 77 | 29 | 5 | 39 | 4 |
 
-Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compressed`, which has a live `rung!` but a hyphen in its name). 10 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
+Graded examples: 86 (the README gallery plus `webgpu_textures_2d-array_compressed`, which has a live `rung!` but a hyphen in its name). 10 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
 
 ## math
 
@@ -197,11 +197,11 @@ Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ## cameras
 
-6 rows: 5 Present, 0 Partial, 1 Absent, 0 N.A.
+6 rows: 6 Present, 0 Partial, 0 Absent, 0 N.A.
 
 | three.js name | verdict | three-rs symbol | verified by | note |
 |---|---|---|---|---|
-| `StereoCamera` | Absent | — | — | not ported |
+| `StereoCamera` | Present | StereoCamera (src/cameras/stereo_camera.rs:37) | tests/cameras_stereo_camera.rs (eyes and projection cache vs three r187dev, tools/stereo_camera_reference.mjs), tests/stereo_frames.rs, webgpu_display_stereo | eye offset kept per camera (three's is module-scoped); not `Clone` |
 | `PerspectiveCamera` | Present | PerspectiveCamera (src/cameras/perspective_camera.rs:32) | tests/cameras_perspective_camera.rs |  |
 | `OrthographicCamera` | Present | OrthographicCamera (src/cameras/orthographic_camera.rs:15) | tests/cameras_orthographic_camera.rs; webgpu_compute_points |  |
 | `CubeCamera` | Present | CubeCamera (src/cameras/cube_camera.rs:27) | webgpu_sky, webgpu_lightprobe_cubecamera (graded); tests/renderer_cube_camera.rs | renders the six faces into a CubeRenderTarget, mips via generate_cube_mipmaps |
@@ -711,7 +711,7 @@ Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ## addons/other
 
-102 rows: 11 Present, 4 Partial, 64 Absent, 23 N.A.
+102 rows: 12 Present, 4 Partial, 63 Absent, 23 N.A.
 
 | three.js name | verdict | three-rs symbol | verified by | note |
 |---|---|---|---|---|
@@ -750,7 +750,7 @@ Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `Water2Mesh` | Absent | — | — |  |
 | `WaterMesh` | Absent | — | — |  |
 | `BufferGeometryUtils` | Absent | — | — |  |
-| `CameraUtils` | Absent | — | — |  |
+| `CameraUtils` | Present | frame_corners (src/addons/camera_utils.rs:23) | tests/cameras_stereo_camera.rs (vs three r187dev, tools/stereo_camera_reference.mjs) |  |
 | `ColorUtils` | Absent | — | — |  |
 | `GaussianSplatUtils` | Absent | — | — |  |
 | `GeometryCompressionUtils` | Absent | — | — |  |
@@ -820,12 +820,12 @@ Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ### Supplementary: `examples/jsm/tsl/display/*.js`
 
-These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 16 Present, 32 Absent.
+These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 20 Present, 28 Absent.
 
 | file | status | three-rs port and check |
 |---|---|---|
 | `AfterImageNode.js` | Present | after_image; tests/nodes_display_wgsl.rs; webgpu_postprocessing_afterimage (ported, ungraded) |
-| `AnaglyphPassNode.js` | Absent | — |
+| `AnaglyphPassNode.js` | Present | anaglyph_pass/AnaglyphPassNode, all 21 algorithm × colour-mode matrices; tests/cameras_stereo_camera.rs (matrices and eyes vs three), tests/nodes_display_wgsl.rs (quad gate), tests/stereo_frames.rs; webgpu_display_stereo's anaglyph effect (not the graded default) |
 | `BilateralBlurNode.js` | Absent | — |
 | `BleachBypass.js` | Absent | — |
 | `BloomNode.js` | Present | bloom/BloomNode; webgpu_postprocessing_bloom, _bloom_emissive, _bloom_selective, _anamorphic |
@@ -850,7 +850,7 @@ These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) an
 | `MotionBlur.js` | Present | motion_blur; tests/nodes_display_wgsl.rs; webgpu_postprocessing_motion_blur (graded) |
 | `OITPassNode.js` | Absent | — |
 | `OutlineNode.js` | Absent | — |
-| `ParallaxBarrierPassNode.js` | Absent | — |
+| `ParallaxBarrierPassNode.js` | Present | parallax_barrier_pass/ParallaxBarrierPassNode; tests/nodes_display_wgsl.rs (quad gate), tests/stereo_frames.rs; webgpu_display_stereo's parallax-barrier effect (not the graded default) |
 | `PixelationPassNode.js` | Present | pixelation_pass; tests/nodes_display_wgsl.rs (WGSL gate only, no graded rung) |
 | `radialBlur.js` | Present | radial_blur; webgpu_postprocessing_radial_blur |
 | `RecurrentDenoiseNode.js` | Absent | — |
@@ -866,8 +866,8 @@ These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) an
 | `SSGINode.js` | Absent | — |
 | `SSRNode.js` | Absent | — |
 | `SSSNode.js` | Absent | — |
-| `StereoCompositePassNode.js` | Absent | — |
-| `StereoPassNode.js` | Absent | — |
+| `StereoCompositePassNode.js` | Present | CompositeState (crate-private base of the two composite passes); tests/stereo_frames.rs; no `contextNode`, partial renderer-state save |
+| `StereoPassNode.js` | Present | stereo_pass/StereoPassNode; tests/stereo_frames.rs; webgpu_display_stereo (graded) |
 | `TAAUNode.js` | Absent | — |
 | `TemporalReprojectNode.js` | Absent | — |
 | `TRAANode.js` | Present | traa/TraaNode; tests/nodes_display_wgsl.rs (resolve, subpixel correction, clip AABB, flicker reduction gates), tests/traa_frames.rs; webgpu_postprocessing_traa (ported, ungraded: three's own e2e exception list) |

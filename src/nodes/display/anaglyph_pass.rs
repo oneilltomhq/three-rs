@@ -27,7 +27,7 @@ use crate::cameras::{PerspectiveCamera, StereoCamera};
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::{CoordinateSystem, Matrix3, Vector3, DEG2RAD};
 use crate::nodes::node::SettableValue;
-use crate::nodes::tsl::{max, texture_sample, to_var, uniform_settable, uv, vec4_join};
+use crate::nodes::tsl::{max, texture_sample, uniform_settable, uv, vec4_join};
 use crate::nodes::{NodeRef, Type};
 use crate::objects::QuadMesh;
 use crate::renderer::SceneRef;
@@ -452,9 +452,10 @@ fn anaglyph_node(
     color_matrix_right: NodeRef,
 ) -> NodeRef {
     let uv_node = uv();
-    // `this._mapLeft.sample( uvNode )`: read twice, so a var.
-    let color_l = to_var(None, texture_sample(map_left, uv_node.clone()));
-    let color_r = to_var(None, texture_sample(map_right, uv_node));
+    // `this._mapLeft.sample( uvNode )`: a sample read twice is a var of its
+    // own, as three's `TextureNode` makes it.
+    let color_l = texture_sample(map_left, uv_node.clone());
+    let color_r = texture_sample(map_right, uv_node);
     // `clamp( x )` — `clamp( x, 0, 1 )`.
     let color = color_matrix_left
         .mul(color_l.rgb())

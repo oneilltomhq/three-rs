@@ -348,3 +348,13 @@ fn traa_clip_aabb_matches_three() {
 fn traa_flicker_reduction_matches_three() {
     check("traa", Region::Function("flickerReduction"));
 }
+
+#[test]
+fn anaglyph_matches_three() {
+    check("anaglyph", Region::Body);
+}
+
+#[test]
+fn parallax_barrier_matches_three() {
+    check("parallax_barrier", Region::Body);
+}

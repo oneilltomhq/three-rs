@@ -5,9 +5,9 @@
 
 use three_rs::materials::{quad_vertex_node, render_output, MeshBasicNodeMaterial};
 use three_rs::nodes::display::{
-    after_image, box_blur, dot_screen, fxaa, gaussian_blur, hash_blur_with, motion_blur,
-    pixelation_pass, rgb_shift, sobel, traa, viewport_shared_texture_at, BoxBlurOptions,
-    GaussianBlurOptions, HashBlurOptions,
+    after_image, anaglyph_pass, box_blur, dot_screen, fxaa, gaussian_blur, hash_blur_with,
+    motion_blur, parallax_barrier_pass, pixelation_pass, rgb_shift, sobel, traa,
+    viewport_shared_texture_at, BoxBlurOptions, GaussianBlurOptions, HashBlurOptions,
 };
 use three_rs::nodes::tsl::{distance, float, screen_uv, texture_uv, uniform_value, uv, vec4_join};
 use three_rs::nodes::Type;
@@ -193,6 +193,34 @@ pub fn display_quads() -> Vec<DisplayQuad> {
         label: "traa",
         fixture: "webgpu_postprocessing_traa_m05_traa_resolve.wgsl",
         material: resolve,
+    });
+
+    // webgpu_display_stereo `m06` with the effect set to Anaglyph:
+    // `anaglyphPass( scene, camera )`'s composite quad, which mixes the two
+    // eye targets with the default Dubois red/cyan matrices. `stereoPass` has
+    // no quad of its own (it renders both eyes straight into its target).
+    let stereo_camera = || {
+        std::rc::Rc::new(std::cell::RefCell::new(three_rs::PerspectiveCamera::new(
+            60.0, 1.6, 0.1, 100.0,
+        )))
+    };
+    let stereo_scene = || std::rc::Rc::new(std::cell::RefCell::new(three_rs::Scene::new()));
+    let mut anaglyph = anaglyph_pass(stereo_scene(), stereo_camera()).quad_material();
+    anaglyph.vertex_node = Some(quad_vertex_node());
+    quads.push(DisplayQuad {
+        label: "anaglyph",
+        fixture: "webgpu_display_stereo_anaglyph_m06_anaglyph.wgsl",
+        material: anaglyph,
+    });
+
+    // webgpu_display_stereo `m06` with the effect set to ParallaxBarrier:
+    // `parallaxBarrierPass( scene, camera )`'s interleaving quad.
+    let mut barrier = parallax_barrier_pass(stereo_scene(), stereo_camera()).quad_material();
+    barrier.vertex_node = Some(quad_vertex_node());
+    quads.push(DisplayQuad {
+        label: "parallax_barrier",
+        fixture: "webgpu_display_stereo_parallax_barrier_m06_parallax_barrier.wgsl",
+        material: barrier,
     });
 
     quads
