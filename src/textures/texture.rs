@@ -329,6 +329,31 @@ impl Texture {
         texture
     }
 
+    /// `new DataTexture( new Uint16Array( data ), width, height, RedFormat,
+    /// HalfFloatType )` — one binary16 bit pattern per texel (`r16float`),
+    /// the format of `ImportanceSampledEnvironment`'s CDF tables.
+    ///
+    /// Keeps all of `DataTexture`'s defaults, as [`data_r8`](Self::data_r8)
+    /// does: `flipY = false`, `generateMipmaps = false` and `NearestFilter`
+    /// on both sides; set the filters afterwards for a filtered lookup.
+    pub fn data_r16float(width: u32, height: u32, data: &[u16]) -> Self {
+        assert_eq!(
+            data.len() as u32,
+            width * height,
+            "three-rs: a RedFormat HalfFloatType DataTexture holds one half per texel"
+        );
+        let texture = Self::new(width, height, Some(bytemuck::cast_slice(data).to_vec()));
+        {
+            let mut inner = texture.0.borrow_mut();
+            inner.flip_y = false;
+            inner.generate_mipmaps = false;
+            inner.mag_filter = TextureFilter::Nearest;
+            inner.min_filter = MinFilter::Nearest;
+            inner.format = wgpu::TextureFormat::R16Float;
+        }
+        texture
+    }
+
     /// `new DataTexture( new Uint8Array( data ), width, height, RedFormat )` —
     /// `webgpu_materials_toon`'s gradient maps, one byte per texel
     /// (`r8unorm`).

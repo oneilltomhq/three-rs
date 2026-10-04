@@ -8330,6 +8330,119 @@ workgroups of 64 run 128 times, and the guarded stores stay in range.
   `@location` is still the port's first-use order (§8): it is 0, where three
   puts it at 1 after `position`.
 
+## 85. `SpecularHelpers.js`, `RNoise.js` and `ImportanceSampledEnvironment`
+
+### 85.1 What three does
+
+These three files are shared by the SSR-denoise stack
+(`webgpu_postprocessing_ssr_denoise`): `SSRNode`'s stochastic mode,
+`RecurrentDenoiseNode` and the environment fallback for rays that leave the
+screen.
+
+- `examples/jsm/tsl/utils/SpecularHelpers.js` exports two constants and a set
+  of microfacet `Fn`s:
+  - `ENV_RAY_LENGTH` (1e4) is the ray length SSR writes for an environment
+    miss. `ENV_RAY_LENGTH_THRESHOLD` (1e3) is the test that separates misses
+    from hits.
+  - Five `Fn`s have a layout and become real WGSL functions:
+    `SampleGGXVNDF` (bounded-VNDF GGX sampling, spherical-cap form),
+    `getSpecularDominantFactor`, `equirectUvToDir`, `equirectDirPdf` and
+    `misPowerHeuristic`.
+  - The rest are plain `Fn`s whose bodies, `toVar()`s included, inline at
+    every call: `D_GTR`, `SmithG`, `GeometryTerm`, `GGXVNDFPdf`, `F_Schlick`
+    and `ggxReflectionSample`. The last returns a `struct()` of `reflectDir`,
+    `sampleWeight`, `pdf`, `NdotV`, `alpha` and `f0`.
+- `examples/jsm/tsl/utils/RNoise.js` exports `bindAnalyticNoise( resolution,
+  seed )`. It returns a plain `Fn( [ uv, sampleIndex ] )` giving four
+  independent R² dimensions: continuous over pixels for index 0, and
+  tile-shifted into a 32×32 period for every other index.
+- `examples/jsm/tsl/display/ImportanceSampledEnvironment.js` has two classes:
+  - `EnvMapCDFGenerator` works on the CPU. `preprocessEnvMap()` clones the
+    equirect map as RGBA half floats (float data converted as is, 8-bit data
+    divided by 255, a `flipY` map's rows reversed). `updateFrom()` weights
+    every texel by its Rec. 709 luminance alone; there is no `sin θ` term.
+    It builds row and column CDFs in `Float32Array`s and inverts them by
+    binary search into two `RedFormat` `HalfFloatType` `DataTexture`s with
+    linear filtering, clamped on both axes:
+    - the `height × 1` marginal table;
+    - the `width × height` conditional table.
+
+    The map itself repeats in `s` and is clamped in `t`.
+  - `ImportanceSampledEnvironment` owns a generator and the `totalSum`,
+    `size` and `intensity` uniforms. Its lookups are `sampleReflect`,
+    `sampleEnvironmentBRDF` and `sampleEnvironmentMIS`. The MIS lookup
+    combines the BRDF ray with a CDF-drawn direction under the power
+    heuristic, inside `If( alpha > 0.01 )` and `If( envNdotL > 0.001 )`.
+    Every map read is `texture( map, uv ).level( 0 )`. The `DataTexture` is
+    `NearestFilter`, so that read is a `textureLoad` at `u32( 0.0 )`.
+
+### 85.2 The port
+
+- `crate::nodes::tsl` holds the helpers under snake_case names (e.g.
+  `d_gtr`, `ggx_reflection_sample`, `mis_power_heuristic`), plus
+  `ggx_reflection_struct()` for reading the sample's members. Each keeps
+  three's layout or no-layout shape.
+- RNoise is `bind_analytic_noise( resolution, seed )`, which returns an
+  `impl Fn( uv, sample_index ) -> NodeRef`.
+- `crate::nodes::display` holds `EnvMapCdfGenerator`,
+  `ImportanceSampledEnvironment` and `EnvironmentLobe`, the struct three
+  passes the BRDF and MIS lookups. `intensity()` is a `SettableValue`.
+
+**The WGSL gates.** No page isolates these files, so
+`tools/dump-pages/specular_helpers.html` builds six `convertToTexture()`
+quads over an 8×4 float equirect. All the tests are in
+`tests/nodes_display_wgsl.rs`:
+
+- `m01`: `specular_ggx_reflection_sample` and `specular_sample_ggx_vndf`.
+- `m03`: `specular_helpers`, plus function gates for `equirectUvToDir`,
+  `equirectDirPdf`, `misPowerHeuristic` and `getSpecularDominantFactor`.
+- `m04`: `analytic_noise`.
+- `m05`, `m06` and `m08`: `env_sample_reflect`, `env_sample_brdf` and
+  `env_sample_mis`, plus that module's `equirectDirPdf` and
+  `misPowerHeuristic` functions.
+
+The MIS path passes the `vec2` CDF UV to `equirectUV()`, and then uses the
+`vec2` result as a direction. The port keeps both, so its
+`vec3<f32>( nodeVar34, 0.0 ).z` and `vec3<f32>( nodeVar35, 0.0 )` widenings
+are three's `vec3<f32>( nodeConst3, 0.0 ).z` and
+`vec3<f32>( nodeConst4, 0.0 )`. Inside the two `If`s, three declares these
+shared temporaries as `let nodeConstN`, while the port assigns module
+`nodeVarN`s. The values and the fingerprint are the same.
+
+**The CPU tables.** The module's unit tests check the tables for a 4×2
+image against hand-computed values from three's arithmetic. They cover:
+
+- the plain case;
+- a `flipY` map;
+- a second same-size update.
+
+**Two gaps closed on the way.**
+
+- `texture_level` on a `NearestFilter` 2D map used to emit a sampler-less
+  `textureSampleLevel`. It now takes three's `generateTextureLod()` path: a
+  `textureLoad` at `u32( level )` against a cached
+  `textureDimensions( t, u32( level ) )`.
+- `Texture::data_r16float` adds the `RedFormat` `HalfFloatType`
+  `DataTexture` the tables use.
+
+**Differences.**
+
+- *Texture identity.* Three's `updateFrom()` makes new textures and points
+  the existing nodes at them (`node.value = texture`). A texture node here
+  holds its `Texture` and has no `value` to reassign. So a later
+  `update_from` with an environment of the same size writes into the
+  textures already bound. One of a different size allocates new textures,
+  which only graphs built after it read, because the renderer cannot resize
+  a texture in place.
+- *Dispose.* `dispose()` drops the handles. A texture's GPU copy goes with
+  its last handle.
+- *Missing environment.* Building a lookup before `update_from` panics.
+- *The struct `toVar()`.* The dump page calls `ggxReflectionSample( … )
+  .toVar()`, and three copies the struct into a second var
+  (`nodeVar50 = nodeVar49`) before reading members. The port reads them off
+  the struct var `ggx_reflection_sample` builds, because a struct-typed
+  `to_var` is not supported. The fingerprint is the same.
+
 ## 86. `SharpenNode` (`webgpu_postprocessing_ssr_denoise`)
 
 ### 86.1 What three does
