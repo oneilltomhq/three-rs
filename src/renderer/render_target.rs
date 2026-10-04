@@ -7,6 +7,36 @@ use crate::error::Error;
 use crate::math::Vector4;
 use crate::textures::{DepthTexture, MinFilter, Texture, TextureFilter, TextureType};
 
+/// `getTextureType( texture )` (`src/nodes/core/NodeUtils.js`), which
+/// `NodeBuilder.getOutputType( index )` returns for a target's attachment:
+/// the channel count picks the length and `texture.type` the component —
+/// `uint` for `UnsignedIntType`, `int` for `IntType`, `float` otherwise.
+/// The port's texture carries its GPU format alone, which says both.
+///
+/// Three's `RGBFormat` length 3 has no counterpart: there is no
+/// three-channel colour format to render into.
+pub(crate) fn output_type(format: wgpu::TextureFormat) -> crate::nodes::Type {
+    use crate::nodes::Type;
+    // `texture.type === UnsignedIntType` / `IntType`. A depth format (three
+    // checks `isDepthTexture` first) samples as depth, i.e. `float`.
+    let integer = match format.sample_type(None, None) {
+        Some(wgpu::TextureSampleType::Uint) => Some(false),
+        Some(wgpu::TextureSampleType::Sint) => Some(true),
+        _ => None,
+    };
+    match (format.components(), integer) {
+        (1, None) => Type::F32,
+        (1, Some(false)) => Type::U32,
+        (1, Some(true)) => Type::I32,
+        (2, None) => Type::Vec2,
+        (2, Some(false)) => Type::UVec2,
+        (2, Some(true)) => Type::IVec2,
+        (_, None) => Type::Vec4,
+        (_, Some(false)) => Type::UVec4,
+        (_, Some(true)) => Type::IVec4,
+    }
+}
+
 /// `renderTarget.texture` and each `getTexture( name )` clone of it: a colour
 /// attachment carrying the target's filter pair, which is what
 /// `pass( scene, camera, { minFilter, magFilter } )` sets and what decides
@@ -317,6 +347,17 @@ impl RenderTarget {
         names
     }
 
+    /// `renderTarget.textures.map( ( t, i ) => builder.getOutputType( i ) )`
+    /// — the type `MRTNode.setup()` converts each member to, by
+    /// [`output_type`].
+    #[doc(hidden)]
+    pub fn output_types(&self) -> Vec<crate::nodes::Type> {
+        self.textures()
+            .iter()
+            .map(|texture| output_type(texture.format()))
+            .collect()
+    }
+
     /// `new RenderTarget( width, height, { count } )`: `count - 1` clones of
     /// `renderTarget.texture` pushed onto `renderTarget.textures`, each with
     /// the target's size, type and filters and an empty `name` — the page
@@ -540,5 +581,37 @@ impl RenderTarget {
 
     pub(crate) fn inner(&self) -> &RefCell<RenderTargetInner> {
         &self.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::output_type;
+    use crate::nodes::Type;
+    use wgpu::TextureFormat as F;
+
+    /// `getTextureType()`: the channel count picks the length, an integer
+    /// format the `u` / `i` component — `OITPassNode`'s `r8unorm`
+    /// `revealage` is an `f32`, its `rgba16float` `accum` a `vec4`.
+    #[test]
+    fn output_type_follows_channels_and_component_type() {
+        for (format, ty) in [
+            (F::R8Unorm, Type::F32),
+            (F::R16Float, Type::F32),
+            (F::Rg8Unorm, Type::Vec2),
+            (F::Rg16Float, Type::Vec2),
+            (F::Rgba8Unorm, Type::Vec4),
+            (F::Rgba16Float, Type::Vec4),
+            (F::Bgra8UnormSrgb, Type::Vec4),
+            (F::R32Uint, Type::U32),
+            (F::R32Sint, Type::I32),
+            (F::Rg32Uint, Type::UVec2),
+            (F::Rg16Sint, Type::IVec2),
+            (F::Rgba8Uint, Type::UVec4),
+            (F::Rgba32Sint, Type::IVec4),
+            (F::Depth32Float, Type::F32),
+        ] {
+            assert_eq!(output_type(format), ty, "{format:?}");
+        }
     }
 }

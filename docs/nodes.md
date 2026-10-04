@@ -6019,9 +6019,12 @@ The node's value is the composite `vec4( mix( accum.rgb / max( accum.a, 1e-5
 - **The render-object function.** Three swaps
   `renderer.setRenderObjectFunction()` for each render. The port has no
   render-object hook, so it sets `Renderer.oit` (`OitRenderObjects::Default`
-  or `Accumulate`). The render loop filters its draws by it *before* a
-  `DoubleSide` material is split into its back and front halves, which is
-  where three calls the function, so both halves go or neither does.
+  or `Accumulate`). Three calls the function once per render item, before
+  `renderObject()` splits a `DoubleSide` material into its back and front
+  halves. The port's render loop filters *after* that split
+  (`src/renderer/mod.rs`, the `self.oit` filter below the side split), but
+  both halves carry the same material, so both go or neither does, as in
+  three.
   `Accumulate` also forces `depth_write = false` on the draw's material copy.
 - **MRT blend modes are `BlendMode`s.** `MRTNode.setBlendMode()` takes a full
   `BlendMode` in three. `BlendMode` is now public, with `BlendMode::new()` and
@@ -6037,7 +6040,8 @@ The node's value is the composite `vec4( mix( accum.rgb / max( accum.a, 1e-5
   value for its name, and otherwise to the old defaults: the renderer's
   clear colour for attachment 0, `( 0, 0, 0, 1 )` for the rest.
 - **Typed MRT members.** `getOutputType( index )` gives a member the
-  attachment's channel count. The `r8unorm` `revealage` is an `f32`
+  attachment's channel count, and an integer format's `u32` / `i32`
+  component (`getTextureType()`, `RenderTarget::output_types`). The `r8unorm` `revealage` is an `f32`
   `@location( 1 )` in three's dump (`output.m1 = Output.w;`), and now in the
   port too. `MrtContext.output_types` carries the types from the renderer to
   the builder.
@@ -6095,7 +6099,9 @@ depth-tested against the opaque depth. `tests/oit_frames.rs` asserts both.
   the WebGPU branch exists here: the OIT target takes the pass target's
   sample count.
 - `isOITCapable()`'s `transmissionNode` clause, because the port's materials
-  have no `transmissionNode`.
+  have no `transmissionNode`. Its `backdropNode` clause *is* ported:
+  `is_oit_capable()` checks `material.backdrop_node`
+  (`src/nodes/display/oit_pass.rs`).
 - `PassNode`'s `autoClear` / `autoClearColor` / `autoClearStencil` copies.
   The port's `PassNode` carries `autoClearDepth` only. Three's defaults, all
   `true`, are what the renderer already has.

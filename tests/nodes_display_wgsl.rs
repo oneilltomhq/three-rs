@@ -403,7 +403,7 @@ fn check_oit_material(
     mrt: Option<three_rs::materials::MrtContext>,
     fixture_name: &str,
     which: Region,
-) {
+) -> String {
     let ctx = SetupContext {
         lights: oit_lights(),
         mrt,
@@ -413,14 +413,37 @@ fn check_oit_material(
     let ours = fingerprint(&program.fragment_wgsl, which);
     let three = fingerprint(&fixture(fixture_name), which);
     assert_eq!(ours, three, "\n{}", program.fragment_wgsl);
+    program.fragment_wgsl
+}
+
+/// The `revealage` member, line for line from three's `m03` / `m04`: the
+/// fingerprint leaves out the output struct and what each member is assigned
+/// to, and these two lines are where `getOutputType( 1 )` — `RedFormat` —
+/// shows.
+const OIT_REVEALAGE_LINES: [&str; 2] = ["\t@location( 1 ) m1 : f32,", "\toutput.m1 = Output.w;"];
+
+/// Each of `lines` is a line of three's `fixture_name`, and of `ours`.
+fn check_three_lines(ours: &str, fixture_name: &str, lines: &[&str]) {
+    let three = fixture(fixture_name);
+    for line in lines {
+        assert!(
+            three.lines().any(|l| l == *line),
+            "{line:?} is not a line of {fixture_name}"
+        );
+        assert!(
+            ours.lines().any(|l| l == *line),
+            "{line:?} missing:\n{ours}"
+        );
+    }
 }
 
 /// The material tail the OIT gates compare: see [`check_oit_material`].
 const OIT_TAIL: Region = Region::From("outgoingLight =");
 
 /// The OIT pass's MRT over a transparent material, as the renderer hands it
-/// to the build: `accum` a `vec4`, `revealage` — an `r8unorm` attachment —
-/// an `f32`.
+/// to the build: resolved against the pass's own accumulation target, so
+/// `accum` (`rgba16float`) is a `vec4` and `revealage` (`r8unorm`) an `f32`
+/// by the renderer's attachment → type mapping.
 fn oit_mrt() -> three_rs::materials::MrtContext {
     let oit = three_rs::nodes::display::oit_pass(
         std::rc::Rc::new(std::cell::RefCell::new(three_rs::Scene::new())),
@@ -428,11 +451,13 @@ fn oit_mrt() -> three_rs::materials::MrtContext {
             45.0, 1.6, 0.1, 100.0,
         ))),
     );
-    three_rs::materials::MrtContext {
-        node: oit.mrt_node(),
-        attachments: vec!["accum".to_string(), "revealage".to_string()],
-        output_types: vec![three_rs::nodes::Type::Vec4, three_rs::nodes::Type::F32],
-    }
+    let mrt = oit.mrt_context();
+    assert_eq!(mrt.attachments, ["accum", "revealage"]);
+    assert_eq!(
+        mrt.output_types,
+        [three_rs::nodes::Type::Vec4, three_rs::nodes::Type::F32]
+    );
+    mrt
 }
 
 fn oit_transparent(color: u32, roughness: f64) -> three_rs::MeshBasicNodeMaterial {
@@ -458,11 +483,16 @@ fn oit_default_pass_matches_three() {
 #[test]
 fn oit_accumulate_matches_three() {
     let sphere = oit_transparent(0xffc020, 0.3);
-    check_oit_material(
+    let ours = check_oit_material(
         &sphere,
         Some(oit_mrt()),
         "webgpu_oit_m03_accumulate.wgsl",
         OIT_TAIL,
+    );
+    check_three_lines(
+        &ours,
+        "webgpu_oit_m03_accumulate.wgsl",
+        &OIT_REVEALAGE_LINES,
     );
 }
 
@@ -476,11 +506,16 @@ fn oit_accumulate_back_side_matches_three() {
         OIT_TAIL,
         Region::Statement("( normalViewGeometry * vec3<f32>( -1.0 ) )"),
     ] {
-        check_oit_material(
+        let ours = check_oit_material(
             &plane,
             Some(oit_mrt()),
             "webgpu_oit_m04_accumulate_back.wgsl",
             which,
+        );
+        check_three_lines(
+            &ours,
+            "webgpu_oit_m04_accumulate_back.wgsl",
+            &OIT_REVEALAGE_LINES,
         );
     }
 }

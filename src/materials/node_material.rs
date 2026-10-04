@@ -169,6 +169,24 @@ pub struct MrtContext {
     pub output_types: Vec<crate::nodes::Type>,
 }
 
+impl MrtContext {
+    /// `node` over `render_target`, as the renderer resolves it for a render
+    /// into that target: its attachment names, and `getOutputType( index )`
+    /// for each attachment ([`RenderTarget::output_types`]).
+    ///
+    /// [`RenderTarget::output_types`]: crate::renderer::RenderTarget::output_types
+    pub fn for_target(
+        node: crate::nodes::MrtNode,
+        render_target: &crate::renderer::RenderTarget,
+    ) -> Self {
+        Self {
+            node,
+            attachments: render_target.attachment_names(),
+            output_types: render_target.output_types(),
+        }
+    }
+}
+
 /// `Renderer._getShadowNodes( material )` composed with
 /// `ShadowBaseNode._getShadowMaterial()`: the per-object shadow-pass material.
 ///

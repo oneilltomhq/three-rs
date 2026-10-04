@@ -216,11 +216,17 @@ impl MrtNode {
     /// The material's entries overwrite the pass's, which is how
     /// `webgpu_postprocessing_bloom_selective` gives each sphere its own
     /// `bloomIntensity` on top of the pass's `float( 0 )` default.
+    ///
+    /// `other.blendModes` always has an `output` entry in three — the
+    /// constructor's `MaterialBlending` seed, if nothing replaced it — so
+    /// `this`'s `output` never survives the spread. The port leaves the seed
+    /// out ([`MrtNode::blend_mode`]), so it drops `this`'s `output` first.
     pub fn merge(&self, other: &MrtNode) -> MrtNode {
         let mut merged = self.clone();
         for (name, value) in &other.outputs {
             merged.set_value(name.clone(), value.clone());
         }
+        merged.blend_modes.retain(|(name, _)| name != "output");
         for (name, blend_mode) in &other.blend_modes {
             merged.set_blend_mode(name.clone(), *blend_mode);
         }
@@ -242,7 +248,7 @@ impl MrtNode {
     /// three.js too, so nothing is lost by not modelling it.
     ///
     /// `types` is `builder.getOutputType( index )` per attachment — the
-    /// texture's channel count, so `OITPassNode`'s `RedFormat` `revealage`
+    /// texture's channel count and component type, so `OITPassNode`'s `RedFormat` `revealage`
     /// is an `f32` member. Shorter than `attachments` (or empty) means `vec4`
     /// for the rest, which every `RGBAFormat` attachment is.
     pub(crate) fn members(&self, attachments: &[String], types: &[Type]) -> Vec<(NodeRef, Type)> {
@@ -379,7 +385,9 @@ mod tests {
     }
 
     /// `merge()` carries the other node's blend modes and clear colours over
-    /// this one's, as it does its outputs.
+    /// this one's, as it does its outputs — `output`'s blend mode included:
+    /// the other node's `MaterialBlending` seed wins over this one's
+    /// `setBlendMode( 'output', … )`, unless the other node set its own.
     #[test]
     fn merge_keeps_blend_modes_and_clear_colors() {
         use crate::materials::Blending;
@@ -387,7 +395,9 @@ mod tests {
 
         let mut pass = mrt(vec![("output", output_property())]);
         pass.set_clear_color("output", Color::from_hex(0x000000), 1.0)
-            .set_blend_mode("output", Blending::No);
+            .set_clear_color("emissive", Color::from_hex(0x000000), 1.0)
+            .set_blend_mode("output", Blending::No)
+            .set_blend_mode("bloom", Blending::Additive);
         let mut material = mrt(vec![("emissive", float(0.0))]);
         material
             .set_clear_color("output", Color::from_hex(0xffffff), 0.5)
@@ -395,13 +405,23 @@ mod tests {
 
         let merged = pass.merge(&material);
         assert_eq!(merged.clear_color("output"), Some([1.0, 1.0, 1.0, 0.5]));
+        assert_eq!(merged.clear_color("emissive"), Some([0.0, 0.0, 0.0, 1.0]));
+        // The material's seed: `MaterialBlending`, which the port leaves unset.
+        assert_eq!(merged.blend_mode("output"), None);
         assert_eq!(
-            merged.blend_mode("output"),
-            Some(BlendMode::new(Blending::No))
+            merged.blend_mode("bloom"),
+            Some(BlendMode::new(Blending::Additive))
         );
         assert_eq!(
             merged.blend_mode("emissive"),
             Some(BlendMode::new(Blending::Normal))
+        );
+
+        // A material that sets `output` itself replaces the pass's.
+        material.set_blend_mode("output", Blending::Additive);
+        assert_eq!(
+            pass.merge(&material).blend_mode("output"),
+            Some(BlendMode::new(Blending::Additive))
         );
     }
 

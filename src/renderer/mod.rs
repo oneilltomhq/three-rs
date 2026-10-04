@@ -1763,21 +1763,9 @@ impl Renderer {
         // flag, which the port has no field for.)
         let needs_previous_data = self.mrt.as_ref().is_some_and(|mrt| mrt.has("velocity"));
         let mrt_context = match (&self.render_target, &self.mrt) {
-            (Some(render_target), Some(node)) => Some(MrtContext {
-                node: node.clone(),
-                attachments: render_target.attachment_names(),
-                // `NodeBuilder.getOutputType( index )`: the attachment's
-                // channel count picks the member type.
-                output_types: render_target
-                    .textures()
-                    .iter()
-                    .map(|texture| match texture.format().components() {
-                        1 => crate::nodes::Type::F32,
-                        2 => crate::nodes::Type::Vec2,
-                        _ => crate::nodes::Type::Vec4,
-                    })
-                    .collect(),
-            }),
+            (Some(render_target), Some(node)) => {
+                Some(MrtContext::for_target(node.clone(), render_target))
+            }
             _ => None,
         };
 

@@ -210,6 +210,17 @@ impl OitPassNode {
         self.0.mrt_node()
     }
 
+    /// The OIT pass's MRT over its accumulation target, resolved the way the
+    /// renderer resolves it for that render ([`MrtContext::for_target`]):
+    /// `accum` then `revealage`, with their attachments' output types. For
+    /// the dump gate.
+    ///
+    /// [`MrtContext::for_target`]: crate::materials::MrtContext::for_target
+    #[doc(hidden)]
+    pub fn mrt_context(&self) -> crate::materials::MrtContext {
+        crate::materials::MrtContext::for_target(self.mrt_node(), &self.0.oit_render_target)
+    }
+
     /// `renderTarget.textures` of the accumulation target — `accum`, then
     /// `revealage`. For tests that read the targets back.
     #[doc(hidden)]

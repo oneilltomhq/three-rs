@@ -6,13 +6,18 @@
 //!
 //! Two quads, red in front and blue 0.5 behind it, overlapping in the middle,
 //! both `MeshBasicNodeMaterial`s with `opacity` 0.5 over a black background,
-//! and a small opaque green quad in front of the overlap. At this distance
-//! equation (9)'s weight is clamped to 3000 for both, so the weights are
-//! equal and the composite is the order-free average:
+//! and a small opaque green quad in front of the overlap. The camera is 3
+//! from the red quad and 3.5 from the blue one, where equation (9)'s weight
+//! is not clamped (its `3e3` upper bound only binds at `z = 0`): about
+//! 2984.9 for red and 2972.1 for blue. The composite is their weighted
+//! average, close to the equal one, and does not depend on draw order. The
+//! expected bytes are derived from the weight, the `r8unorm` revealage and
+//! the sRGB encode ([`Oit`]):
 //!
-//! * the overlap is `mix( ( red + blue ) / 2, black, 0.5 * 0.5 )` —
-//!   `( 0.375, 0, 0.375 )` linear, 165 in sRGB, red and blue alike;
-//! * a quad on its own is `mix( colour, black, 0.5 )` — 0.5 linear, 188;
+//! * the overlap is `mix( ( w_r red + w_b blue ) / ( w_r + w_b ), black,
+//!   revealage )` with revealage `0.5 * 0.5` — about `( 0.375, 0, 0.374 )`
+//!   linear, 165 and 164–165 in sRGB;
+//! * a quad on its own is `mix( colour, black, 0.5 )` — 0.5 linear, 187–188;
 //! * where the opaque quad is, it is all there is: the transparent quads are
 //!   depth-tested against the depth the default pass wrote. From the second
 //!   frame on: on the first, the OIT target's first render clears the depth
@@ -72,6 +77,81 @@ fn assert_near(pixels: &[u8], at: (u32, u32), expected: [u8; 3], what: &str) {
     );
 }
 
+/// The quads' `opacity`.
+const ALPHA: f64 = 0.5;
+/// `positionView.z` of the red and the blue quad: the camera is at `z = 3`.
+const RED_Z: f64 = -3.0;
+const BLUE_Z: f64 = -3.5;
+
+/// `OITPassNode._getMRTNode()`'s default weight, equation (9): `alpha *
+/// clamp( 0.03 / ( ( -z / 200 )^4 + 1e-5 ), 1e-2, 3e3 )`.
+fn weight(alpha: f64, view_z: f64) -> f64 {
+    alpha * (0.03 / ((-view_z / 200.0).powi(4) + 1e-5)).clamp(1e-2, 3e3)
+}
+
+/// A value stored into an 8-bit unorm channel.
+fn unorm8(value: f64) -> f64 {
+    (value * 255.0).round() / 255.0
+}
+
+/// `sRGBTransferOETF`, then the canvas's 8 bits.
+fn srgb_byte(linear: f64) -> u8 {
+    let encoded = if linear <= 0.0031308 {
+        linear * 12.92
+    } else {
+        1.055 * linear.powf(1.0 / 2.4) - 0.055
+    };
+    (encoded * 255.0).round() as u8
+}
+
+/// The OIT targets at one pixel, accumulated over the quads covering it.
+/// `accum` is `rgba16float`, whose rounding is far below a byte here;
+/// `revealage` is `r8unorm`, so each `Zero` / `OneMinusSrcColor` blend lands
+/// on a multiple of 1 / 255.
+struct Oit {
+    accum: [f64; 4],
+    revealage: f64,
+}
+
+impl Oit {
+    /// Both cleared: `accum` to `( 0, 0, 0, 0 )`, `revealage` to 1.
+    fn new() -> Self {
+        Oit {
+            accum: [0.0; 4],
+            revealage: 1.0,
+        }
+    }
+
+    /// One fragment: `accum += vec4( rgb * alpha, alpha ) * weight`,
+    /// `revealage *= 1 - alpha`.
+    fn draw(mut self, rgb: [f64; 3], alpha: f64, view_z: f64) -> Self {
+        let w = weight(alpha, view_z);
+        for (channel, value) in self.accum.iter_mut().zip([rgb[0], rgb[1], rgb[2], 1.0]) {
+            *channel += value * alpha * w;
+        }
+        self.revealage = unorm8(self.revealage * (1.0 - alpha));
+        self
+    }
+
+    /// The composite over `beauty`, as the canvas's bytes: `mix(
+    /// accum.rgb / max( accum.a, 1e-5 ), beauty.rgb, revealage )`.
+    fn over(&self, beauty: [f64; 3]) -> [u8; 3] {
+        std::array::from_fn(|i| {
+            let color = self.accum[i] / self.accum[3].max(1e-5);
+            srgb_byte(color * (1.0 - self.revealage) + beauty[i] * self.revealage)
+        })
+    }
+}
+
+/// Normal blending of `rgb` at `alpha` over `dst`, as the plain pass does.
+fn blend_over(dst: [f64; 3], rgb: [f64; 3], alpha: f64) -> [f64; 3] {
+    std::array::from_fn(|i| rgb[i] * alpha + dst[i] * (1.0 - alpha))
+}
+
+fn bytes(linear: [f64; 3]) -> [u8; 3] {
+    linear.map(srgb_byte)
+}
+
 fn quad(width: f64, height: f64, color: u32, opacity: Option<f64>) -> Node {
     let mut material = MeshBasicNodeMaterial::new();
     material.color = Color::from_hex(color);
@@ -91,11 +171,11 @@ fn oit_composite_does_not_depend_on_draw_order() {
     let mut scene = Scene::new();
     scene.set_background(Color::from_hex(0x000000));
 
-    let red = quad(1.0, 1.6, 0xff0000, Some(0.5));
+    let red = quad(1.0, 1.6, 0xff0000, Some(ALPHA));
     red.borrow_mut().position.set(-0.25, 0.0, 0.0);
     scene.add(&red);
 
-    let blue = quad(1.0, 1.6, 0x0000ff, Some(0.5));
+    let blue = quad(1.0, 1.6, 0x0000ff, Some(ALPHA));
     blue.borrow_mut().position.set(0.25, 0.0, -0.5);
     scene.add(&blue);
 
@@ -105,6 +185,20 @@ fn oit_composite_does_not_depend_on_draw_order() {
 
     let camera = PerspectiveCamera::new(50.0, 1.0, 0.1, 10.0);
     camera.node.borrow_mut().position.z = 3.0;
+
+    // What each pixel should be, from the formulas above.
+    const BLACK: [f64; 3] = [0.0, 0.0, 0.0];
+    const RED: [f64; 3] = [1.0, 0.0, 0.0];
+    const GREEN: [f64; 3] = [0.0, 1.0, 0.0];
+    const BLUE: [f64; 3] = [0.0, 0.0, 1.0];
+    let both = Oit::new().draw(RED, ALPHA, RED_Z).draw(BLUE, ALPHA, BLUE_Z);
+    let overlap = both.over(BLACK);
+    let red_only = Oit::new().draw(RED, ALPHA, RED_Z).over(BLACK);
+    let blue_only = Oit::new().draw(BLUE, ALPHA, BLUE_Z).over(BLACK);
+    // The first frame: both quads over the opaque green, its depth cleared.
+    let first_frame_opaque = both.over(GREEN);
+    let plain_red_hiding_blue = bytes(blend_over(BLACK, RED, ALPHA));
+    let plain_red_over_blue = bytes(blend_over(blend_over(BLACK, BLUE, ALPHA), RED, ALPHA));
 
     let scene = Rc::new(RefCell::new(scene));
     let camera = Rc::new(RefCell::new(camera));
@@ -126,7 +220,7 @@ fn oit_composite_does_not_depend_on_draw_order() {
     assert_near(
         &first,
         OPAQUE,
-        [165, 137, 165],
+        first_frame_opaque,
         "the first frame, its depth cleared",
     );
     render(&mut plain_pipeline, &mut renderer);
@@ -142,9 +236,9 @@ fn oit_composite_does_not_depend_on_draw_order() {
     let plain_right = render(&mut plain_pipeline, &mut renderer);
 
     // The OIT result, in the wrong order.
-    assert_near(&oit_wrong, OVERLAP, [165, 0, 165], "the order-free average");
-    assert_near(&oit_wrong, RED_ONLY, [188, 0, 0], "the red quad alone");
-    assert_near(&oit_wrong, BLUE_ONLY, [0, 0, 188], "the blue quad alone");
+    assert_near(&oit_wrong, OVERLAP, overlap, "the weighted average");
+    assert_near(&oit_wrong, RED_ONLY, red_only, "the red quad alone");
+    assert_near(&oit_wrong, BLUE_ONLY, blue_only, "the blue quad alone");
     assert_near(&oit_wrong, OPAQUE, [0, 255, 0], "the opaque quad");
     assert_eq!(rgb(&oit_wrong, (0, 0)), [0, 0, 0], "the background");
 
@@ -163,7 +257,12 @@ fn oit_composite_does_not_depend_on_draw_order() {
     // Without OIT the order shows: front-to-back, the red quad's depth write
     // hides the blue one where they overlap; back-to-front, red is blended
     // over blue.
-    assert_near(&plain_wrong, OVERLAP, [188, 0, 0], "red hiding blue");
-    assert_near(&plain_right, OVERLAP, [188, 0, 137], "red over blue");
+    assert_near(
+        &plain_wrong,
+        OVERLAP,
+        plain_red_hiding_blue,
+        "red hiding blue",
+    );
+    assert_near(&plain_right, OVERLAP, plain_red_over_blue, "red over blue");
     assert_near(&plain_right, OPAQUE, [0, 255, 0], "the opaque quad");
 }
