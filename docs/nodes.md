@@ -9032,3 +9032,83 @@ Over sixteen frames the reflection holds still (centroid within a pixel,
 the lit count within 10 %, the mean within a dozen levels) while the
 denoised floor's per-pixel variance over a window of four frames falls
 below half its first value. A resize restarts the targets at the new size.
+
+## 94. `webgpu_loader_gltf_transmission` (stacked transmission, `alphaMode: MASK`, Draco)
+
+### 94.1 What three does
+
+The page loads `IridescentDishWithOlives.glb` through `GLTFLoader` with a
+`DRACOLoader` installed, under the same `royal_esplanade_2k.hdr.jpg` as
+§26: `scene.background` and `scene.environment` are the one PMREM, with
+`backgroundBlurriness = 0.35`. ACES at exposure 1, a 45° camera at
+`( 0, 0.4, 0.7 )`, an `OrbitControls` on `( 0, 0.1, 0 )` with `autoRotate`
+(`autoRotateSpeed = -0.75`) and damping, and an `AnimationMixer` playing the
+file's one clip (`glassCover rotation`, a LINEAR quaternion track on the
+non-skinned `glassCover_animation` node) from a `Timer`. Four materials:
+
+| material | extensions / flags | what it exercises |
+| --- | --- | --- |
+| `glassDish` | `KHR_materials_transmission` (1), `_volume` (thickness 0.01), `_specular` (`specularColorFactor [ 2, 2, 2 ]` + texture), roughness 0.07, `COLOR_0` | the transmission pass |
+| `glassCover` | `KHR_materials_transmission` (1), `_ior` (1.5), `_volume` (thickness 0.1 + `thicknessTexture`), `_specular` (`[ 3, 3, 3 ]` + texture), normal map at `scale` 2 | the transmission pass, a second time, stacked over the first |
+| `olives` | base colour / metallic-roughness / normal / occlusion maps, `COLOR_0` | the opaque half of the split |
+| `goldLeaf` | `alphaMode: MASK`, `alphaCutoff` 0.5, `COLOR_0` | the alpha test |
+
+Every primitive is `KHR_draco_mesh_compression`, which the file lists in
+`extensionsRequired`. `GLTFLoader` sets `materialParams.alphaTest =
+alphaCutoff` for `MASK`, and `NodeMaterial.setupDiffuseColor()` then
+discards on `diffuseColor.a <= materialAlphaTest` — a uniform
+(`reference( 'alphaTest', 'float' )`), not a literal.
+
+Two things the asset's name suggests and the file does not have:
+`KHR_materials_iridescence` (the look is the dish's `specularColorTexture`
+at factor 2), and `doubleSided` glass (so `needsDoublePass()` is false).
+
+Two details decide the graded frame. The renderer takes one transmission
+split and one opaque copy for the whole render list, so the cover and the
+dish both read the same copy and neither sees the other through itself. And
+`render()` calls `controls.update()` with no delta, which is
+`_getAutoRotationAngle( null )`'s frame-count branch (`2π / 60 / 60 *
+autoRotateSpeed` per call): the pinned clock does not stop it, so the graded
+camera is the one after `init()`'s update and the first frame's, each a
+damped step.
+
+### 94.2 The port
+
+`examples/webgpu_loader_gltf_transmission.rs`, carried forward from the
+`rung-gltf-transmission` branch, where it could not run: the branch had no
+Draco decoder, and before its required-extension guard (since landed as
+#125) the file loaded into four meshes of zeros, a Draco primitive's
+accessors having no `bufferView`. On main the decoder in `src/loaders/draco`
+reads the file, and nothing in the material, transmission or lighting code
+needed to change. The example now drives the page's `OrbitControls` with
+its settings and `update( None )` in `init()` and `animate()` (the branch
+had a plain `lookAt`, which drops the two auto-rotation steps), and a
+`Timer` for `mixer.update( timer.getDelta() )`, which is 0 on the graded
+frame (the clip's first keyframe, as in `webgpu_skinning`).
+
+What is gated:
+
+- the rung, `webgpu_loader_gltf_transmission` in `tests/e2e/main.rs`: 6 of
+  100000 pixels against three's reference, which three itself passes here
+  (0.0%, twice). It is on the `steady_frame_builds_nothing` list: frames
+  two and three build, compile and upload nothing.
+- `gltf_transmission_gold_leaf_alpha_test_matches_three` in
+  `tests/nodes_display_wgsl.rs`: the gold leaf's material, loaded from the
+  page's own file, against three's `goldLeaf` fragment module (`m12` of the
+  page's dump, `webgpu_loader_gltf_transmission_m12_gold_leaf.wgsl`). The
+  fingerprints of the base-colour-times-`COLOR_0` statement (the attribute is
+  a `VEC4` and is read whole), the opacity multiply and the alpha-test
+  condition, plus the exact lines `if ( ( DiffuseColor.w <=
+  object.nodeUniform4 ) ) {` and `DiffuseColor.w = 1.0;` — the cutoff is a
+  member of the object uniform struct, not a literal, and an opaque material
+  forces its alpha to 1 after the test.
+
+What this page grades for the first time on the ladder: two stacked
+transmissive meshes over one opaque copy, a `thicknessTexture`, a
+`specularColorTexture` with a factor above 1, glTF `COLOR_0` as a `vec4`, an
+`alphaMode: MASK` material, an `AnimationMixer` on a non-skinned node, and a
+Draco-compressed glTF through the full renderer.
+
+What it does not grade: iridescence (#229), the double-sided transmission
+pass, and `attenuationDistance` (the volume extension here leaves it at
+infinity).

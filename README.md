@@ -15,7 +15,7 @@ from Three's node graph (TSL) by a port of Three's `NodeBuilder`, the way
 correctness is judged by Three's own examples and reference screenshots, not
 by scenes written for the port.
 
-**Status: 96 of 215 gradeable three.js WebGPU pages graded (16 N.A.).** Early,
+**Status: 97 of 215 gradeable three.js WebGPU pages graded (16 N.A.).** Early,
 working, incomplete. Three ships 231 `webgpu_*` pages; 16 cannot grade against
 a reference frame (XR sessions, editor UIs, benchmarks, video and DOM layout:
 the page table in [`docs/parity.md`](docs/parity.md) says which and why), 13
@@ -363,7 +363,7 @@ cargo run --release --bin viewer -- 8                        # the same, by key
 cargo run --release --bin viewer -- shadowmap --headless --frames 40
 ```
 
-Opens the named example in a window (winit, tested on Wayland). All 96 graded
+Opens the named example in a window (winit, tested on Wayland). All 97 graded
 examples are there, and so are the ungraded `webgpu_postprocessing_traa`, `webgpu_water`,
 `webgpu_postprocessing_sss`, `webgpu_postprocessing_ssgi`,
 `webgpu_postprocessing_ao`,
@@ -405,7 +405,7 @@ workspace crates that depend on `three-rs` and are not ports of anything in
 three.js' `src/`.
 
 `three_rs::addons::controls::OrbitControls` is the exception to that rule, and
-it is in the root crate rather than a workspace one: 69 of the 96 graded pages
+it is in the root crate rather than a workspace one: 69 of the 97 graded pages
 create an `OrbitControls`, and an example pulled in by `#[path]` cannot reach a
 crate that depends on `three-rs`. It is a port of
 `examples/jsm/controls/OrbitControls.js` — the same state, the same defaults,
