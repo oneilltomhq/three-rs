@@ -44,7 +44,7 @@ TSL by family:
 | materialx | 49 | 48 | 0 | 1 | 0 |
 | utils | 77 | 29 | 5 | 39 | 4 |
 
-Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compressed`, which has a live `rung!` but a hyphen in its name). 10 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
+Graded examples: 87 (the README gallery plus `webgpu_textures_2d-array_compressed`, which has a live `rung!` but a hyphen in its name). 10 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
 
 ## math
 
@@ -440,7 +440,7 @@ Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `NodeUpdateType` | Present | NodeUpdateType (src/nodes/frame.rs:30) | tests/nodes_frame.rs |  |
 | `NodeType` | Present | Type (src/nodes/node.rs:22) | all *_wgsl gates |  |
 | `NodeAccess` | Present | StorageAccess (src/nodes/node.rs:943) | webgpu_compute_texture |  |
-| `ArrayNode` | Partial | const_array / Node::ConstArray (src/nodes/tsl.rs:323) | webgpu_depth_texture | f64 literals only; no array(type,count) or arrays of nodes |
+| `ArrayNode` | Partial | const_array / Node::ConstArray (src/nodes/tsl.rs:323) | webgpu_depth_texture; webgpu_postprocessing_godrays (graded, vec2 elements via const_array_of) | float or vector literals only; no array(type,count) or arrays of nodes |
 | `AssignNode` | Present | Node::Assign (src/nodes/node.rs:1403) | webgpu_compute_points |  |
 | `AttributeNode` | Present | Node::Attribute (src/nodes/node.rs:1346), attribute (src/nodes/tsl.rs:345) | all *_wgsl gates |  |
 | `BypassNode` | Absent | — | — | no bypass() |
@@ -820,20 +820,20 @@ Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ### Supplementary: `examples/jsm/tsl/display/*.js`
 
-These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 16 Present, 32 Absent.
+These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 19 Present, 1 Partial, 28 Absent.
 
 | file | status | three-rs port and check |
 |---|---|---|
 | `AfterImageNode.js` | Present | after_image; tests/nodes_display_wgsl.rs; webgpu_postprocessing_afterimage (ported, ungraded) |
 | `AnaglyphPassNode.js` | Absent | — |
-| `BilateralBlurNode.js` | Absent | — |
+| `BilateralBlurNode.js` | Present | bilateral_blur/BilateralBlurNode (src/nodes/display/bilateral_blur.rs:50); tests/nodes_display_wgsl.rs (horizontal and vertical gates); webgpu_postprocessing_godrays (graded); two materials instead of one with a swapped texture; no dispose() |
 | `BleachBypass.js` | Absent | — |
 | `BloomNode.js` | Present | bloom/BloomNode; webgpu_postprocessing_bloom, _bloom_emissive, _bloom_selective, _anamorphic |
 | `boxBlur.js` | Present | box_blur; tests/nodes_display_wgsl.rs (WGSL gate only, no graded rung) |
 | `ChromaticAberrationNode.js` | Present | chromatic_aberration; webgpu_postprocessing_ca |
 | `CRT.js` | Absent | — |
 | `DenoiseNode.js` | Absent | — |
-| `depthAwareBlend.js` | Absent | — |
+| `depthAwareBlend.js` | Present | depth_aware_blend (src/nodes/display/depth_aware_blend.rs:96); tests/nodes_display_wgsl.rs; webgpu_postprocessing_godrays (graded); perspective camera only, as in three; a baseNode with its own uvNode is not ported |
 | `depthAwareBlur.js` | Absent | — |
 | `DepthOfFieldNode.js` | Absent | — |
 | `DotScreenNode.js` | Present | dot_screen; tests/nodes_display_wgsl.rs; webgpu_postprocessing (ported, ungraded) |
@@ -841,11 +841,11 @@ These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) an
 | `FSR1Node.js` | Absent | — |
 | `FXAANode.js` | Present | fxaa; webgpu_postprocessing_fxaa |
 | `GaussianBlurNode.js` | Present | gaussian_blur; tests/nodes_display_wgsl.rs; webgpu_procedural_texture |
-| `GodraysNode.js` | Absent | — |
+| `GodraysNode.js` | Partial | godrays/GodraysNode (src/nodes/display/godrays.rs:74); tests/nodes_display_wgsl.rs; webgpu_postprocessing_godrays (graded); point lights only: the DirectionalLight branch, log depth and dispose() are not ported |
 | `GTAONode.js` | Absent | — |
 | `hashBlur.js` | Present | hash_blur; tests/nodes_display_wgsl.rs (loop gated against three's webgpu_backdrop_area dump, taps through viewportSharedTexture) |
 | `ImportanceSampledEnvironment.js` | Absent | — |
-| `LensflareNode.js` | Absent | — |
+| `LensflareNode.js` | Present | lensflare/LensflareNode (src/nodes/display/lensflare.rs:84); tests/nodes_display_wgsl.rs; webgpu_postprocessing_lensflare (graded); takes a texture: the caller writes convertToTexture()'s rtt(); no dispose() |
 | `Lut3DNode.js` | Absent | — |
 | `MotionBlur.js` | Present | motion_blur; tests/nodes_display_wgsl.rs; webgpu_postprocessing_motion_blur (graded) |
 | `OITPassNode.js` | Absent | — |
@@ -1128,7 +1128,7 @@ Partial: `textureLoad`.
 | `samplerComparison` | Absent | — | — | comment only: src/nodes/builder.rs |
 | `textureSize` | Present | texture_size (src/nodes/tsl.rs:4303) | indirect: used by src/nodes/display/box_blur.rs |  |
 | `texture3D` | Present | texture_3d (src/nodes/tsl.rs:3092) | tests/nodes_texture_wgsl.rs, webgpu_volume_perlin (graded) |  |
-| `texture3DLoad` | Present | texture_3d_load (src/nodes/tsl.rs:4601) | tests/nodes_tsl_batch.rs | filterable volumes only, as texture3D |
+| `texture3DLoad` | Present | texture_3d_load (src/nodes/tsl.rs:4601) | tests/nodes_tsl_batch.rs | filterable volumes only, as texture3D; mip 0 only, no level argument |
 | `texture3DLevel` | Present | texture_3d_level (src/nodes/tsl.rs:4613) | tests/nodes_tsl_batch.rs |  |
 | `pmremTexture` | Present | PmremEnvironment::new (src/nodes/pmrem_node.rs:64) | tests/nodes_compute_indirect_wgsl.rs, webgpu_clearcoat (graded) |  |
 
@@ -1677,7 +1677,7 @@ The first refresh of this matrix closed the previous top five. Velocity and TRAA
 1. **The screen-space effect nodes** (`GTAONode`, `SSRNode`, `SSGINode`, `SSSNode`, `DenoiseNode`, `DepthOfFieldNode`; `ao()` 2 pages, `ssr()` 2, `ssgi()` 2, `sss()` 1, `dof()` 1, `denoise` 6). Each needs a velocity target and a temporal resolve, and both now exist; these pages are the direct payoff of the velocity work. Porting them also gives the depth reads (`viewportDepthTexture`, `linearDepth`, `getViewPosition`) their first graded consumer.
 2. **EventDispatcher** (issues 153, 159). 8 pages subscribe to `change` or `finished` events. In ordinary use these are render-on-demand behind OrbitControls and chaining animation clips when one ends, and neither works in the port today. `AnimationMixer` and `AnimationAction` fire nothing.
 3. **Controls** (`FirstPersonControls` 8 pages, `TransformControls` 3, `FlyControls` 1). Input handling that the application owns, but 12 pages cannot be ported without them, and `addons/controls` already gives a pattern to follow.
-4. **`WaterMesh`** (2 pages) and the remaining display files (`OutlineNode`, `SMAANode`, `Lut3DNode`, `FilmNode`, `LensflareNode`, 1 to 2 pages each). Small, self-contained, and each unlocks one page.
+4. **`WaterMesh`** (2 pages) and the remaining display files (`OutlineNode`, `SMAANode`, `Lut3DNode`, `FilmNode`, 1 to 2 pages each). Small, self-contained, and each unlocks one page.
 
 **Runners-up, and why they rank lower:**
 - RectAreaLight and LTC (3 pages).

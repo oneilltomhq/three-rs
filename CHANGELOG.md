@@ -8,8 +8,8 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Added
 
-- **TSL sweep 1**: the last absent `three/tsl` math names and eight texture
-  utilities, each gated against three's own WGSL dump in
+- **TSL sweep 1**: the last absent `three/tsl` math names and nine texture
+  utilities (`texture_bicubic_level` is now public), each gated against three's own WGSL dump in
   `tests/nodes_tsl_batch.rs`.
   - Packing: `pack_snorm_2x16`, `pack_unorm_2x16`, `pack_half_2x16`,
     `pack_snorm_4x8`, `pack_unorm_4x8` and the five matching `unpack_*`,
@@ -151,6 +151,23 @@ have their own sections after the release they ship with. The format follows [Ke
   `depth_texture_load`, `all`, `view_z_to_perspective_depth` and
   `get_view_position`. Also `Renderer::init_render_target` and
   `RenderPipeline::claim_view_offset`. (#165)
+- **`godrays`**, **`bilateral_blur`** and **`depth_aware_blend`**
+  (`nodes::display`), ports of `GodraysNode.js`, `BilateralBlurNode.js` and
+  `depthAwareBlend.js`. The godrays node ray-marches a point light's cube
+  shadow map. The `DirectionalLight` branch is not ported. Three's dump
+  gates all three shaders. `webgpu_postprocessing_godrays` is graded green
+  at 3 of 100000 pixels. See `docs/nodes.md` §74.
+- **`lensflare`** (`nodes::display`), a port of `LensflareNode.js`.
+  `webgpu_postprocessing_lensflare` is graded green at 0 of 100000 pixels.
+  Each quad the page adds is gated against three's dump. See `docs/nodes.md`
+  §75.
+- **`LightShadow::point_depth_texture()`**, three's
+  `light.shadow.map.depthTexture` for a point light. The renderer draws the
+  light's shadow into the texture it returns.
+- **`Scene::background_intensity`** and **`Scene::environment_intensity`**,
+  three's `scene.backgroundIntensity` and `scene.environmentIntensity`.
+- **`tsl::const_array_of`**, a literal array of vectors, and
+  `UniformArray::element_xyz`.
 
 ### Changed
 
@@ -170,6 +187,13 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Fixed
 
+- A `negate()` read more than once becomes a shared `var`, as three's
+  `MathNode` does. It used to be inlined at every read.
+- A `Fn()` block read twice counts its result twice, so the result is
+  promoted to a `var` where three promotes it.
+- `GaussianBlurNode::render()` runs its input's update-before first. On the
+  first frame, a blur over an `rtt()` or another display node used to size
+  its targets from a 1×1 input.
 - A `HemisphereLight` with no `AmbientLight` beside it no longer has its
   irradiance overwritten with zero before the Phong, Lambert and Toon models
   read it.

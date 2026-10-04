@@ -2307,6 +2307,9 @@ impl Renderer {
             // `scene.backgroundBlurriness` — a render-group uniform, so it
             // rides the pass rather than the background draw.
             background_blurriness: scene.background_blurriness,
+            // `scene.backgroundIntensity`, the same: a render-group uniform.
+            background_intensity: scene.background_intensity,
+            scene_environment_intensity: scene.environment_intensity,
             fog_color,
             fog_near,
             fog_far,
@@ -2793,7 +2796,7 @@ impl Renderer {
         // `PointLightShadow.updateMatrices( light )`: `far = light.distance ||
         // camera.far`, `shadowMatrix.makeTranslation( - lightPositionWorld )`.
         let shadow_type = self.shadow_map_type.resolved();
-        let (light_world_position, near, far, size, filter_node) = {
+        let (light_world_position, near, far, light_depth_texture, filter_node) = {
             let mut object = node.borrow_mut();
             let light_world_position = LightObject::world_position(&object.matrix_world);
             let light = object
@@ -2809,56 +2812,62 @@ impl Renderer {
                 light_world_position,
                 shadow.camera.near(),
                 shadow.camera.far(),
-                shadow.map_size.x as u32,
+                // `shadow.map.depthTexture` — the light's own handle, which a
+                // display node (`GodraysNode`) may already hold.
+                shadow.point_depth_texture(),
                 shadow.filter_node.clone(),
             )
         };
 
         // `PointShadowNode.setupRenderTarget()`: a cube render target whose
-        // depth attachment is the `CubeDepthTexture` the shader samples.
-        let (depth_texture, color) = self
+        // depth attachment is the `CubeDepthTexture` the shader samples. The
+        // cached entry is reused only while it is still the light's texture.
+        let cached = self
             .cube_shadow_targets
             .get(&index)
-            .cloned()
-            .unwrap_or_else(|| {
-                let depth_texture = CubeDepthTexture::new(size);
-                let gpu = self.device.create_texture(&wgpu::TextureDescriptor {
-                    label: Some("three-rs point shadow depth"),
-                    size: wgpu::Extent3d {
-                        width: size,
-                        height: size,
-                        depth_or_array_layers: 6,
-                    },
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: wgpu::TextureDimension::D2,
-                    format: depth_texture.gpu_format(),
-                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                        | wgpu::TextureUsages::TEXTURE_BINDING,
-                    view_formats: &[],
-                });
-                depth_texture.inner().borrow_mut().gpu = Some(gpu);
-                // The colour attachment of the cube render target. Nothing
-                // ever samples it — the shadow material writes black — but
-                // the pass needs a target.
-                let color = self.device.create_texture(&wgpu::TextureDescriptor {
-                    label: Some("three-rs point shadow map"),
-                    size: wgpu::Extent3d {
-                        width: size,
-                        height: size,
-                        depth_or_array_layers: 6,
-                    },
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: wgpu::TextureDimension::D2,
-                    format: wgpu::TextureFormat::Rgba8Unorm,
-                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                    view_formats: &[],
-                });
-                let entry = (depth_texture, color);
-                self.cube_shadow_targets.insert(index, entry.clone());
-                entry
+            .filter(|(depth_texture, _)| depth_texture.id() == light_depth_texture.id())
+            .cloned();
+        let (depth_texture, color) = cached.unwrap_or_else(|| {
+            let depth_texture = light_depth_texture;
+            let size = depth_texture.size();
+            let gpu = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("three-rs point shadow depth"),
+                size: wgpu::Extent3d {
+                    width: size,
+                    height: size,
+                    depth_or_array_layers: 6,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: depth_texture.gpu_format(),
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
             });
+            depth_texture.inner().borrow_mut().gpu = Some(gpu);
+            // The colour attachment of the cube render target. Nothing
+            // ever samples it — the shadow material writes black — but
+            // the pass needs a target.
+            let color = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("three-rs point shadow map"),
+                size: wgpu::Extent3d {
+                    width: size,
+                    height: size,
+                    depth_or_array_layers: 6,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            });
+            let entry = (depth_texture, color);
+            self.cube_shadow_targets.insert(index, entry.clone());
+            entry
+        });
+        let size = depth_texture.size();
         // `ShadowNode.setupShadow()`, which `PointShadowNode` inherits:
         // `LinearFilter` for `PCFShadowMap`, `NearestFilter` otherwise.
         let cube_filter = if shadow_type == ShadowMapType::Pcf {
@@ -3394,6 +3403,16 @@ impl Renderer {
                 material_ao_map_intensity: item.material.ao_map_intensity,
                 material_light_map_intensity: item.material.light_map_intensity,
                 material_point_size: item.material.size,
+                // `EnvironmentNode.setup()`: `material.envMap ? reference(
+                // 'envMapIntensity', … material ) : reference(
+                // 'environmentIntensity', … scene )`. The port's envMap is
+                // `pmrem_env`, whose intensity stays 1; the scene's
+                // environment is the draw's `setup.environment`.
+                material_env_intensity: if item.setup.environment.is_some() {
+                    camera_uniforms.scene_environment_intensity
+                } else {
+                    1.0
+                },
                 tone_mapping_exposure: self.tone_mapping_exposure,
                 material_line_width: item.material.linewidth,
                 // `ScreenNode.update()`: `SIZE` is the bound target's
@@ -6634,6 +6653,18 @@ impl Renderer {
     /// `time` and `deltaTime`. A node's update phases read the clock here.
     pub fn node_frame(&self) -> &crate::nodes::NodeFrameState {
         &self.node_frame
+    }
+
+    /// Run the update-before of whatever node renders `texture_id` — a pass,
+    /// an `RttNode`, another display node — opening the frame first if no
+    /// render has yet. For a node drawn by hand, outside any render, that
+    /// sizes its targets from its input: three's frame has rendered that input
+    /// by then, and the port's first frame has not.
+    pub(crate) fn update_texture_source(&mut self, texture_id: usize) {
+        self.node_frame.open(crate::utils::now_ms());
+        if let Some(entry) = crate::nodes::frame::texture_update(texture_id) {
+            self.update_before_node(&entry);
+        }
     }
 
     /// `NodeFrame.updateBeforeNode( node )`.
