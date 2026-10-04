@@ -364,6 +364,13 @@ fn ssr_blur_matches_three() {
     check("ssr_blur", Region::Body);
 }
 
+/// The page's `RTT`: `scenePassColor.add( ssrPass.rgb )`, which reads the
+/// blur chain at the roughness-picked level.
+#[test]
+fn ssr_resolve_matches_three() {
+    check("ssr_resolve", Region::Body);
+}
+
 #[test]
 fn smaa_edges_matches_three() {
     check("smaa_edges", Region::Body);

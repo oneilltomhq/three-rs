@@ -5995,20 +5995,26 @@ arithmetic, and `tests/traa_frames.rs` allows for it.
 
 ### 65.1 What three does
 
-`ssr( colorNode, depthNode, normalNode, { metalnessNode, roughnessNode },
-camera )` is a `TempNode` with `updateBeforeType = FRAME`. Its
-`updateBefore()` draws up to three quads:
+`ssr( colorNode, depthNode, normalNode, { metalnessNode, roughnessNode,
+camera } )` builds an `SSRNode`, which extends `Node` (not `TempNode`) and
+has `updateBeforeType = FRAME`. `camera` is an option, inferred from the
+colour pass when omitted. With `stochastic` left `false`, `updateBefore()`
+draws up to three quads:
 
 1. **`SSRNode.SSR`** draws into a half-float target. For each metallic pixel
    it reflects the view ray about the normal, clips the ray to the near plane
    and to `maxDistance`, and projects both ends to screen space. It then
-   steps along the longer screen axis. The step count is
-   `totalStep · quality`, with `Continue()` past pixels it has already
-   visited and `Break()` on a hit. A hit is a view-space distance from the
-   ray to the sampled surface below `thickness`, with the sampled normal
-   facing the ray. The output is the hit's colour, scaled by `intensity`,
-   metalness, a distance attenuation and a Fresnel-like term. Its alpha is
-   the ray length.
+   marches from one end to the other in `totalStep` equal steps, where
+   `totalStep = max( |xLen|, |yLen| ) · quality` (truncated, at least 1) and
+   `xLen`, `yLen` are the ray's screen-space extent. Once the ray is behind
+   the depth buffer, a sample closer to the ray than `thickness` (or the
+   view-space width of 3 texels, if larger) is a candidate. `Continue()`
+   skips a candidate whose normal faces the same way as the reflected ray
+   (`dot( viewReflectDir, vN ) >= 0`), `Break()` ends the march on a
+   candidate further than `maxDistance` from the surface's plane, and any
+   other candidate is the hit. The output is the hit's colour, scaled by
+   `intensity`, metalness, a squared distance attenuation and a Fresnel-like
+   term. Its alpha is the world-space distance from the surface to the hit.
 2. **`SSRNode.Copy`** copies that target into mip 0 of the blur target.
 3. **`SSRNode.Blur`** box-blurs the SSR target into mips 1–4. The tap spacing
    is the mip index, and the blur size is `blurQuality`, a build-time
@@ -6025,8 +6031,9 @@ size of the drawing buffer.
 ### 65.2 The port
 
 `nodes::display::{ssr, smaa}` build the same graphs. The six fragment
-shaders are gated against three's dumps (`tests/nodes_display_wgsl.rs`,
-fixtures `webgpu_postprocessing_ssr_m21` … `m32`). Each long `Fn` in three
+shaders, and the page's `RTT` composite that reads the blur chain, are gated
+against three's dumps (`tests/nodes_display_wgsl.rs`, fixtures
+`webgpu_postprocessing_ssr_m21` … `m32`). Each long `Fn` in three
 (the march, `SMAASearchXLeft` … `SMAAArea`) is a `#[inline(never)]` Rust
 helper returning a `block`, not one large closure.
 
@@ -6070,10 +6077,11 @@ Three's `RendererUtils.resetRendererState()` / `restoreRendererState()` do
 the same. SMAA resizes its three targets to `drawing_buffer_size()` every
 frame. That is a no-op once the size is current.
 
-**SMAA's lookup textures.** `SMAANode.js` embeds them as base64 PNGs. The
-port decodes them once into `src/nodes/display/smaa_area.png` and
-`smaa_search.png`, includes them with `include_bytes!`, and decodes them at
-first use with the crate's PNG decoder.
+**SMAA's lookup textures.** `SMAANode.js` embeds them as base64 PNGs.
+`src/nodes/display/smaa_area.png` and `smaa_search.png` are those payloads
+base64-decoded, byte-identical PNG files. The port includes them with
+`include_bytes!` and decodes them to pixels at runtime, on first use, with
+the crate's PNG decoder.
 
 - The area texture is linear-filtered, with no mips.
 - The search texture is `NearestFilter`, so its taps are `textureLoad`, as

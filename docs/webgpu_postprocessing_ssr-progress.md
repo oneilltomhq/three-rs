@@ -26,6 +26,7 @@ Each fragment shader is also gated against three's dump in
 | `ssr_matches_three` | `m21` | `SSRNode.SSR`, the march |
 | `ssr_copy_matches_three` | `m23` | `SSRNode.Copy`, mip 0 of the blur chain |
 | `ssr_blur_matches_three` | `m24` | `SSRNode.Blur`, mips 1–4 (`boxBlur`, `size = 1`) |
+| `ssr_resolve_matches_three` | `m26` | the page's `RTT`, `scenePassColor.add( ssrPass.rgb )`: the blur chain at `clamp( roughness² · 4, 0, 4 )` |
 | `smaa_edges_matches_three` | `m28` | `SMAANode.edges` |
 | `smaa_weights_matches_three` | `m30` | `SMAANode.weights` |
 | `smaa_blend_matches_three` | `m32` | `SMAANode.blend` |
@@ -38,7 +39,7 @@ the page.
 | area | what |
 |---|---|
 | `src/nodes/display/ssr.rs` | `SSRNode.js`: `ssr()`, `SsrNode`, `SsrOptions` |
-| `src/nodes/display/smaa.rs` | `SMAANode.js`: `smaa()`, `SmaaNode`; `smaa_area.png` and `smaa_search.png` are three's two embedded base64 PNGs, decoded |
+| `src/nodes/display/smaa.rs` | `SMAANode.js`: `smaa()`, `SmaaNode`; `smaa_area.png` and `smaa_search.png` are three's two embedded PNGs, base64-decoded byte for byte |
 | `src/nodes/display/box_blur.rs` | `box_blur_with()`, the blur with a caller's sample function, which is what SSR's blur pass is; a constant `size` emits an integer loop bound, as three's does |
 | `src/nodes/node.rs`, `builder.rs`, `tsl.rs` | `Node::Continue` / `tsl::continue_loop()` (`Continue()`), and `tsl::get_screen_position()` |
 | `src/renderer/render_target.rs` | `RenderTarget::set_mip_level_count()`, the port of `texture.mipmaps.push( … )` on a render target |

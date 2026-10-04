@@ -202,8 +202,9 @@ pub fn display_quads() -> Vec<DisplayQuad> {
     // and `blurQuality = 1` as `updateParameters()` sets it.
     let normal = input();
     let metal_rough = input();
+    let scene_color = input();
     let ssr_node = ssr(
-        &input(),
+        &scene_color,
         &DepthTexture::new(),
         std::rc::Rc::new(move |coord| texture_uv(&normal, coord).mul(2.0).sub(1.0)),
         SsrOptions::new(
@@ -239,6 +240,15 @@ pub fn display_quads() -> Vec<DisplayQuad> {
             material,
         });
     }
+
+    // webgpu_postprocessing_ssr `m26`: the page's `RTT`, `scenePassColor.add(
+    // ssrPass.rgb )` — the blur chain at `clamp( roughness² · 4, 0, 4 )`, its
+    // `rgb` widened to `vec4( rgb, 1 )` and added to the beauty pass.
+    quads.push(quad(
+        "ssr_resolve",
+        "webgpu_postprocessing_ssr_m26_ssr_resolve.wgsl",
+        texture_uv(&scene_color, uv()).add(vec4_join(vec![ssr_node.node().rgb(), float(1.0)])),
+    ));
 
     // webgpu_postprocessing_ssr `m28`, `m30`, `m32`: `smaa( … )`'s edges,
     // weights and blend passes over the page's `RTT`.
