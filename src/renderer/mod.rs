@@ -554,7 +554,8 @@ struct MaterialStates {
     /// [`CACHE_GRACE_FRAMES`].
     last_used: u64,
     /// Keyed by the dynamic half of the cache key — the hash of the item's
-    /// `SetupContext`, fog and `MaterialKey::variant`.
+    /// `SetupContext`, fog, `MaterialKey::variant` and its maps' filters and
+    /// wrap modes.
     by_dynamic_key: HashMap<u64, Rc<NodeProgram>>,
 }
 
@@ -5029,8 +5030,9 @@ impl Renderer {
     /// `RenderObjects.get()`'s version check: the built `NodeProgram` for this
     /// item, by `material.id`, then `material.version`, then the dynamic half
     /// of `RenderObject.getCacheKey()` — the item's `SetupContext` (lights and
-    /// their shadow maps, instancing, morphing), its fog node and the derived-
-    /// material variant. Only a miss runs `setup()` and `NodeBuilder::build`;
+    /// their shadow maps, instancing, morphing), its fog node, the derived-
+    /// material variant and its maps' sampler state
+    /// (`materials::TextureSamplerKey`). Only a miss runs `setup()` and `NodeBuilder::build`;
     /// a material whose version moved drops every state it had, as
     /// `renderObject.dispose()` does.
     /// `output_components` is the channel count of the pass's colour
@@ -5047,12 +5049,16 @@ impl Renderer {
         // `material.alphaToCoverage`: `shapeCircle()` reads it at build time,
         // so it keys the build. A material edit bumps the version anyway.
         let alpha_to_coverage_samples = item.material.alpha_to_coverage && sample_count > 1;
+        // The maps' filters and wrap modes: `getMaterialCacheKey()`'s
+        // `isWebGPUBackend` clause, read off the textures every draw so a
+        // change after the first draw rebuilds (issue #276).
         let dynamic_key = hash_of(&(
             item.key.variant,
             &item.setup,
             &item.fog,
             output_components,
             alpha_to_coverage_samples,
+            item.material.texture_sampler_key(),
         ));
 
         let frames = self.node_frame.frame_id;
