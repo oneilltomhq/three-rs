@@ -5989,6 +5989,9 @@ arithmetic, and `tests/traa_frames.rs` allows for it.
   `maxVelocityLength` as settable properties. They are constants at three's
   defaults.
 
+Sections 64 to 66 and 68 to 73 are reserved for the display-node ports on
+sibling branches. They are numbered as those branches land.
+
 ## 67. TSL sweep 2: the accessors batch
 
 Thirty-one `three/tsl` accessors, each gated against three's dump in
@@ -6125,3 +6128,178 @@ nothing read the stage there.
   built. Only `renderer.highPrecision` sets that key in three.
 - Three's unnamed uniforms are numbered across both stages. The gates
   renumber them in order of first use (`renumber_uniforms`).
+## 74. `GodraysNode`, `bilateralBlur()` and `depthAwareBlend()` (`webgpu_postprocessing_godrays`)
+
+### 74.1 What three does
+
+`godrays( depthNode, camera, light )` is a `Node` with
+`updateBeforeType = FRAME`, as is `BilateralBlurNode`. It owns one render target at half the drawing
+buffer, and its texture node is `passTexture( this, target.texture )`.
+
+- **The march.** Per pixel, the quad rebuilds the world position from the
+  scene depth. It clips the camera ray against the six planes of a box of
+  half-size `shadow.camera.far` around the light, then marches between the
+  two ends. At each step it compares against the light's cube shadow map,
+  `light.shadow.map.depthTexture`. A lit step adds in-scattering, scaled by
+  `density` and fading with distance from the light. The step count is
+  `round( steps + ( steps / 8 + 2 ) · noise )`, jittered by interleaved
+  gradient noise. The sum goes through `1 - exp( -illum )`, is clamped to
+  `maxDensity`, and lands in red, green and blue. Alpha carries the scene
+  depth.
+- **`bilateralBlur( node, direction, sigma, sigmaColor )`** is two
+  separable passes over one material whose texture node and
+  `_passDirection` it swaps between them. Each tap is weighted twice: by an
+  un-normalised Gaussian in distance, and by an `exp( -Δ² / 2σc² )` on the
+  difference between its luminance and the centre's.
+- **`depthAwareBlend( base, blend, depth, camera, { blendColor,
+  edgeRadius, edgeStrength } )`** is a plain `Fn`. Eight Poisson-disk taps
+  find the neighbours whose linear depth is within 5% of the pixel's own.
+  The blurred rays are read at the pixel's uv pushed toward the neighbours'
+  average offset. The red channel then mixes the base toward `blendColor`.
+
+### 74.2 The port
+
+`nodes::display::{godrays, bilateral_blur, depth_aware_blend}` build the same
+graphs. The march, the blur and the blend are each gated against three's dump
+of the page (`tests/nodes_display_wgsl.rs`, fixtures `m09`, `m11` and `m13`).
+The two blur directions share fixture `m11`, because three compiles one
+program for both.
+
+- **The shadow map.** In three, `GodraysNode.setup()` reads
+  `light.shadow.map.depthTexture`. `shadow.map` was assigned by
+  `ShadowNode.setupShadow()` when the first material the light shines on was
+  built. The port builds display nodes before any frame. So `LightShadow::point_depth_texture()`
+  makes the light's `CubeDepthTexture` on first ask, and the renderer's point
+  shadow draws into that same texture. `render_point_shadow` now keeps a
+  cached cube target only while its depth texture is still the light's.
+- **Order within a frame.** `GodraysNode` and `BilateralBlurNode` run their
+  input's update-before first, through `frame::texture_update`, as `TraaNode`
+  does (§63.2). The march then reads this frame's depth, and the blur's
+  targets are sized from the march's this-frame size rather than 1×1.
+- **Bilateral blur is two materials.** The port's texture nodes are
+  immutable, so the swap is two materials with fixed `passDirection`
+  uniforms. Both compile to the one program three builds.
+- **Sizes.** `GodraysNode.setSize()` clamps each side to at least one texel.
+  Three's has no clamp, though `BilateralBlurNode`'s does.
+- **`sigma` is a `u32`.** Three's `sigma` is any number, and a fractional
+  one gives a fractional loop bound (`sigma * 2 + 3`). The page uses the
+  default, 4.
+- **Builder.** Two `analyze` fixes were needed for the WGSL to match three's
+  var promotions:
+  - `Node::Neg` is shared like any other math node once it is read twice.
+    Three's `negate()` is a `MathNode`. The ray-plane `t` in the march is read
+    three times, and inlining it tripled the `dot`s.
+  - A `Block` reached a second time re-counts its result. A block is an
+    inline `Fn()` call. In three's analyze stage `StackNode.build()` runs at
+    every reach and re-builds every statement and then the `outputNode`. The
+    port re-counts only the result; for void statements and vars a second
+    count changes no WGSL. Under `renderOutput()`, `depthAwareBlend()`'s
+    final `mix` is read twice and becomes a var in three.
+- **TSL additions.** `const_array_of( Type, values )` is a literal array of
+  vectors, used for the Poisson disk. The builder's `ConstArray` arm now writes
+  a vector element as a typed constant. `UniformArray::element_xyz` is a
+  `vec3` array element at a node index.
+
+Faithful quirks, kept because the WGSL is three's:
+
+- `worldPosition` is a `vec4`, so the plane test is
+  `dot( p, vec4( n, 1 ) ) + h`, one unit off.
+- `raymarchSteps` is a `uint` uniform that the WGSL declares `f32`.
+- In `depthAwareBlend`, `pushDir.divAssign( count ).normalize()` discards the
+  `normalize()`.
+- `edgeRadius`, an `int` on the page, is read as an `f32`.
+
+### 74.3 Not ported
+
+- `GodraysNode`'s `DirectionalLight` branch. The constructor panics on
+  anything but a point light.
+- A logarithmic depth buffer.
+- `dispose()` on all three.
+- The shared `builder.getSharedContext()` the godrays and blur materials are
+  given.
+- The per-frame texture-type copy in `BilateralBlurNode.updateBefore()`. It is
+  done once, at construction.
+- An orthographic camera and a `baseNode` with its own `uvNode` in
+  `depthAwareBlend`.
+- The page's GUI. Every value it drives is a public uniform on the example's
+  `App`.
+
+### 74.4 Gates
+
+- The e2e rung `webgpu_postprocessing_godrays` scores 3 pixels. It asserts
+  that the march and blur targets are 400×250 on the 800×500 page.
+- WGSL: `godrays_matches_three`, `bilateral_blur_{horizontal,vertical}_matches_three`
+  and `depth_aware_blend_matches_three`.
+
+## 75. `LensflareNode` (`webgpu_postprocessing_lensflare`)
+
+### 75.1 What three does
+
+`lensflare( node, { ghostTint, threshold, ghostSamples, ghostSpacing,
+ghostAttenuationFactor, downSampleRatio } )` is a `Node` with
+`updateBeforeType = FRAME`. Its target is a quarter of the drawing buffer by
+default. Its quad samples the input `ghostSamples` times, along the vector
+from the flipped uv to the screen centre. It keeps what is above `threshold`,
+tints it, and fades it toward the edge.
+
+The page draws the scene into two MRT attachments: the lit colour and the
+emissive term. It blooms the emissive term, flares the bloom, and blurs the
+flare with `gaussianBlur( flarePass, 8 )`. Then it sums the colour, the bloom
+and the blur, and tone-maps the result with ACES. `lensflare` and
+`gaussianBlur` both `convertToTexture()` their non-texture input.
+
+### 75.2 The port
+
+`nodes::display::lensflare` registers its own update-before with the renderer,
+so the pipeline runs it. Like `gaussian_blur`, it takes a texture, and the
+page writes the two `rtt()`s that `convertToTexture()` would make.
+
+Every distinct quad the page builds is gated against three's dump:
+
+| quad | fixture |
+|---|---|
+| the bloom's `rtt` | `m24` |
+| the flare | `m25` |
+| the horizontal and vertical Gaussian blur | `m26`, `m27` |
+| the composite under `renderOutput()` | `m29` |
+
+The bloom's own passes were already gated by
+`webgpu_postprocessing_bloom_emissive`.
+
+- **`gaussianBlur( node, 8 )`.** Three's `vec2( this.directionNode )` of the
+  plain number `8` is the constant `vec2( 8, 8 )`. The page passes that
+  constant. The port's `vec2( float( 8 ) )` would be a splat, which three's
+  WGSL does not contain.
+- **The first frame.** `GaussianBlurNode::render()` is called by hand,
+  before the pipeline. It now begins with `Renderer::update_texture_source(
+  map )`, which opens the frame and runs the update-before of whatever node
+  renders the input. Its targets are then sized from this frame's flare, not
+  from a 1×1 target. Three's frame has already rendered the input by then.
+- **The scene's intensities.** `Scene::background_intensity` and
+  `Scene::environment_intensity` are new. They are `scene.backgroundIntensity`
+  and `scene.environmentIntensity`, and the page sets them to 2 and 15. Both
+  feed uniforms that already existed:
+  - `backgroundIntensity` is a render-group uniform.
+  - `materialEnvIntensity` takes the scene's value on a draw whose
+    environment is the scene's, as in `EnvironmentNode.setup()`. A material
+    with its own `pmrem_env` keeps 1.
+
+Faithful quirks:
+
+- `vec4().toVar()` starts at `vec4( 0, 0, 0, 1 )`, and each ghost is a `vec3`
+  widened with a `1.0` alpha, so the flare's alpha is `1 + ghostSamples`.
+- A constant `ghostSamples` is an `int` literal in the loop header.
+
+### 75.3 Not ported
+
+- `dispose()`.
+- The shared `builder.getSharedContext()` the material is given.
+- The page's GUI. Its values are public on the example's `App`.
+
+### 75.4 Gates
+
+- The e2e rung `webgpu_postprocessing_lensflare` scores 0 pixels. It asserts
+  that the flare target is 200×125 and the blur 800×500.
+- WGSL: `rtt_matches_three`, `lensflare_matches_three`,
+  `lensflare_gaussian_blur_{horizontal,vertical}_matches_three` and
+  `lensflare_composite_matches_three`.
