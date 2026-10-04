@@ -62,10 +62,10 @@ fn michelle_geometry() {
 
     // `skinIndex` is unnormalized `Uint8`/`Uint16`, so it must come out exact
     let skin_index = geometry.get_attribute("skinIndex").unwrap();
-    assert_eq!(
-        skin_index.array()[0..8],
-        [5.0, 0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0]
-    );
+    let three_rs::core::TypedArray::U32(indices) = &*skin_index.data() else {
+        panic!("skinIndex is a Uint32BufferAttribute");
+    };
+    assert_eq!(indices[0..8], [5, 0, 0, 0, 5, 0, 0, 0]);
 }
 
 #[test]

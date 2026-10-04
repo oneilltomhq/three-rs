@@ -1255,8 +1255,8 @@ impl GltfLoader {
                 // `WebGPUAttributeUtils.createAttribute()`; `skinning()` reads
                 // it as a `uvec4`.
                 if name == "skinIndex" {
-                    let values = attribute.array().clone();
-                    attribute = BufferAttribute::new_integer(values, attribute.item_size);
+                    let values = attribute.array().iter().map(|v| *v as u32).collect();
+                    attribute = BufferAttribute::uint32(values, attribute.item_size, false);
                 }
                 geometry.set_attribute(&name, attribute);
             }
@@ -2433,7 +2433,7 @@ fn draco_buffer_attribute(attribute: &DracoAttribute) -> BufferAttribute {
     } else {
         1.0
     };
-    let values = attribute
+    let values: Vec<f32> = attribute
         .array
         .to_f64()
         .into_iter()
@@ -2441,7 +2441,8 @@ fn draco_buffer_attribute(attribute: &DracoAttribute) -> BufferAttribute {
         .collect();
 
     if attribute.name == "skinIndex" {
-        BufferAttribute::new_integer(values, attribute.item_size)
+        let values = values.iter().map(|v| *v as u32).collect();
+        BufferAttribute::uint32(values, attribute.item_size, false)
     } else {
         BufferAttribute::new(values, attribute.item_size)
     }

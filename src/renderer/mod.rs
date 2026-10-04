@@ -6556,7 +6556,7 @@ impl Renderer {
         let vertex_buffer = |attribute: &crate::core::BufferAttribute| {
             self.create_buffer_init(
                 "three-rs attribute",
-                &attribute_bytes(attribute),
+                &attribute.upload_bytes(),
                 wgpu::BufferUsages::VERTEX,
             )
         };
@@ -6721,7 +6721,7 @@ impl Renderer {
                 continue;
             };
 
-            let bytes = attribute_bytes(attribute);
+            let bytes = attribute.upload_bytes();
             let bytes: &[u8] = &bytes;
 
             if buffer.size() == bytes.len() as u64 {
@@ -7966,22 +7966,6 @@ async fn pick_adapter(instance: &wgpu::Instance) -> Result<wgpu::Adapter, Error>
 /// One draw per component per instance — four per instance even when the range
 /// is a `vec3`, whose fourth component is a constant. A free function so a test
 /// can drive it in the order the program's vertex buffers report without a GPU.
-/// The bytes one geometry attribute is uploaded as.
-///
-/// `WebGPUAttributeUtils.createAttribute()` takes the GPU format from the
-/// attribute's own typed array. The port stores every attribute as `f32`, so an
-/// integer attribute (`skinIndex`) is converted back here — the values are
-/// small bone indices, exact in an `f32` either way.
-fn attribute_bytes(attribute: &crate::core::BufferAttribute) -> Vec<u8> {
-    let array = attribute.array();
-    if attribute.integer() {
-        let indices: Vec<u32> = array.iter().map(|v| *v as u32).collect();
-        bytemuck::cast_slice(&indices).to_vec()
-    } else {
-        bytemuck::cast_slice(array.as_slice()).to_vec()
-    }
-}
-
 #[doc(hidden)]
 pub fn fill_range(
     random: &mut DeterministicRandom,
