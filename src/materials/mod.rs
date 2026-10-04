@@ -241,7 +241,7 @@ pub enum MaterialKind {
 ///
 /// - a field the *program* depends on — any node (`color_node`,
 ///   `position_node`, `fragment_node`, …), any map or `env_map`, `kind`,
-///   `lights`, `lights_node`, `lighting_model`, `flat_shading`, `fog`, `transparent`,
+///   `lights`, `lights_node`, `lighting_model`, `environment_specular`, `flat_shading`, `fog`, `transparent`,
 ///   `blending`, `alpha_to_coverage`, `world_units`, `size_attenuation`, `mask_node`, `cast_shadow_node` — needs
 ///   [`set_needs_update`](Self::set_needs_update) after it changes, which is
 ///   `material.needsUpdate = true`. Without it the old program keeps drawing.
@@ -372,6 +372,22 @@ pub struct MeshBasicNodeMaterial {
     /// bare `NodeMaterial` — and ignored, as in three, by Phong, Lambert,
     /// Standard and Physical. A program input, like `lights_node`.
     pub lighting_model: Option<std::rc::Rc<dyn lighting_model::LightingModel>>,
+    /// Whether `PhysicalLightingModel.indirectSpecular()` reads the
+    /// environment's specular radiance. `true` is three's model.
+    ///
+    /// `false` is the patch `webgpu_postprocessing_ssr_denoise` applies to
+    /// `PhysicalLightingModel.prototype.indirectSpecular`, where screen-space
+    /// reflections supply all the specular: `builder.context.radiance =
+    /// vec3( 0 )` and, on a clearcoat model, `clearcoatRadiance.assign(
+    /// vec3( 0 ) )`, before the original method runs. The environment's
+    /// diffuse term (`iblIrradiance`) is untouched, and `EnvironmentNode`
+    /// still samples `radiance`, as three's dump does; only the read in
+    /// `indirectSpecular` becomes the zero vector. Three patches the
+    /// prototype for the whole page; the port scopes it to the material,
+    /// which the page applies to every material in the scene. Read by
+    /// Standard and Physical only, and a program input, like `lights`
+    /// (`docs/nodes.md` §89).
+    pub environment_specular: bool,
     /// `material.maskNode` — `NodeMaterial.setupDiscard()` turns it into
     /// `If( mask.not(), () => Discard() )` at the top of the fragment.
     pub mask_node: Option<NodeRef>,
@@ -740,6 +756,7 @@ impl Default for MeshBasicNodeMaterial {
             lights: false,
             lights_node: None,
             lighting_model: None,
+            environment_specular: true,
             mask_node: None,
             cast_shadow_node: None,
             received_shadow_position_node: None,

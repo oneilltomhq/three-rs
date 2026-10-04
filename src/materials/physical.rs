@@ -763,7 +763,18 @@ impl Physical {
     /// environment both `radiance` and `iblIrradiance` stay zero, so the whole
     /// block contributes nothing — three.js emits it regardless, and so do we,
     /// because the zero has to reach the pixel through the same arithmetic.
-    pub fn indirect_specular(&self, has_environment: bool, out: &mut Vec<NodeRef>) {
+    ///
+    /// `environment_specular` false is `webgpu_postprocessing_ssr_denoise`'s
+    /// patch of this method (`MeshBasicNodeMaterial::environment_specular`):
+    /// `builder.context.radiance = vec3( 0 )`, so the specular term reads a
+    /// zero vector rather than the `radiance` var, and on a clearcoat model
+    /// `clearcoatRadiance.assign( vec3( 0 ) )` ahead of the clearcoat term.
+    pub fn indirect_specular(
+        &self,
+        has_environment: bool,
+        environment_specular: bool,
+        out: &mut Vec<NodeRef>,
+    ) {
         if self.sheen {
             out.push(
                 sheen_specular_indirect().assign(
@@ -775,6 +786,10 @@ impl Physical {
                     ),
                 ),
             );
+        }
+
+        if self.clearcoat && !environment_specular {
+            out.push(clearcoat_radiance().assign(vec3(0.0, 0.0, 0.0)));
         }
 
         if self.clearcoat {
@@ -816,9 +831,13 @@ impl Physical {
         // `indirectSpecular` and so carries the zeros with it; with none,
         // nothing ever adds to them and they are declared here.
         // Both are vars with a zero initialiser, so the var as a statement is
-        // the declaration (issue #281).
+        // the declaration (issue #281). With the page's patch the context's
+        // `radiance` is the constant, so with no environment the var is never
+        // read and never declared.
         if !has_environment {
-            out.push(radiance());
+            if environment_specular {
+                out.push(radiance());
+            }
             out.push(ibl_irradiance());
         }
 
@@ -835,7 +854,12 @@ impl Physical {
 
         let cosine_weighted_irradiance = ibl_irradiance().mul(RECIPROCAL_PI);
 
-        let indirect_specular_value = radiance()
+        let radiance = if environment_specular {
+            radiance()
+        } else {
+            vec3(0.0, 0.0, 0.0)
+        };
+        let indirect_specular_value = radiance
             .mul(single_scattering_mixed)
             .add(multi_scattering_mixed.mul(cosine_weighted_irradiance.clone()));
 

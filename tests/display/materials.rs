@@ -24,8 +24,9 @@ use three_rs::nodes::tsl::{
     bind_analytic_noise, d_gtr, distance, equirect_dir_pdf, equirect_uv_to_dir, f_schlick, float,
     geometry_term, get_specular_dominant_factor, ggx_reflection_sample, ggx_reflection_struct, int,
     mis_power_heuristic, osc_sine, pass_depth_texture, perspective_depth_to_view_z, posterize,
-    replace_default_uv, screen_size, screen_uv, smith_g, struct_get, texture_3d_sampled,
-    texture_uv, time, uniform_value, uv, vec2, vec2_join, vec3, vec3_join, vec4_join,
+    replace_default_uv, saturation, screen_size, screen_uv, smith_g, struct_get,
+    texture_3d_sampled, texture_uv, time, to_var, uniform_value, uv, vec2, vec2_join, vec3,
+    vec3_join, vec4_join,
 };
 use three_rs::nodes::Type;
 use three_rs::textures::{DepthTexture, MinFilter, Texture, TextureFilter};
@@ -968,8 +969,141 @@ pub fn display_quads() -> Vec<DisplayQuad> {
     }
     recurrent_denoise_quads(&mut quads);
     specular_helpers_quads(&mut quads);
+    ssr_denoise_page_quads(&mut quads);
 
     quads
+}
+
+/// webgpu_postprocessing_ssr_denoise `m20`, `m22`, `m24` and `m29`: the
+/// page's stochastic SSR (a filtered HDR as its environment, `stepExponent =
+/// 3`, the denoiser's output as its history), its specular denoiser (no
+/// `diffuse` input, `alphaSource = 'raylength'`), the `RTT` of
+/// `applyGrading( vec4( color.rgb + vec4( denoise.rgb, ssr.a > 0 ).rgb, 1 ) )`
+/// that TRAA reads, and `sharpen( traa, 0 )`'s RCAS quad. The page's TRAA
+/// resolve (`m26`) is `webgpu_postprocessing_traa`'s and its last `RTT`
+/// (`m28`) is `webgpu_postprocessing_lensflare`'s, both already gated.
+fn ssr_denoise_page_quads(quads: &mut Vec<DisplayQuad>) {
+    let camera = Rc::new(RefCell::new(PerspectiveCamera::new(35.0, 1.6, 0.1, 8.0)));
+    let scene_color = input();
+    let depth = DepthTexture::new();
+    let normal_tex = input();
+    let diffuse_tex = input();
+    let velocity_tex = input();
+    // `quarry_01_1k.hdr` as `HDRLoader` hands it over: linear-filtered, so
+    // the SSR reads it with `textureSampleLevel`.
+    let hdr = Texture::data_rgba32float(2, 1, &[1.0, 0.5, 0.25, 1.0, 0.25, 0.5, 1.0, 1.0]);
+
+    let scene_normal: SampleFn = {
+        let normal_tex = normal_tex.clone();
+        Rc::new(move |coord| texture_uv(&normal_tex, coord).rgb().mul(2.0).sub(1.0))
+    };
+    let scene_diffuse: SampleFn = {
+        let diffuse_tex = diffuse_tex.clone();
+        Rc::new(move |coord| texture_uv(&diffuse_tex, coord))
+    };
+    let ssr_node = ssr(
+        &scene_color,
+        &depth,
+        scene_normal,
+        SsrOptions::new(
+            texture_uv(&diffuse_tex, uv()).w(),
+            Some(texture_uv(&normal_tex, uv()).w()),
+        )
+        .with_stochastic(true)
+        .with_diffuse(scene_diffuse)
+        .with_environment(&hdr),
+        camera.clone(),
+    );
+    ssr_node.set_step_exponent(3.0);
+
+    let packed_normal: SampleFn = {
+        let normal_tex = normal_tex.clone();
+        Rc::new(move |coord| texture_uv(&normal_tex, coord))
+    };
+    let metal_roughness: SampleFn = {
+        let (diffuse_tex, normal_tex) = (diffuse_tex.clone(), normal_tex.clone());
+        Rc::new(move |coord: three_rs::nodes::NodeRef| {
+            vec2_join(vec![
+                texture_uv(&diffuse_tex, coord.clone()).w(),
+                texture_uv(&normal_tex, coord).w(),
+            ])
+        })
+    };
+    let denoise = recurrent_denoise(
+        &input(),
+        camera,
+        RecurrentDenoiseOptions {
+            depth: Some(depth),
+            normal: Some(packed_normal),
+            metal_roughness: Some(metal_roughness),
+            raw: Some(ssr_node.render_target().texture()),
+            mode: DenoiseMode::Specular,
+            accumulate: true,
+            ..Default::default()
+        },
+    );
+    denoise.set_alpha_source(DenoiseAlphaSource::RayLength);
+    ssr_node.set_history(&denoise.texture(), &velocity_tex);
+
+    for (label, fixture, mut material) in [
+        (
+            "ssr_denoise_page_ssr",
+            "webgpu_postprocessing_ssr_denoise_m20_ssr.wgsl",
+            ssr_node.quad_material(),
+        ),
+        (
+            "ssr_denoise_page_denoise",
+            "webgpu_postprocessing_ssr_denoise_m22_denoise.wgsl",
+            denoise.quad_material(),
+        ),
+    ] {
+        material.vertex_node = Some(quad_vertex_node());
+        quads.push(DisplayQuad {
+            label,
+            fixture,
+            material,
+        });
+    }
+
+    // `applyGrading( combinedOutputNode )` behind `convertToTexture()`.
+    let color = texture_uv(&scene_color, uv());
+    let denoised = texture_uv(&denoise.texture(), uv());
+    let reflected = texture_uv(&ssr_node.render_target().texture(), uv());
+    let blend = vec4_join(vec![
+        denoised.rgb(),
+        to_var(None, reflected.w().greater_than(0.0)),
+    ]);
+    let combined = vec4_join(vec![color.rgb().add(blend.rgb()), float(1.0)]);
+    let contrast = uniform_value(Type::F32, vec![1.31]);
+    let saturation_adjustment = uniform_value(Type::F32, vec![1.0]);
+    let gamma = uniform_value(Type::F32, vec![0.89]);
+    let rgb = render_output(
+        vec4_join(vec![combined.rgb(), float(1.0)]),
+        ToneMapping::AgX,
+    )
+    .rgb();
+    let rgb = rgb.sub(0.5).mul(contrast).add(0.5);
+    let rgb = saturation(rgb, saturation_adjustment);
+    let rgb = rgb.max(0.0).pow(float(1.0).div(gamma));
+    let graded = convert_to_texture(vec4_join(vec![rgb, float(1.0)]));
+    let mut material = graded.quad_material().clone();
+    material.vertex_node = Some(quad_vertex_node());
+    quads.push(DisplayQuad {
+        label: "ssr_denoise_page_grading",
+        fixture: "webgpu_postprocessing_ssr_denoise_m24_grading.wgsl",
+        material,
+    });
+
+    // `sharpen( traa( … ), 0 )`.
+    let mut material = SharpenNode::new(&input(), float(0.0), false)
+        .quad_material()
+        .clone();
+    material.vertex_node = Some(quad_vertex_node());
+    quads.push(DisplayQuad {
+        label: "ssr_denoise_page_sharpen",
+        fixture: "webgpu_postprocessing_ssr_denoise_m29_sharpen.wgsl",
+        material,
+    });
 }
 
 /// `tools/dump-pages/recurrent_denoise.html` `m09` and `m05`: the diffuse
