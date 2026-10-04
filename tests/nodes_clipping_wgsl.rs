@@ -13,17 +13,24 @@
 //!   plane goes to `@builtin( clip_distances )` and whose two intersection
 //!   planes fade the alpha (`m00`/`m01`).
 //!
-//! [`canonical`] is the only thing between the two texts:
+//! The tests compare selected sections of the two texts, not whole shaders:
+//! the fragment flow through the clipping statements, the fragment `// vars`
+//! block, the `NodeBuffer` plane declarations of each stage, and in the
+//! vertex stage the directives, the varyings, and the flow (or, for the knot,
+//! the hardware-clipping loop). Within a section, [`canonical`] is the only
+//! thing between them, after three's `VERTEX_` sub-build is undone in the
+//! vertex flow:
 //!
 //! - lines that are empty or only whitespace, and the `// directives` header
 //!   (its *contents* are compared);
 //! - the numbers in `nodeUniformN` / `nodeVarN` / `nodeConstN` and
 //!   `NodeBuffer_N`, renumbered on both sides by order of first appearance;
 //! - the binding numbers of the render group: three numbers group 0 in the
-//!   order the bindings are created, fragment stage first, so its clipping
-//!   planes come before `render`; the port's `render` struct is always
-//!   binding 0. The layout and the shader come from the same descriptors
-//!   (`docs/nodes.md` §8, the binding-index class).
+//!   order the bindings are created, fragment stage first, so the fragment
+//!   planes come before `render` and the vertex stage's hardware-clipping
+//!   planes after it; the port's `render` struct is always binding 0. The
+//!   layout and the shader come from the same descriptors (`docs/nodes.md`
+//!   §8, the binding-index class).
 //!
 //! The knot is compared only where clipping writes: three's dump is lit by
 //! the page's lights and the port's material here is not.
