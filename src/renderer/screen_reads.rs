@@ -79,8 +79,9 @@ impl Destinations {
 
 /// One copy between two segments of a pass.
 pub(super) enum FramebufferCopy {
-    /// The transmission pass's `viewportOpaqueMipTexture()`.
-    OpaqueFrame,
+    /// One of the transmission pass's mipped viewport textures:
+    /// `viewportOpaqueMipTexture()` or `viewportBackSideTexture`.
+    OpaqueFrame(Texture),
     /// The colour attachment into this texture.
     Color(wgpu::Texture),
     /// The depth attachment into this texture.
@@ -237,11 +238,11 @@ impl Renderer {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("three-rs copyFramebufferToTexture"),
             });
-        let mut opaque_frame = false;
+        let mut opaque_frames = Vec::new();
         for copy in copies {
             let (source, destination) = match copy {
-                FramebufferCopy::OpaqueFrame => {
-                    opaque_frame = true;
+                FramebufferCopy::OpaqueFrame(texture) => {
+                    opaque_frames.push(texture.clone());
                     continue;
                 }
                 FramebufferCopy::Color(destination) => (target.color_texture.as_ref(), destination),
@@ -268,11 +269,13 @@ impl Renderer {
             );
         }
         self.queue.submit(Some(encoder.finish()));
-        if opaque_frame {
+        if !opaque_frames.is_empty() {
             let source = target.color_texture.clone().expect(
                 "three-rs: a transmissive split only happens on a target with a copy source",
             );
-            self.copy_framebuffer_to_opaque_frame(&source);
+            for texture in &opaque_frames {
+                self.copy_framebuffer_to_opaque_frame(&source, texture);
+            }
         }
     }
 }

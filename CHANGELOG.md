@@ -30,6 +30,11 @@ have their own sections after the release they ship with. The format follows [Ke
   the page as the `materialAlphaTest` uniform
   (`gltf_transmission_gold_leaf_alpha_test_matches_three`;
   docs/nodes.md §94).
+- **`webgpu_materials_transmission`** (graded, 16 of 100000): a
+  `transmission: 1`, `DoubleSide` glass sphere with a striped `alphaMap` in
+  front of the royal esplanade. It is the ladder's direct test of the
+  transmission path. `tests/nodes_transmission_wgsl.rs` gates both halves of
+  the split against three's dump (#228; `docs/nodes.md` §96).
 - **`webgpu_postprocessing_ssr_denoise`** (ungraded: three's own e2e
   exception list): the stochastic `ssr()`, `temporal_reproject()` and
   `recurrent_denoise()` in a history loop, added to the beauty, graded and
@@ -662,6 +667,16 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Fixed
 
+- A transmissive material drawn `BackSide` reads its own viewport texture,
+  copied before the first back-side draw, as three's `viewportBackSideTexture`
+  is. The front side's `viewportOpaqueMipTexture()` is now copied at the first
+  front-side draw, so the front face of double-sided glass refracts its own
+  back faces. The port used to copy once, before either half, and bind that
+  copy to both (`docs/nodes.md` §96.3).
+- The transmission copies magnify `Nearest`, like three's
+  `FramebufferTexture`. `textureBicubicLevel` reads level 0 at an explicit
+  level wherever the LOD is below 1, so the filter there is the mag filter
+  (`docs/nodes.md` §96.4).
 - `ssaaPass` renders its samples with the pass's own MRT and puts the
   frame's MRT back afterwards (#252), as `SSAAPassNode.updateBefore()` does.
   It used to render under whatever MRT the caller had set.

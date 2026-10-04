@@ -307,6 +307,7 @@ UpscalingFsr1, webgpu_upscaling_fsr1, "../../examples/webgpu_upscaling_fsr1.rs";
 Clipping, webgpu_clipping, "../../examples/webgpu_clipping.rs";
 ClippingStencil, webgpu_clipping_stencil, "../../examples/webgpu_clipping_stencil.rs";
 LoaderGltfIridescence, webgpu_loader_gltf_iridescence, "../../examples/webgpu_loader_gltf_iridescence.rs";
+MaterialsTransmission, webgpu_materials_transmission, "../../examples/webgpu_materials_transmission.rs";
 UpscalingTaau, webgpu_upscaling_taau, "../../examples/webgpu_upscaling_taau.rs";}
 
 impl Which {
