@@ -790,7 +790,14 @@ fn assert_renumbered(name: &str, node: NodeRef, theirs: &str) {
         renumber_uniforms(&canonical(theirs)),
         "{name}: main differs\n--- port ---\n{ours}"
     );
-    let (our_uniforms, their_uniforms) = (used_uniforms(&ours), used_uniforms(theirs));
+    assert_uniform_types(name, &ours, theirs);
+}
+
+/// Each uniform `main` reads, in first-use order, in the same buffer as
+/// three's and of three's type where three declares it; the port must declare
+/// every uniform it reads. [`renumber_uniforms`] hides all of this.
+fn assert_uniform_types(name: &str, ours: &str, theirs: &str) {
+    let (our_uniforms, their_uniforms) = (used_uniforms(ours), used_uniforms(theirs));
     assert_eq!(our_uniforms.len(), their_uniforms.len(), "{name}");
     for (k, (ours_k, theirs_k)) in our_uniforms.iter().zip(&their_uniforms).enumerate() {
         assert_eq!(
@@ -1389,11 +1396,13 @@ fn assert_material(
     fix: impl FnOnce(String) -> String,
 ) {
     let ours = material_fragment(configure, node);
+    let theirs = fix(fixture(name));
     assert_eq!(
         renumber_uniforms(&canonical(&ours)),
-        renumber_uniforms(&canonical(&fix(fixture(name)))),
+        renumber_uniforms(&canonical(&theirs)),
         "{name}: main differs\n--- port ---\n{ours}"
     );
+    assert_uniform_types(name, &ours, &theirs);
 }
 
 #[test]

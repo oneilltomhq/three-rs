@@ -14,7 +14,7 @@ use std::rc::Rc;
 
 use super::{
     block, call, float, if_then, inverse_sqrt, join, length, mat3_join, material_anisotropy_vector,
-    max, shader_fn, texture, to_var, to_var_intent, vec2, vec3, vec3_join,
+    max, shader_fn, texture, to_var, to_var_intent, vec2, vec2_join, vec3, vec3_join,
 };
 use crate::materials::MeshBasicNodeMaterial;
 use crate::nodes::node::{FnDef, Lazy, NodeRef, Type};
@@ -242,18 +242,13 @@ pub fn ltc_uv(
                     let dot_nv = n.dot(v).saturate();
                     // `uv.assign( … )` on the `vec2()` itself: three's intent
                     // var, declared with its first value.
-                    let uv = to_var_intent(vec2_of(roughness, dot_nv.one_minus().sqrt()));
+                    let uv = to_var_intent(vec2_join(vec![roughness, dot_nv.one_minus().sqrt()]));
                     block(vec![uv.assign(uv.clone().mul(LUT_SCALE).add(LUT_BIAS))], uv)
                 },
             )
         })
     });
     call(&def, vec![n.into(), v.into(), roughness.into()])
-}
-
-/// `vec2( a, b )` with nodes.
-fn vec2_of(a: NodeRef, b: NodeRef) -> NodeRef {
-    join(Type::Vec2, vec![a, b])
 }
 
 /// `LTC_ClippedSphereFormFactor( { f } )` — the form factor of a

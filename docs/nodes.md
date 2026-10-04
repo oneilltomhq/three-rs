@@ -6372,9 +6372,16 @@ Present: `materialAnisotropy`, `D_GGX_Anisotropic`,
 three's dump in `tests/nodes_tsl_batch.rs`.
 
 The rest of the family's Absent names each wait on a feature the port does
-not have. A standalone accessor for any of them would read a material field
-that nothing renders, so each stays Absent, and its parity row names what is
-missing:
+not have, so each stays Absent, and its parity row names what is missing. A
+standalone port of any of them would be dead:
+
+- `iridescence`, `iridescenceIOR`, `iridescenceThickness`, `dashSize`,
+  `gapSize`, `dispersion` and `retroreflectivity` are `PropertyNode`s, named
+  fragment vars that three's physical or line material assigns. In the port
+  each would be a var nothing assigns.
+- The `material*` names read a material field that nothing renders.
+
+The features they wait on:
 
 - **`shadow`.** Three's `ShadowNode` renders its own shadow map in
   `updateBefore`. The port's shadow maps belong to the renderer, one per light
@@ -6382,12 +6389,14 @@ missing:
   ownership moved first.
 - **The iridescence names** (`iridescence`, `iridescenceIOR`,
   `iridescenceThickness` and their `material*` forms). They need the
-  material's iridescence fields and `evalIridescence` in `BRDF_GGX` (issue
-  229).
+  material's iridescence fields, `evalIridescence` and `Schlick_to_F0` in
+  `PhysicalLightingModel.start()`, and `BRDF_GGX`'s `USE_IRIDESCENCE` mix
+  (issue 229).
 - **The dash names** (`dashSize`, `gapSize`, `materialLineScale`,
   `materialLineDashSize`, `materialLineGapSize`, `materialLineDashOffset`).
-  They need `LineDashedNodeMaterial`, or `Line2`'s `useDash` branch, and the
-  `lineDistance` attribute.
+  They need `LineDashedNodeMaterial` and its `lineDistance` attribute, or
+  `Line2`'s `useDash` branch and its `instanceDistanceStart` /
+  `instanceDistanceEnd` attributes.
 - **`dispersion` and `materialDispersion`.** They need a dispersion field and
   the dispersion loop in `getIBLVolumeRefraction`.
 - **`retroreflectivity` and `materialRetroreflectivity`.** They need the field
@@ -6403,7 +6412,9 @@ Nothing in the port's own lighting calls them yet:
   no rung lights an anisotropic material, so the lobe would go into the
   lighting model ungraded. The functions' WGSL now matches three's, but the
   light the lobe would produce is still unchecked.
-- `Schlick_to_F0`'s only caller in three is `evalIridescence`.
+- `Schlick_to_F0`'s only callers in three's nodes are in the iridescence
+  block of `PhysicalLightingModel.start()`, which turns `evalIridescence`'s
+  Fresnel into the iridescence F0s.
 - The LTC functions are what `RectAreaLightNode` calls, and the port has no
   `RectAreaLight`.
 
@@ -6448,12 +6459,17 @@ now builds its two light sets with it.
 
 ### 78.4 Gating functions that declare vars
 
-The earlier gates compare `main`, or a function whose body has no vars. The
-LTC functions declare several, so the batch adds `canonical_codes`. It
-applies `canonical`'s renaming to every function, after two other changes:
+The earlier gates compare `main` up to `canonical`, or a function up to
+`codes_as_lets`. `codes_as_lets` rewrites the port's hoisted vars as three's
+`let`s, so it only fits a function whose vars are all `let`s in three. The LTC
+functions also declare real vars in three (their `toVar()`s, hoisted as
+`var nodeVarN : T;` just as the port hoists its own), numbered separately from
+the `let`s. So the batch adds `canonical_codes`. It applies `canonical`'s
+renaming to every function, after two other changes on both sides:
 
 - Each `let nodeConstN` loses its `let`.
-- The port's hoisted `var nodeVarN : T;` declarations are dropped.
+- Each hoisted `var nodeVarN : T;` declaration, one with no initialiser, is
+  dropped. The assignments that follow it are kept and compared.
 
 This is the §8 let-vs-var divergence, applied per function. The locals are
 renamed `localK` instead of `vK`, because `LTC_EdgeVectorFormFactor`'s
