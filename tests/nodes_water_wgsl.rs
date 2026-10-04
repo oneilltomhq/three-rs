@@ -9,7 +9,11 @@
 //!   `m19`, the `flowDirection` branch;
 //! - `tests/fixtures/webgpu_water/water_flow_map.*.wgsl` — `m03` / `m04` of
 //!   `tools/dump-pages/water2_flow_map.html`, the flow-map branch, which no
-//!   example builds.
+//!   example builds;
+//! - `tests/fixtures/webgpu_water/clutter.fragment.wgsl` — `webgpu_water`'s
+//!   `m17`, the pool's `Clutter` material in the transmission pass, of which
+//!   only the `transmissionMap` term is gated
+//!   ([`clutter_transmission_map_matches_three`]).
 //!
 //! [`canonical`] is the only thing between the two texts, and every rule in it
 //! is a divergence listed in `docs/nodes.md` §8:
@@ -41,7 +45,9 @@ use std::rc::Rc;
 
 use three_rs::addons::objects::{Water2Mesh, Water2MeshOptions, WaterMesh, WaterMeshOptions};
 use three_rs::geometries::plane_geometry;
+use three_rs::materials::transmission::OpaqueFrame;
 use three_rs::materials::{setup, MeshBasicNodeMaterial, SetupContext};
+use three_rs::math::Color;
 use three_rs::nodes::NodeBuilder;
 use three_rs::Texture;
 
@@ -53,6 +59,7 @@ const THREE_FLOW_MAP_VERTEX: &str =
     include_str!("fixtures/webgpu_water/water_flow_map.vertex.wgsl");
 const THREE_FLOW_MAP_FRAGMENT: &str =
     include_str!("fixtures/webgpu_water/water_flow_map.fragment.wgsl");
+const THREE_CLUTTER_FRAGMENT: &str = include_str!("fixtures/webgpu_water/clutter.fragment.wgsl");
 
 /// Apply the rules in the module comment.
 fn canonical(wgsl: &str) -> String {
@@ -124,25 +131,59 @@ fn inline_screen_uv(wgsl: &str) -> String {
     }) else {
         return wgsl.to_string();
     };
+    // Inlining is sound only for a single top-level assignment that every
+    // read follows: one inside a branch, one read before it, or a second
+    // assignment would make the var differ from the expression somewhere.
+    assert!(
+        lines[at].starts_with('\t') && !lines[at][1..].starts_with(char::is_whitespace),
+        "the screenUV var is assigned at function top level, one tab in: {:?}",
+        lines[at]
+    );
+    let assignment = format!("{name} = ");
+    let assignments: Vec<usize> = (0..lines.len())
+        .filter(|&i| lines[i].trim_start().starts_with(&assignment))
+        .collect();
+    assert_eq!(
+        assignments,
+        [at],
+        "{name} is assigned once, by the screenUV line, in\n{wgsl}"
+    );
+    if let Some(early) = lines[..at].iter().find(|l| reads(l, name)) {
+        panic!("{name} is read before the screenUV line assigns it: {early:?}");
+    }
     let mut out = Vec::with_capacity(lines.len());
     for (i, line) in lines.iter().enumerate() {
         if i == at {
             continue;
         }
-        // Whole names only: `nodeVar1` must not touch `nodeVar10`.
         let mut result = String::with_capacity(line.len());
         let mut rest = *line;
         while let Some(found) = rest.find(name) {
             let end = found + name.len();
-            let whole = !rest[end..].starts_with(|c: char| c.is_ascii_digit());
             result.push_str(&rest[..found]);
-            result.push_str(if whole { value } else { name });
+            result.push_str(if whole_name_at(rest, found, name) {
+                value
+            } else {
+                name
+            });
             rest = &rest[end..];
         }
         result.push_str(rest);
         out.push(result);
     }
     out.join("\n")
+}
+
+/// Whether `rest[found..]`, which starts with `name`, is the whole name:
+/// `nodeVar1` must not match inside `nodeVar10`.
+fn whole_name_at(rest: &str, found: usize, name: &str) -> bool {
+    !rest[found + name.len()..].starts_with(|c: char| c.is_ascii_digit())
+}
+
+/// Whether `line` mentions the whole name `name` anywhere.
+fn reads(line: &str, name: &str) -> bool {
+    line.match_indices(name)
+        .any(|(found, _)| whole_name_at(line, found, name))
 }
 
 /// The lines of `wgsl` from the one starting with `from` up to and including
@@ -390,4 +431,71 @@ fn water2_fragment_matches_three() {
             assert!(tail.contains(clamp), "{tail}");
         }
     }
+}
+
+/// The texture sample a fragment's `Transmission = …` line reads, and that
+/// line: the last `nodeVarN = textureSample( … );` before it whose var the
+/// line reads.
+fn transmission_lines(wgsl: &str) -> String {
+    let lines: Vec<&str> = wgsl.lines().collect();
+    let at = lines
+        .iter()
+        .position(|l| l.trim_start().starts_with("Transmission = "))
+        .unwrap_or_else(|| panic!("no `Transmission = ` line in\n{wgsl}"));
+    let sample = lines[..at]
+        .iter()
+        .rev()
+        .find(|l| {
+            l.trim_start()
+                .split_once(" = textureSample(")
+                .is_some_and(|(var, _)| reads(lines[at], var))
+        })
+        .unwrap_or_else(|| panic!("no texture sample for {:?}", lines[at]));
+    format!("{sample}\n{}", lines[at])
+}
+
+/// `MaterialNode.TRANSMISSION` with a `transmissionMap`: the factor times
+/// the map's red channel, `material_transmission().mul( texture( map ).x() )`.
+/// `webgpu_water`'s pool sets one on its `Clutter` material; three's dump of
+/// that material in the transmission pass (`m17`) writes
+/// `Transmission = ( object.nodeUniform16 * nodeVar4.x );` after sampling the
+/// map into `nodeVar4` through its own uv matrix. The rest of that material
+/// (its lights, environment and other maps) is not gated here; the two lines
+/// are, after [`canonical`].
+#[test]
+fn clutter_transmission_map_matches_three() {
+    let map = || Texture::new(4, 4, Some(vec![0; 64]));
+    let mut material = MeshBasicNodeMaterial::physical(Color::new(1.0, 1.0, 1.0), 1.0, 0.0);
+    material.transmission = 1.0;
+    material.transmission_map = Some(map());
+    let ctx = SetupContext {
+        viewport_opaque_mip: Some(OpaqueFrame { texture: map() }),
+        ..SetupContext::default()
+    };
+    let program = NodeBuilder::new().build(&setup(&material, &ctx, None));
+
+    let port = transmission_lines(&program.fragment_wgsl);
+    let three = transmission_lines(THREE_CLUTTER_FRAGMENT);
+    assert!(
+        canonical(&three).ends_with("\tTransmission = ( object.nodeUniform2 * nodeVar0.x );"),
+        "{three}"
+    );
+    assert_eq!(
+        canonical(&port),
+        canonical(&three),
+        "port:\n{port}\nthree:\n{three}"
+    );
+
+    // Without the map, the factor alone.
+    material.transmission_map = None;
+    let program = NodeBuilder::new().build(&setup(&material, &ctx, None));
+    assert!(
+        program.fragment_wgsl.lines().any(|l| l
+            .trim_start()
+            .starts_with("Transmission = object.nodeUniform")
+            && l.ends_with(';')
+            && !l.contains('*')),
+        "{}",
+        program.fragment_wgsl
+    );
 }

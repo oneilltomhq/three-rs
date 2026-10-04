@@ -723,6 +723,14 @@ differences, each verified to be pixel-neutral.
   says `three-rs`.
   `tests/nodes_compute_indirect_wgsl.rs::canonical()` drops it, as
   `tests/nodes_compute_wgsl.rs` drops r186's.
+* **`screenUV` read more than once is a var.** Three's `ScreenNode` is not
+  cacheable (`isCacheable()` returns `false`), so each read writes
+  `( fragCoord.xy / render.nodeUniformN )` inline. The port's `screen_uv()`
+  is an operator node, and a second read promotes it to a `nodeVarN`
+  assigned once. The value is the same. `Water2Mesh` reads it three times
+  (§83.2); `tests/nodes_water_wgsl.rs` puts the expression back at each read
+  before comparing (`inline_screen_uv`). Issue #287 tracks making it
+  non-cacheable, as three's is.
 
 ### `LineBasicNodeMaterial` adds no divergence class
 
@@ -921,14 +929,7 @@ more (`docs/webgpu_tsl_raging_sea-progress.md`):
   three's `varyings.positionLocal = ( varyings.positionLocal + … )` in
   place: the text differs, but the value the fragment reads is the same. A
   varying that was only read keeps its old form.
-* **`screenUV` read more than once is a var.** Three's `ScreenNode` is not
-  cacheable (`isCacheable()` returns `false`), so each read writes
-  `( fragCoord.xy / render.nodeUniformN )` inline. The port's `screen_uv()`
-  is an operator node, and a second read promotes it to a `nodeVarN`
-  assigned once. The value is the same. `Water2Mesh` reads it three times
-  (§83.2); `tests/nodes_water_wgsl.rs` puts the expression back at each read
-  before comparing (`inline_screen_uv`). Issue #287 tracks making it
-  non-cacheable, as three's is.
+
 ### Shadow filters add no new class
 
 The VSM and point-light-alpha modules differ from three's dumps only in the
@@ -6149,7 +6150,8 @@ three's dumps, which are committed verbatim:
 
 The vertex stage matches statement for statement after the `VERTEX_`
 sub-build is undone. The fragment matches from `// flow` to the opacity
-multiply. Its uniform structs match by membership, and its bindings match.
+multiply. Its uniform structs match by membership. Its texture and sampler
+bindings match by their sorted types; their binding indices are not compared.
 Every difference is an existing class:
 
 * **`screenUV`** is read three times: by the refraction uv, by
@@ -6169,7 +6171,8 @@ changes nothing before the tail.
 scene pass of `output` and `emissive`, then `bloom( emissive, 2 )` added to
 the beauty, then `renderOutput()`, then `fxaa()`. The other shaders on the
 page (the standard and physical materials, bloom, FXAA, the background and
-the PMREM) are existing crate code. The new tests do not gate them.
+the PMREM) are existing crate code. The new tests gate none of them except
+the `Clutter` material's transmission term, below.
 
 There are three ordering differences:
 
@@ -6186,6 +6189,13 @@ The pool (`models/gltf/pool.glb`) needed two glTF loader fixes:
   beams and circles transmit. The loader now reads the texture into the
   material's new `transmission_map`, and the node material multiplies its
   red channel into `transmission` as three's `transmissionMap` does.
+  `tests/nodes_water_wgsl.rs` (`clutter_transmission_map_matches_three`)
+  gates that term, the map's sample and `Transmission = ( <factor> *
+  <sample>.x );`, line for line against three's `m17`, the `Clutter`
+  material in the transmission pass. That dump is committed verbatim as
+  `tests/fixtures/webgpu_water/clutter.fragment.wgsl`. The rest of the
+  material is not gated: a full-fixture gate would need the page's lights
+  and environment.
 * **`occlusionTexture.strength`.** `SPWallsFloorStairs` sets it to 0, which
   three applies as `aoMapIntensity = 0`. The loader ignored it, so the AO map
   darkened the pool's interior and, through the refraction, the water. The

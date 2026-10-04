@@ -16,7 +16,9 @@
 //!   the background at a corner, nothing NaN.
 //! * `flowConfig.x` advances by `flowSpeed * delta` once per render, `y` stays
 //!   half a cycle ahead modulo the cycle, and both reset at a full cycle.
-//! * The `color` uniform reaches the frame.
+//! * The `color` uniform reaches the frame, channel for channel: a red and a
+//!   blue tint give values derived from the shader, which swapped R and B
+//!   would not.
 //!
 //! One `#[test]`: each `Renderer::new` builds its own device, and cargo runs
 //! test functions inside a binary concurrently.
@@ -55,6 +57,49 @@ fn frame(
 fn pixel(pixels: &[u8], x: u32, y: u32) -> [u8; 4] {
     let i = ((y * SIZE + x) * 4) as usize;
     [pixels[i], pixels[i + 1], pixels[i + 2], pixels[i + 3]]
+}
+
+/// The sRGB transfer function, linear `[0, 1]` to an 8-bit channel: the
+/// renderer's default `outputColorSpace` and what the canvas holds.
+fn srgb8(linear: f64) -> f64 {
+    let encoded = if linear <= 0.003_130_8 {
+        linear * 12.92
+    } else {
+        1.055 * linear.powf(1.0 / 2.4) - 0.055
+    };
+    encoded * 255.0
+}
+
+/// The centre pixel the water shader writes for `tint`, derived from
+/// `WaterNode`'s output, `vec4( color, 1 ) * mix( refraction, reflection,
+/// reflectance )`:
+///
+/// * `refraction` is the frame drawn before the water at the centre: the
+///   unlit red box, `(1, 0, 0)`. The copy holds sRGB-encoded values (the
+///   output transform runs in each material's shader), but 0 and 1 encode to
+///   themselves.
+/// * `reflection` is the mirror's view of everything above the water, which
+///   is nothing but the background: `(0, 0, 1)`.
+/// * `reflectance` is `reflectivity + (1 - reflectivity) * (1 - θ)^5` with
+///   `θ = dot(toEye, normal)`. The camera is straight above and the normal
+///   maps are flat, so `θ = 1` to within the half-pixel off-centre and the
+///   `128/255` quantisation of the map, and `reflectance = 0.02`.
+///
+/// So the linear colour is `tint * (0.98, 0, 0.02)`, and the canvas holds its
+/// sRGB encoding.
+fn expected_centre(tint: [f64; 3]) -> [f64; 3] {
+    let reflectance = 0.02;
+    let mixed = [1.0 - reflectance, 0.0, reflectance];
+    [0, 1, 2].map(|c| srgb8(tint[c] * mixed[c]))
+}
+
+#[track_caller]
+fn assert_tinted(actual: [u8; 4], tint: [f64; 3]) {
+    let expected = expected_centre(tint);
+    assert!(
+        (0..3).all(|c| (f64::from(actual[c]) - expected[c]).abs() <= 3.0),
+        "water tinted {tint:?} at the centre: {actual:?}, expected {expected:?}"
+    );
 }
 
 fn assert_flow(water: &Water2Mesh, expected: [f64; 3], when: &str) {
@@ -157,4 +202,15 @@ fn water2_flows_and_refracts_over_frames() {
         centre[0] < 10 && centre[1] < 60 && centre[2] < 10,
         "green water over a red box: {centre:?}"
     );
+    assert_tinted(centre, [0.0, 1.0, 0.0]);
+
+    // Red and blue tints are not symmetric under an R/B swap: red water lets
+    // the red box through at 0.98, about (253, 0, 0), and blue water keeps
+    // only the reflected background's 0.02, about (0, 0, 39). Swapped
+    // channels would give each the other's value.
+    for tint in [[1.0, 0.0, 0.0], [0.0, 0.0, 1.0]] {
+        water.color.set(tint.to_vec());
+        let tinted = frame(&mut renderer, &mut scene, &mut camera, 5000.0);
+        assert_tinted(pixel(&tinted, SIZE / 2, SIZE / 2), tint);
+    }
 }

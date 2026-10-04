@@ -137,7 +137,9 @@ pub struct Water2Mesh {
     /// `waterNode.color` — linear RGB, default white.
     pub color: SettableValue,
     /// `waterNode.flowDirection` — default `( 1, 0 )`. The shader uses it as
-    /// given; the page normalises it.
+    /// given. The page passes `( 1, 1 )` unnormalised at construction, as
+    /// `examples/webgpu_water.rs` does, and normalises it only in its GUI
+    /// callbacks.
     pub flow_direction: SettableValue,
     /// `waterNode.flowSpeed` — default `0.03`.
     pub flow_speed: SettableValue,
