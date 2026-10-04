@@ -22,12 +22,12 @@ This matrix judges every exported name in three.js revision 5f610f5 (r187) — `
 | loaders | 20 | 2 | 2 | 12 | 4 | 12% |
 | renderers | 39 | 10 | 8 | 3 | 18 | 48% |
 | nodes | 141 | 100 | 27 | 9 | 5 | 74% |
-| tsl | 683 | 556 | 51 | 51 | 25 | 84% |
+| tsl | 683 | 556 | 52 | 50 | 25 | 84% |
 | addons/controls | 11 | 1 | 6 | 4 | 0 | 9% |
 | addons/loaders | 71 | 9 | 3 | 59 | 0 | 13% |
 | addons/postprocessing | 30 | 0 | 0 | 0 | 30 | — |
 | addons/other | 102 | 14 | 4 | 61 | 23 | 18% |
-| **total** | **1317** | **818** | **136** | **240** | **123** | **69%** |
+| **total** | **1317** | **818** | **137** | **239** | **123** | **69%** |
 
 TSL by family:
 
@@ -42,9 +42,9 @@ TSL by family:
 | display/postprocessing | 75 | 62 | 7 | 6 | 0 |
 | compute/storage | 53 | 46 | 7 | 0 | 0 |
 | materialx | 49 | 48 | 0 | 1 | 0 |
-| utils | 77 | 47 | 15 | 5 | 10 |
+| utils | 77 | 47 | 16 | 4 | 10 |
 
-Graded examples: 94 (the README gallery plus `webgpu_textures_2d-array_compressed`, which has a live `rung!` but a hyphen in its name). 10 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
+Graded examples: 94 (the README gallery plus `webgpu_textures_2d-array_compressed`, which has a live `rung!` but a hyphen in its name). 13 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
 
 ## math
 
@@ -614,7 +614,7 @@ Graded examples: 94 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `FontLoader` | Present | FontLoader, Font (src/loaders/font_loader.rs:14) | tests/geometries_shape_oracle.rs; webgpu_materials_toon |  |
 | `GCodeLoader` | Absent | — | — |  |
 | `GLTFGaussianSplatLoaderExtension` | Absent | — | — |  |
-| `GLTFLoader` | Partial | GltfLoader (src/loaders/gltf_loader.rs:456) | tests/gltf_loader.rs, gltf_draco.rs, gltf_meshopt.rs; webgpu_loader_gltf | no cameras, KHR_lights_punctual, CUBICSPLINE (linearised), AVIF, primitive modes/dedup, unlit/iridescence/dispersion/instancing exts; #229 #230 |
+| `GLTFLoader` | Partial | GltfLoader (src/loaders/gltf_loader.rs:456) | tests/gltf_loader.rs, gltf_draco.rs, gltf_meshopt.rs; webgpu_loader_gltf | no cameras, KHR_lights_punctual, CUBICSPLINE (linearised), AVIF, primitive modes/dedup, iridescence/dispersion/instancing exts; #229 #230. KHR_materials_unlit is a basic material (build_unlit_material, src/loaders/gltf_loader.rs:2019; tests/gltf_loader.rs coffee_mug_unlit_material) |
 | `GaussianSplatPLYLoader` | Absent | — | — |  |
 | `HDRCubeTextureLoader` | Present | HdrCubeTextureLoader (src/loaders/hdr_cube_texture_loader.rs:38) | tests/hdr_loader.rs; webgpu_pmrem_cubemap |  |
 | `HDRLoader` | Present | HdrLoader (src/loaders/hdr_loader.rs:75) | tests/hdr_loader.rs (bit-exact oracle); webgpu_pmrem_test |  |
@@ -688,7 +688,7 @@ Graded examples: 94 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `DotScreenPass` | N.A. | — | — | WebGL composer; DotScreenPass -> DotScreenNode dotScreen(): Present; dot_screen (src/nodes/display/dot_screen.rs:15); tests/nodes_display_wgsl.rs; webgpu_postprocessing (ungraded) |
 | `EffectComposer` | N.A. | — | — | WebGL composer; EffectComposer -> RenderPipeline (core): Present; RenderPipeline (src/renderer/render_pipeline.rs:31); webgpu_postprocessing_masking |
 | `FXAAPass` | N.A. | — | — | WebGL composer; FXAAPass -> FXAANode fxaa(): Present; fxaa (src/nodes/display/fxaa.rs:26); webgpu_postprocessing_fxaa |
-| `FilmPass` | N.A. | — | — | WebGL composer; FilmPass -> FilmNode film(): Absent |
+| `FilmPass` | N.A. | — | — | WebGL composer; FilmPass -> FilmNode film(): Present (supplementary tsl/display table) |
 | `GTAOPass` | N.A. | — | — | WebGL composer; GTAOPass -> GTAONode ao(): Present; GtaoNode (src/nodes/display/gtao.rs:70); webgpu_postprocessing_ao (ungraded) |
 | `GlitchPass` | N.A. | — | — | WebGL composer; GlitchPass -> no TSL counterpart: Absent |
 | `HalftonePass` | N.A. | — | — | WebGL composer; HalftonePass -> no TSL node (inline TSL in webgpu_tsl_halftone, graded); webgpu_tsl_halftone |
@@ -822,24 +822,24 @@ Graded examples: 94 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ### Supplementary: `examples/jsm/tsl/display/*.js`
 
-These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 31 Present, 2 Partial, 15 Absent.
+These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 35 Present, 4 Partial, 9 Absent.
 
 | file | status | three-rs port and check |
 |---|---|---|
 | `AfterImageNode.js` | Present | after_image; tests/nodes_display_wgsl.rs; webgpu_postprocessing_afterimage (ported, ungraded) |
 | `AnaglyphPassNode.js` | Present | anaglyph_pass/AnaglyphPassNode, all 21 algorithm × colour-mode matrices; tests/cameras_stereo_camera.rs (matrices and eyes vs three), tests/nodes_display_wgsl.rs (quad gate), tests/stereo_frames.rs; webgpu_display_stereo's anaglyph effect (not the graded default) |
 | `BilateralBlurNode.js` | Present | bilateral_blur/BilateralBlurNode (src/nodes/display/bilateral_blur.rs:50); tests/nodes_display_wgsl.rs (horizontal and vertical gates); webgpu_postprocessing_godrays (graded); two materials instead of one with a swapped texture; no dispose() |
-| `BleachBypass.js` | Absent | — |
+| `BleachBypass.js` | Present | bleach (src/nodes/display/bleach_bypass.rs:16); tests/nodes_display_wgsl.rs (three's dump of tools/dump-pages/film_sepia_bleach.html, m03; no webgpu page uses it) |
 | `BloomNode.js` | Present | bloom/BloomNode; webgpu_postprocessing_bloom, _bloom_emissive, _bloom_selective, _anamorphic |
 | `boxBlur.js` | Present | box_blur; tests/nodes_display_wgsl.rs; webgpu_postprocessing_dof_basic (graded) |
 | `ChromaticAberrationNode.js` | Present | chromatic_aberration; webgpu_postprocessing_ca |
-| `CRT.js` | Absent | — |
+| `CRT.js` | Partial | barrel_uv, barrel_mask, color_bleeding, scanlines, vignette (src/nodes/display/crt.rs); tests/nodes_display_wgsl.rs (webgpu_postprocessing_retro m08, m10) gates all but barrelMask, which no page uses; webgpu_postprocessing_retro (ported, ungraded: three fails its own reference here) |
 | `DenoiseNode.js` | Absent | — |
 | `depthAwareBlend.js` | Present | depth_aware_blend (src/nodes/display/depth_aware_blend.rs:96); tests/nodes_display_wgsl.rs; webgpu_postprocessing_godrays (graded); perspective camera only, as in three; a baseNode with its own uvNode is not ported |
 | `depthAwareBlur.js` | Absent | — |
 | `DepthOfFieldNode.js` | Present | dof/DepthOfFieldNode; tests/nodes_display_wgsl.rs (`dof_*`: all seven distinct quad shaders); webgpu_postprocessing_dof (ported, ungraded: three's own e2e exception list) |
 | `DotScreenNode.js` | Present | dot_screen; tests/nodes_display_wgsl.rs; webgpu_postprocessing (ported, ungraded) |
-| `FilmNode.js` | Absent | — |
+| `FilmNode.js` | Present | film (src/nodes/display/film.rs:15); tests/nodes_display_wgsl.rs (film_sepia_bleach dump, m07 without an intensity, m09 with one; no webgpu page uses it) |
 | `FSR1Node.js` | Absent | — |
 | `FXAANode.js` | Present | fxaa; webgpu_postprocessing_fxaa |
 | `GaussianBlurNode.js` | Present | gaussian_blur; tests/nodes_display_wgsl.rs; webgpu_procedural_texture |
@@ -856,10 +856,10 @@ These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) an
 | `PixelationPassNode.js` | Present | pixelation_pass/PixelationPassNode (src/nodes/display/pixelation_pass.rs:35,24); tests/nodes_display_wgsl.rs; webgpu_postprocessing_pixel (ported, ungraded: three.js fails its own reference on this machine) |
 | `radialBlur.js` | Present | radial_blur; webgpu_postprocessing_radial_blur |
 | `RecurrentDenoiseNode.js` | Absent | — |
-| `RetroPassNode.js` | Absent | — |
+| `RetroPassNode.js` | Partial | retro_pass/RetroPassNode (src/nodes/display/retro_pass.rs:104); tests/retro_frames.rs; webgpu_postprocessing_retro (ported, ungraded: three fails its own reference here). No MeshStandardMaterial + envMap reflection branch, no per-material cache; docs/nodes.md §79.3 |
 | `RGBShiftNode.js` | Present | rgb_shift; tests/nodes_display_wgsl.rs; webgpu_postprocessing (ported, ungraded) |
-| `Sepia.js` | Absent | — |
-| `Shape.js` | Absent | (circle(); core shapeCircle exists in src/nodes/tsl.rs:3813, a different function) |
+| `Sepia.js` | Present | sepia (src/nodes/display/sepia.rs:13); tests/nodes_display_wgsl.rs (film_sepia_bleach dump, m05; no webgpu page uses it) |
+| `Shape.js` | Present | circle (src/nodes/display/shape.rs:18; not core shapeCircle); tests/nodes_display_wgsl.rs (webgpu_postprocessing_retro m08 and m10, inside vignette and the bleed amount) |
 | `SharpenNode.js` | Absent | — |
 | `SMAANode.js` | Present | smaa/SmaaNode (src/nodes/display/smaa.rs:72,77); tests/nodes_display_wgsl.rs (smaa_edges, smaa_weights and smaa_blend gates); webgpu_postprocessing_ssr (graded); webgpu_postprocessing_smaa (ported, ungraded: three.js fails its own reference on this machine) |
 | `SobelOperatorNode.js` | Present | sobel; webgpu_postprocessing_sobel |
@@ -1423,7 +1423,7 @@ Partial: `colorSpaceToWorking`, `negateOnBackSide`, `viewportTexture`, `viewport
 | `unpremultiplyAlpha` | Present | unpremultiply_alpha (src/nodes/tsl.rs:4703) | examples/dump_wgsl.rs (manual WGSL diff) |  |
 | `screenDPR` | Present | screen_dpr (src/nodes/tsl.rs:2315) | examples/dump_wgsl.rs (manual WGSL diff) |  |
 | `screenUV` | Present | screen_uv (src/nodes/tsl.rs:2354) | webgpu_layers (graded) |  |
-| `screenSize` | Present | screen_size (src/nodes/tsl.rs:2808) | tests/nodes_tsl_batch.rs (viewport_coords_match) |  |
+| `screenSize` | Present | screen_size (src/nodes/tsl.rs:2919), the viewport_size uniform | tests/nodes_tsl_batch.rs (viewport_coords_match); tests/nodes_display_wgsl.rs (webgpu_postprocessing_retro m10: bayerDither, scanlines) | the same node as viewportSize; they differ only under a viewport smaller than the target |
 | `screenCoordinate` | Present | frag_coord (src/nodes/tsl.rs:2073) | webgpu_tsl_halftone (graded) |  |
 | `viewport` | Present | viewport (src/nodes/tsl.rs:2309) | tests/renderer_half_float_target.rs, webgpu_postprocessing_anamorphic (graded) |  |
 | `viewportSize` | Present | viewport_size (src/nodes/tsl.rs:2299) | webgpu_tsl_halftone (graded) |  |
@@ -1582,11 +1582,11 @@ Partial: none.
 
 ### utils
 
-47 of 67 applicable present (15 Partial, 5 Absent, 10 N.A.).
+47 of 67 applicable present (16 Partial, 4 Absent, 10 N.A.).
 
-Missing (Absent): `builtinGIContext`, `uniformGroup`, `sharedUniformGroup`, `frameGroup`, `replaceDefaultUV`.
+Missing (Absent): `builtinGIContext`, `uniformGroup`, `sharedUniformGroup`, `frameGroup`.
 
-Partial: `NodeShaderStage`, `cache`, `overrideNode`, `overrideNodes`, `sample`, `OnObjectUpdate`, `OnMaterialUpdate`, `OnFrameUpdate`, `OnAfterObjectUpdate`, `OnBeforeObjectUpdate`, `OnBeforeMaterialUpdate`, `OnBeforeFrameUpdate`, `OnBeforeRenderPipeline`, `OnAfterRenderPipeline`, `subBuild`.
+Partial: `NodeShaderStage`, `cache`, `overrideNode`, `overrideNodes`, `sample`, `OnObjectUpdate`, `OnMaterialUpdate`, `OnFrameUpdate`, `OnAfterObjectUpdate`, `OnBeforeObjectUpdate`, `OnBeforeMaterialUpdate`, `OnBeforeFrameUpdate`, `OnBeforeRenderPipeline`, `OnAfterRenderPipeline`, `replaceDefaultUV`, `subBuild`.
 
 | three.js name | verdict | three-rs symbol | verified by | note |
 |---|---|---|---|---|
@@ -1637,7 +1637,7 @@ Partial: `NodeShaderStage`, `cache`, `overrideNode`, `overrideNodes`, `sample`, 
 | `colorToDirection` | Present | color_to_direction (src/nodes/tsl/utils.rs:101) | tests/nodes_tsl_batch.rs | deprecated r185 alias of unpackRGBToNormal; `#[deprecated]` here too |
 | `remap` | Present | remap (src/nodes/tsl/wrappers.rs:734) | tests/nodes_tsl_batch.rs, webgpu_tsl_earth (graded) |  |
 | `remapClamp` | Present | remap_clamp (src/nodes/tsl/wrappers.rs:753) | tests/nodes_tsl_batch.rs, webgpu_tsl_halftone (graded) |  |
-| `replaceDefaultUV` | Absent | — | — | `texture()` fixes its uv when it is called; texture_uv covers a per-call uv, but deferring every texture's default uv to a context is not done |
+| `replaceDefaultUV` | Partial | replace_default_uv (src/nodes/tsl.rs:171) | tests/nodes_display_wgsl.rs (webgpu_postprocessing_retro m08) | takes the uv, not a callback of the texture node; only taps built inside it read it (texture(), RetroPassNode's texture), not a pass( … ) tap already made |
 | `rotateUV` | Present | rotate_uv (src/nodes/tsl/wrappers.rs:695) | tests/nodes_tsl_batch.rs |  |
 | `spherizeUV` | Present | spherize_uv (src/nodes/tsl/wrappers.rs:712) | tests/nodes_tsl_batch.rs, webgpu_tsl_vfx_flames (graded) |  |
 | `billboarding` | Present | billboarding (src/nodes/tsl/wrappers.rs:860) | webgpu_tsl_vfx_flames (graded) |  |
@@ -1677,10 +1677,10 @@ The first refresh of this matrix closed the previous top five. Velocity and TRAA
 1. **The screen-space effect nodes** (`DenoiseNode`; `denoise` 6 pages). `SSRNode` is Present (`webgpu_postprocessing_ssr`, graded). `GTAONode` and `builtinAOContext` are Present now (`webgpu_postprocessing_ao`, ungraded: it is on three's e2e exception list), and so are `DepthOfFieldNode` (`webgpu_postprocessing_dof`), `SSGINode` (`webgpu_postprocessing_ssgi`) and `SSSNode` with `builtinShadowContext` (`webgpu_postprocessing_sss`), all ungraded for the same reason. What is left needs a velocity target and a temporal resolve, and both now exist; these pages are the direct payoff of the velocity work. Porting them also gives the depth reads (`viewportDepthTexture`, `linearDepth`, `getViewPosition`) their first graded consumer.
 2. **EventDispatcher** (issues 153, 159). 8 pages subscribe to `change` or `finished` events. In ordinary use these are render-on-demand behind OrbitControls and chaining animation clips when one ends, and neither works in the port today. `AnimationMixer` and `AnimationAction` fire nothing.
 3. **The TransformControls pages** (`webgpu_modifier_curve`, `webgpu_shadowmap_progressive`, `webgpu_tsl_compute_attractors_particles`). `FirstPersonControls` (8 pages), `FlyControls` (1) and now `TransformControls` are ported and gated against three's classes (`docs/controls.md`). What is left is wiring the gizmo into the pages: `webgpu_modifier_curve`'s port still leaves it out, and the viewer's controls hook is typed for `OrbitControls`.
-4. The remaining display files (`FilmNode`, 1 to 2 pages each). Small, self-contained, and each unlocks one page.
+4. The remaining display files (`DenoiseNode`, `depthAwareBlur`, `FSR1Node`, `ImportanceSampledEnvironment`, `RecurrentDenoiseNode`, `SharpenNode`, `SSAONode`, `TAAUNode`, `TemporalReprojectNode`, 0 to 2 pages each). Small and self-contained; most unlock one page.
 
 **Runners-up, and why they rank lower:**
 - RectAreaLight and LTC (3 pages).
 - Clipping planes (2 pages, but common in CAD-style viewers).
-- The TSL long tail: 156 absent `three/tsl` names, most of them unused by any r187 page. They port cheaply in batches against WGSL dump gates.
+- The TSL long tail: 50 absent `three/tsl` names, most of them unused by any r187 page. They port cheaply in batches against WGSL dump gates.
 - One Partial matters more than its page count suggests: `GLTFLoader` has no `KHR_lights_punctual` and no cameras. No r187 page needs them, but arbitrary glTF assets from users will.

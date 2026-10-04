@@ -10,15 +10,17 @@ use three_rs::loaders::LutCubeLoader;
 use three_rs::materials::{quad_vertex_node, render_output, MeshBasicNodeMaterial};
 use three_rs::nodes::display::convert_to_texture;
 use three_rs::nodes::display::{
-    after_image, anaglyph_pass, ao, bilateral_blur, box_blur, depth_aware_blend, dof, dot_screen,
-    fxaa, gaussian_blur, godrays, hash_blur_with, lensflare, lut_3d, motion_blur, outline,
-    parallax_barrier_pass, pixelation_pass, rgb_shift, rtt, smaa, sobel, ssgi, ssr, sss, traa,
-    viewport_shared_texture_at, BoxBlurOptions, DepthAwareBlendOptions, GaussianBlurOptions,
-    HashBlurOptions, LensflareParams, OutlineParams, SsrOptions,
+    after_image, anaglyph_pass, ao, barrel_uv, bayer_dither, bilateral_blur, bleach, box_blur,
+    circle, color_bleeding, depth_aware_blend, dof, dot_screen, film, fxaa, gaussian_blur, godrays,
+    hash_blur_with, lensflare, lut_3d, motion_blur, outline, parallax_barrier_pass,
+    pixelation_pass, retro_pass, rgb_shift, rtt, scanlines, sepia, smaa, sobel, ssgi, ssr, sss,
+    traa, viewport_shared_texture_at, BoxBlurOptions, DepthAwareBlendOptions, GaussianBlurOptions,
+    HashBlurOptions, LensflareParams, OutlineParams, RetroPassOptions, SsrOptions,
 };
 use three_rs::nodes::tsl::{
-    distance, float, osc_sine, pass_depth_texture, perspective_depth_to_view_z, screen_uv,
-    texture_3d_sampled, texture_uv, time, uniform_value, uv, vec2, vec4_join,
+    distance, float, osc_sine, pass_depth_texture, perspective_depth_to_view_z, posterize,
+    replace_default_uv, screen_size, screen_uv, texture_3d_sampled, texture_uv, time,
+    uniform_value, uv, vec2, vec4_join,
 };
 use three_rs::nodes::Type;
 use three_rs::textures::{DepthTexture, Texture};
@@ -724,6 +726,77 @@ pub fn display_quads() -> Vec<DisplayQuad> {
         "oit_composite",
         "webgpu_oit_m06_composite.wgsl",
         render_output(oit.node(), ToneMapping::None),
+    ));
+
+    // webgpu_postprocessing_retro `m08` and `m10`: the page's pipeline with
+    // its initial uniforms. `m08` is the `RTT` that `colorBleeding()`'s
+    // `convertToTexture()` makes of the retro pass read through
+    // `replaceDefaultUV( barrelUV( curvature ) )`: an unfilterable (nearest)
+    // texture, so a clamped `textureLoad`. `m10` is the `RenderPipeline`'s
+    // output: the bleed taps of that texture, Bayer, posterize, vignette and
+    // scanlines, under the sRGB output transform.
+    let f32_uniform = |value: f64| uniform_value(Type::F32, vec![value]);
+    let curvature = f32_uniform(0.02);
+    let color_depth_steps = f32_uniform(32.0);
+    let retro = retro_pass(
+        std::rc::Rc::new(std::cell::RefCell::new(three_rs::Scene::new())),
+        std::rc::Rc::new(std::cell::RefCell::new(three_rs::PerspectiveCamera::new(
+            25.0, 1.6, 0.1, 100.0,
+        ))),
+        RetroPassOptions::default().affine_distortion(f32_uniform(0.0)),
+    );
+    let distorted = replace_default_uv(barrel_uv(curvature.clone(), uv()), retro.node());
+    quads.push(quad(
+        "retro_barrel",
+        "webgpu_postprocessing_retro_m08_retro_barrel.wgsl",
+        distorted.clone(),
+    ));
+    let distorted_delta = circle(curvature.add(0.1).mul(10.0), float(1.0), uv())
+        .mul(curvature)
+        .mul(0.05);
+    let mut crt = color_bleeding(distorted, f32_uniform(0.001).add(distorted_delta));
+    crt = bayer_dither(crt, color_depth_steps.clone());
+    crt = posterize(crt, color_depth_steps);
+    crt = three_rs::nodes::display::vignette(crt, f32_uniform(0.3), float(0.6), uv());
+    crt = scanlines(
+        crt,
+        f32_uniform(0.3),
+        screen_size().y().mul(f32_uniform(1.0)),
+        f32_uniform(0.0),
+        uv(),
+    );
+    quads.push(quad(
+        "retro_crt",
+        "webgpu_postprocessing_retro_m10_retro_crt.wgsl",
+        render_output(crt, ToneMapping::None),
+    ));
+
+    // `tools/dump-pages/film_sepia_bleach.html` `m03`, `m05`, `m07` and
+    // `m09`: `bleach( scenePass, uniform( 0.8 ) )`, `sepia()` of its texture
+    // and `film()` of that, with no intensity, each converted to a texture,
+    // then `film( …, uniform( 0.5 ) )` as the `RenderPipeline`'s output.
+    quads.push(quad(
+        "bleach_bypass",
+        "film_sepia_bleach_m03_bleach_bypass.wgsl",
+        bleach(texture_uv(&input(), uv()), f32_uniform(0.8)),
+    ));
+    quads.push(quad(
+        "sepia",
+        "film_sepia_bleach_m05_sepia.wgsl",
+        sepia(texture_uv(&input(), uv())),
+    ));
+    quads.push(quad(
+        "film_no_intensity",
+        "film_sepia_bleach_m07_film_no_intensity.wgsl",
+        film(texture_uv(&input(), uv()), None, None),
+    ));
+    quads.push(quad(
+        "film",
+        "film_sepia_bleach_m09_film.wgsl",
+        render_output(
+            film(texture_uv(&input(), uv()), Some(f32_uniform(0.5)), None),
+            ToneMapping::None,
+        ),
     ));
 
     quads
