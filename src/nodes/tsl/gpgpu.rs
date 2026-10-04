@@ -109,16 +109,18 @@ subgroup_binary! {
     /// `subgroupBroadcast( e, id )` — `e` from invocation `id`. WGSL wants
     /// `id` to be a constant: three builds a `float` id as an `int`, so a
     /// plain number (`3.0`) becomes the literal `3`; any other type is built
-    /// at `e`'s type, as three does.
+    /// at the node's type, as three does.
     ///
     /// **Native gap** (`docs/nodes.md` §84): WGSL takes an `i32` or `u32` id,
     /// but naga 30 accepts only `u32`. Three's rule builds the id as an `int`
-    /// or at `e`'s type, so natively only a `u32` `e` with a `u32` id
-    /// validates; any other `e` fails, as three's own `int` ids do.
+    /// or at the input type, where the id wins a tie, so natively any scalar
+    /// `e` with a `u32` id validates, at the cost of converting `e` to `u32`;
+    /// a vector `e` fails, as three's own `int` ids do.
     subgroup_broadcast(id) => "subgroupBroadcast";
     /// `subgroupShuffle( e, id )` — `e` from invocation `id`, which may vary
     /// per invocation. `id` is built like [`subgroup_broadcast`]'s, with the
-    /// same native gap: only a `u32` `e` and id pass naga.
+    /// same native gap: only a `u32` id passes naga, which converts a scalar
+    /// `e` to `u32`.
     subgroup_shuffle(id) => "subgroupShuffle";
     /// `subgroupShuffleXor( e, mask )` — `e` from invocation
     /// `subgroup_invocation_id ^ mask`; `mask` is built as a `uint`.

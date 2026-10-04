@@ -359,10 +359,12 @@ it, which is what `getSubBuildProperty()` does.
 Textual identity is not a goal; these are the deliberate or unexplained
 differences, each verified to be pixel-neutral.
 
-* **`enable subgroups;` and `@builtin( subgroup_size )`.** Three's compute
-  template emits the directive and threads a `subgroupSize : u32` parameter
-  into every `@compute` entry point, whether or not the kernel uses either;
-  `webgpu_compute_points` uses neither. This port emits neither, because
+* **`enable subgroups;` and `@builtin( subgroup_size )`.** On a device that
+  has the `subgroups` feature (`renderer.hasFeature( 'subgroups' )`,
+  `WGSLNodeBuilder.js:1907`), three's compute template emits the directive
+  and threads a `subgroupSize : u32` parameter into every `@compute` entry
+  point, whether or not the kernel uses either; `webgpu_compute_points` uses
+  neither. This port emits neither in a kernel that uses neither, because
   `enable subgroups;` is a WebGPU feature request that fails to compile on an
   adapter without the feature, and an unused entry-point parameter is the only
   thing it would buy. Since the subgroup sweep (§84) both come back, in
@@ -6518,7 +6520,8 @@ The parameters follow `generate()`:
 - The mask and delta shuffles build `b` as a `uint`.
 - The rest build both inputs at the input type.
 
-As in three, a subgroup function in the vertex stage is an error.
+A subgroup function in the vertex stage is an error. Three logs it and
+goes on building; the port panics (`assert_ne!` in `generate_subgroup`).
 
 Three exports these functions through `nodeProxyIntent`. As everywhere in
 the port, the plain node is three's output.
@@ -6568,15 +6571,26 @@ dispatches nothing.
 Three logs the same line, then hands the browser a module the browser
 rejects. wgpu would panic on that module instead.
 
+The warning is logged once per thread, across every renderer on it; three
+logs it on every build that enables subgroups.
+
+A material is guarded the same way. A fragment stage that builds a subgroup
+function (`subgroup_fragment_matches_three`) sets `NodeProgram::subgroups`.
+Without the feature, the renderer builds the program but creates no
+pipeline for it, logs the same line, and skips the material's draws. naga
+would otherwise fail to validate the module, with the directive stripped and
+no `Capabilities::SUBGROUP`, and with no error scope wgpu's default handler
+would panic. In a browser the material would be rejected.
+
 The web build never has the feature: wgpu 30.0.1's WebGPU backend has no
 `subgroups` entry in `FEATURES_MAPPING` (`src/backend/webgpu.rs:768`). So a
-subgroup kernel is skipped there, with the message.
+subgroup kernel or material is skipped there, with the message.
 
 `tests/renderer_compute_subgroups.rs` (in `tests/gpu_only`) dispatches 256
-invocations, each storing `subgroupAdd( 1u )` and `subgroupSize`. It
-asserts:
+invocations in workgroups of 128, each storing `subgroupAdd( 1u )` and
+`subgroupSize`. It asserts:
 
-- The size is a power of two in 1..=128.
+- The size is a power of two in 1..=128, so every subgroup is full.
 - Every invocation sees the same size.
 - Every sum equals the size.
 
@@ -6588,15 +6602,16 @@ The port's WGSL for these calls matches three's dump. naga 30 cannot run
 three of them natively:
 
 - **`subgroupElect()`.** naga's WGSL front end lists it as a keyword
-  (`naga-30.0.0/src/keywords/wgsl.rs:430`), but `lower/mod.rs` has no arm
+  (`naga-30.0.1/src/keywords/wgsl.rs:430`), but `lower/mod.rs` has no arm
   for it. The `subgroupBallot` arm is at `:3675`. So a kernel that calls it
   fails to parse. The `subgroup_bits` gate checks the text against three's,
   then validates the same kernel without `subgroupElect` through naga.
 - **`subgroupBroadcast`, `subgroupShuffle` and `quadBroadcast` ids.** WGSL
   takes an `i32` or a `u32` id. naga's `validate_subgroup_gather`
   (`src/valid/function.rs:718`) accepts only `u32`. Three's rules build the
-  id as an `int`, or at `e`'s type, so the only case that validates is a
-  `u32` `e` with a `u32` id. `subgroup_shuffle_matches_three` checks three's
+  id as an `int`, or at the input type, where the id wins a tie. So any
+  scalar `e` with a `u32` id validates, at the cost of converting `e` to
+  `u32`; a vector `e` fails. `subgroup_shuffle_matches_three` checks three's
   `int` ids as text, then validates a `u32` variant.
   `subgroupBroadcast` and `quadBroadcast` also need a constant id. Three's
   `int`-from-number rule gives them one.
@@ -6632,8 +6647,15 @@ port now does the same. A compute kernel with any barrier:
   `var nodeVarN : T;`, instead of as module `var<private>`s.
 
 This brings the existing `workgroupBarrier`/`storageBarrier` kernels closer
-to three, and no earlier gate changed. As in three, a barrier kernel whose
-count is not a multiple of its workgroup size runs the extra invocations.
+to three, and no earlier gate changed.
+
+As in three, the dispatch is still `ceil( count / workgroupSize )`
+workgroups, so a barrier kernel whose count is not a multiple of its
+workgroup size runs the tail invocations, and they index past `count`. The
+kernel must guard its own accesses, e.g. `If( instanceIndex < count )`
+around the stores after the barrier. `barrier_runs_the_tail` in
+`tests/renderer_compute_subgroups.rs` pins this: 100 invocations in
+workgroups of 64 run 128 times, and the guarded stores stay in range.
 
 `textureBarrier()` is `barrier( 'texture' )` and is gated by its own probe.
 

@@ -240,7 +240,8 @@ pub struct ComputeFlow {
     /// The kernel body's statements, in order.
     pub statements: Vec<NodeRef>,
     /// `.compute( count )` — the number of invocations the kernel is *for*, and
-    /// the bound the generated early-return checks `instanceIndex` against.
+    /// the bound the generated early-return checks `instanceIndex` against,
+    /// unless the kernel has a barrier (`docs/nodes.md` §84.6).
     pub count: usize,
     /// `ComputeNode`'s `workgroupSize`, padded to three components exactly as
     /// `computeKernel( node, workgroupSize = [ 64 ] )` pads it.
@@ -323,6 +324,11 @@ pub struct NodeProgram {
     pub attributes: Vec<AttributeSlot>,
     /// Bind groups in `@group` order.
     pub groups: Vec<Vec<BindingDesc>>,
+    /// A stage — in practice the fragment stage, since a subgroup function
+    /// in the vertex stage is an error — reads a subgroup builtin or calls a
+    /// subgroup function, so its WGSL has `enable subgroups;` and the material needs a device with `wgpu::Features::SUBGROUP`
+    /// (`WGSLNodeBuilder.enableSubGroups()`). See `docs/nodes.md` §84.3.
+    pub subgroups: bool,
     pub(crate) cache_key: u64,
     /// The geometry attributes that are `InstancedBufferAttribute`s, which
     /// step once per instance. Not the builder's to know — three reads
@@ -3632,6 +3638,8 @@ impl NodeBuilder {
             fragment_wgsl,
             attributes,
             groups,
+            subgroups: self.stages[Stage::Vertex.index()].subgroups
+                || self.stages[Stage::Fragment.index()].subgroups,
             cache_key,
             instanced_attributes: Vec::new(),
             update_before,

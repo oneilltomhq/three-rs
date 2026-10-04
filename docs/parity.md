@@ -1464,10 +1464,10 @@ Partial: `globalId`, `localId`, `storageBarrier`, `subgroupElect`, `subgroupBroa
 
 | three.js name | verdict | three-rs symbol | verified by | note |
 |---|---|---|---|---|
-| `storageElement` | Present | storage_element (src/nodes/tsl.rs:4845) | tests/nodes_tsl_batch.rs | `StorageArray::element` |
+| `storageElement` | Present | storage_element (src/nodes/tsl.rs:4851) | tests/nodes_tsl_batch.rs | `StorageArray::element` |
 | `computeKernel` | Present | ComputeFlow::workgroup_size (src/nodes/builder.rs:239) | tests/nodes_compute_indirect_wgsl.rs | field on ComputeFlow |
 | `compute` | Present | ComputeFlow (src/nodes/builder.rs:239), Renderer::compute (src/renderer/mod.rs:3670) | webgpu_compute_texture (graded) | struct, not .compute(count) |
-| `attributeArray` | Present | attribute_array (src/nodes/tsl.rs:4837) | tests/nodes_tsl_batch.rs | `toAttribute()` steps per vertex; its `@location` is first-use order (docs/nodes.md §8, §84.7) |
+| `attributeArray` | Present | attribute_array (src/nodes/tsl.rs:4840) | tests/nodes_tsl_batch.rs | `toAttribute()` steps per vertex; its `@location` is first-use order (docs/nodes.md §8, §84.7) |
 | `instancedArray` | Present | instanced_array (src/nodes/tsl.rs:3633) | tests/nodes_compute_indirect_wgsl.rs, webgpu_compute_points (graded) |  |
 | `storage` | Present | storage_struct (src/nodes/tsl.rs:3874) | webgpu_struct_drawindirect (graded) |  |
 | `storageTexture3D` | Present | storage_texture_3d (src/nodes/tsl.rs:4137) | tests/nodes_tsl_batch.rs | one-argument form, as `storageTexture`; coordinate and value go to `textureStore` |
@@ -1480,9 +1480,9 @@ Partial: `globalId`, `localId`, `storageBarrier`, `subgroupElect`, `subgroupBroa
 | `subgroupSize` | Present | subgroup_size (src/nodes/tsl.rs:2439) | tests/nodes_tsl_batch.rs, tests/renderer_compute_subgroups.rs | declared only in a kernel that uses subgroups (docs/nodes.md §8, §84.2) |
 | `workgroupBarrier` | Present | workgroup_barrier (src/nodes/tsl.rs:3997) | tests/nodes_compute_indirect_wgsl.rs |  |
 | `storageBarrier` | Partial | storage_barrier (src/nodes/tsl.rs:4002) | — | no test or example calls it |
-| `textureBarrier` | Present | texture_barrier (src/nodes/tsl.rs:5329) | tests/nodes_tsl_batch.rs |  |
+| `textureBarrier` | Present | texture_barrier (src/nodes/tsl.rs:5335) | tests/nodes_tsl_batch.rs |  |
 | `workgroupArray` | Present | workgroup_array (src/nodes/tsl.rs:3967) | tests/nodes_compute_indirect_wgsl.rs |  |
-| `atomicFunc` | Present | atomic_func (src/nodes/tsl.rs:5236) | tests/nodes_tsl_batch.rs |  |
+| `atomicFunc` | Present | atomic_func (src/nodes/tsl.rs:5242) | tests/nodes_tsl_batch.rs |  |
 | `atomicLoad` | Present | atomic_load (src/nodes/tsl.rs:3958) | tests/nodes_compute_indirect_wgsl.rs |  |
 | `atomicStore` | Present | atomic_store (src/nodes/tsl.rs:3938) | webgpu_struct_drawindirect (graded) |  |
 | `atomicAdd` | Present | atomic_add (src/nodes/tsl.rs:3938) | tests/nodes_compute_indirect_wgsl.rs |  |
@@ -1492,7 +1492,7 @@ Partial: `globalId`, `localId`, `storageBarrier`, `subgroupElect`, `subgroupBroa
 | `atomicAnd` | Present | atomic_and (src/nodes/tsl.rs:3938) | indirect: used by src/nodes/tsl.rs |  |
 | `atomicOr` | Present | atomic_or (src/nodes/tsl.rs:3938) | indirect: used by src/nodes/tsl.rs |  |
 | `atomicXor` | Present | atomic_xor (src/nodes/tsl.rs:3938) | indirect: used by src/nodes/tsl.rs |  |
-| `subgroupElect` | Partial | subgroup_elect (src/nodes/tsl/gpgpu.rs:34) | tests/nodes_tsl_batch.rs | WGSL matches three's, but naga 30 has no lowering for it (only a keyword, naga-30.0.0/src/keywords/wgsl.rs:430), so it cannot run natively |
+| `subgroupElect` | Partial | subgroup_elect (src/nodes/tsl/gpgpu.rs:34) | tests/nodes_tsl_batch.rs | WGSL matches three's, but naga 30 has no lowering for it (only a keyword, naga-30.0.1/src/keywords/wgsl.rs:430), so it cannot run natively |
 | `subgroupBallot` | Present | subgroup_ballot (src/nodes/tsl/gpgpu.rs:40) | tests/nodes_tsl_batch.rs | needs wgpu `SUBGROUP` (requested when the adapter has it; without it the kernel is skipped with three's message, and the web build never has it); docs/nodes.md §84 |
 | `subgroupAdd` | Present | subgroup_add (src/nodes/tsl/gpgpu.rs:58) | tests/nodes_tsl_batch.rs, tests/renderer_compute_subgroups.rs | needs wgpu `SUBGROUP` (requested when the adapter has it; without it the kernel is skipped with three's message, and the web build never has it); docs/nodes.md §84 |
 | `subgroupInclusiveAdd` | Present | subgroup_inclusive_add (src/nodes/tsl/gpgpu.rs:61) | tests/nodes_tsl_batch.rs | as `subgroupAdd` |
@@ -1511,12 +1511,12 @@ Partial: `globalId`, `localId`, `storageBarrier`, `subgroupElect`, `subgroupBroa
 | `quadSwapX` | Present | quad_swap_x (src/nodes/tsl/gpgpu.rs:89) | tests/nodes_tsl_batch.rs | as `subgroupAdd` |
 | `quadSwapY` | Present | quad_swap_y (src/nodes/tsl/gpgpu.rs:91) | tests/nodes_tsl_batch.rs | as `subgroupAdd` |
 | `quadSwapDiagonal` | Present | quad_swap_diagonal (src/nodes/tsl/gpgpu.rs:94) | tests/nodes_tsl_batch.rs | as `subgroupAdd` |
-| `subgroupBroadcast` | Partial | subgroup_broadcast (src/nodes/tsl/gpgpu.rs:118) | tests/nodes_tsl_batch.rs | WGSL matches three's; naga 30 takes only a `u32` id (naga-30.0.0/src/valid/function.rs:718), so natively only a `u32` value with a `u32` id runs; three's `int` ids do not |
-| `subgroupShuffle` | Partial | subgroup_shuffle (src/nodes/tsl/gpgpu.rs:122) | tests/nodes_tsl_batch.rs | as `subgroupBroadcast`: three's `int` ids fail naga 30's `u32`-only gather index |
-| `subgroupShuffleXor` | Present | subgroup_shuffle_xor (src/nodes/tsl/gpgpu.rs:125) | tests/nodes_tsl_batch.rs | as `subgroupAdd` |
-| `subgroupShuffleUp` | Present | subgroup_shuffle_up (src/nodes/tsl/gpgpu.rs:128) | tests/nodes_tsl_batch.rs | as `subgroupAdd` |
-| `subgroupShuffleDown` | Present | subgroup_shuffle_down (src/nodes/tsl/gpgpu.rs:131) | tests/nodes_tsl_batch.rs | as `subgroupAdd` |
-| `quadBroadcast` | Partial | quad_broadcast (src/nodes/tsl/gpgpu.rs:141) | tests/nodes_tsl_batch.rs (naga only) | three cannot build it (`setParameterLength( 1 )`, SubgroupFunctionNode.js:591, then `generate()` throws on the missing id), so no fixture; the port takes the id WGSL needs, with `subgroupBroadcast`'s `u32`-only gap |
+| `subgroupBroadcast` | Partial | subgroup_broadcast (src/nodes/tsl/gpgpu.rs:119) | tests/nodes_tsl_batch.rs | WGSL matches three's; naga 30 takes only a `u32` id (naga-30.0.1/src/valid/function.rs:718), so natively any scalar value with a `u32` id runs, at the cost of converting the value to `u32` (the id's type wins `getInputType()`'s tie); a vector value fails, and three's `int` ids do not run |
+| `subgroupShuffle` | Partial | subgroup_shuffle (src/nodes/tsl/gpgpu.rs:124) | tests/nodes_tsl_batch.rs | as `subgroupBroadcast`: three's `int` ids fail naga 30's `u32`-only gather index |
+| `subgroupShuffleXor` | Present | subgroup_shuffle_xor (src/nodes/tsl/gpgpu.rs:127) | tests/nodes_tsl_batch.rs | as `subgroupAdd` |
+| `subgroupShuffleUp` | Present | subgroup_shuffle_up (src/nodes/tsl/gpgpu.rs:130) | tests/nodes_tsl_batch.rs | as `subgroupAdd` |
+| `subgroupShuffleDown` | Present | subgroup_shuffle_down (src/nodes/tsl/gpgpu.rs:133) | tests/nodes_tsl_batch.rs | as `subgroupAdd` |
+| `quadBroadcast` | Partial | quad_broadcast (src/nodes/tsl/gpgpu.rs:143) | tests/nodes_tsl_batch.rs (naga only) | three cannot build it (`setParameterLength( 1 )`, SubgroupFunctionNode.js:591, then `generate()` throws on the missing id), so no fixture; the port takes the id WGSL needs, with `subgroupBroadcast`'s `u32`-only gap |
 
 ### materialx
 

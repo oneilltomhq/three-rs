@@ -3299,6 +3299,9 @@ impl Renderer {
                 target.color_format.components(),
                 target.sample_count,
             );
+            if self.subgroups_unsupported(node.subgroups) {
+                continue;
+            }
             let program_key = node.cache_key;
 
             // `nodes.updateBefore( renderObject )`: a `ComputeNode` the
@@ -3931,7 +3934,8 @@ impl Renderer {
     /// kernel can decide how much work this one does.
     ///
     /// The bounds check `if ( instanceIndex >= count ) { return; }` is still
-    /// generated against the flow's own `count`, as it is in three.
+    /// generated against the flow's own `count`, as it is in three, unless
+    /// the kernel has a barrier (`docs/nodes.md` §84.6).
     pub fn compute_indirect(
         &mut self,
         flow: &ComputeFlow,
@@ -3942,6 +3946,28 @@ impl Renderer {
             "three-rs: an indirect dispatch reads three u32 workgroup counts"
         );
         self.compute_dispatch(flow, Some(dispatch))
+    }
+
+    /// `WGSLNodeBuilder.enableSubGroups()` on a device without
+    /// [`SUBGROUP_FEATURES`]: three logs this, per build, and goes on to a
+    /// module the browser then rejects. wgpu would panic on the module
+    /// instead, so the port logs once per thread (across every renderer on
+    /// it) and the caller skips the kernel or the draw (`docs/nodes.md`
+    /// §84.3). `true` when the program needs subgroups and the device lacks
+    /// them.
+    fn subgroups_unsupported(&self, subgroups: bool) -> bool {
+        if !subgroups || self.device.features().contains(SUBGROUP_FEATURES) {
+            return false;
+        }
+        thread_local! {
+            static WARNED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+        }
+        if !WARNED.with(|warned| warned.replace(true)) {
+            eprintln!(
+                "three-rs: WGSLNodeBuilder: The 'subgroups' feature is not supported by the current device."
+            );
+        }
+        true
     }
 
     fn compute_dispatch(
@@ -3965,18 +3991,7 @@ impl Renderer {
             }
         };
 
-        // `WGSLNodeBuilder.enableSubGroups()`: three logs this and goes on to
-        // a module the browser then rejects. wgpu would panic on the module
-        // instead, so the port logs once and dispatches nothing.
-        if program.subgroups && !self.device.features().contains(SUBGROUP_FEATURES) {
-            thread_local! {
-                static WARNED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-            }
-            if !WARNED.with(|warned| warned.replace(true)) {
-                eprintln!(
-                    "three-rs: WGSLNodeBuilder: The 'subgroups' feature is not supported by the current device."
-                );
-            }
+        if self.subgroups_unsupported(program.subgroups) {
             return Ok(());
         }
 
@@ -4727,13 +4742,19 @@ impl Renderer {
                 .with_instanced_attributes(&item.setup.instanced_attributes),
         );
         self.info.build.programs_compiled += 1;
-        self.programs
-            .entry(node.cache_key)
-            .and_modify(|entry| entry.last_named = frames)
-            .or_insert_with(|| ProgramEntry {
-                program: Program::new(&self.device, &node),
-                last_named: frames,
-            });
+        // A material that needs subgroups on a device without them has no
+        // `Program` — its module would not validate — and the pass skips
+        // its draws (`subgroups_unsupported()`). The state is still kept, so
+        // the build and the warning happen once.
+        if !(node.subgroups && !self.device.features().contains(SUBGROUP_FEATURES)) {
+            self.programs
+                .entry(node.cache_key)
+                .and_modify(|entry| entry.last_named = frames)
+                .or_insert_with(|| ProgramEntry {
+                    program: Program::new(&self.device, &node),
+                    last_named: frames,
+                });
+        }
         states.by_dynamic_key.insert(dynamic_key, node.clone());
         self.count_programs();
         node

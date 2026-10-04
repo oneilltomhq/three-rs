@@ -4809,23 +4809,26 @@ pub fn cube_texture_level(map: &CubeTexture, dir: NodeRef, level: NodeRef) -> No
 /// `StorageBufferNode`s are in three.js, and the renderer keys the GPU buffer
 /// on it.
 ///
-/// The second field is `false` only for [`attribute_array`]: the attribute
-/// three puts behind the storage node is a plain `StorageBufferAttribute`, so
+/// `per_vertex` is `true` only for [`attribute_array`]: the attribute three
+/// puts behind the storage node is a plain `StorageBufferAttribute`, so
 /// [`to_attribute`](StorageArray::to_attribute) steps once per vertex.
 #[derive(Clone)]
-pub struct StorageArray(Rc<BufferNode>, bool);
+pub struct StorageArray {
+    buffer: Rc<BufferNode>,
+    per_vertex: bool,
+}
 
 /// `instancedArray( count, type )`.
 pub fn instanced_array(count: usize, element_ty: Type) -> StorageArray {
-    StorageArray(
-        Rc::new(BufferNode {
+    StorageArray {
+        buffer: Rc::new(BufferNode {
             id: crate::nodes::node::BufferId::next(),
             source: BufferSource::Storage,
             element_ty,
             count,
         }),
-        true,
-    )
+        per_vertex: false,
+    }
 }
 
 /// `attributeArray( count, type )` (`src/nodes/accessors/Arrays.js:15`) —
@@ -4835,7 +4838,10 @@ pub fn instanced_array(count: usize, element_ty: Type) -> StorageArray {
 /// reads it once per vertex rather than once per instance. Struct element
 /// types (`type.isStructTypeNode`) are not ported, as for `instanced_array`.
 pub fn attribute_array(count: usize, element_ty: Type) -> StorageArray {
-    StorageArray(instanced_array(count, element_ty).0, false)
+    StorageArray {
+        per_vertex: true,
+        ..instanced_array(count, element_ty)
+    }
 }
 
 /// `storageElement( storageBufferNode, indexNode )` — a
@@ -4850,24 +4856,24 @@ impl StorageArray {
     /// `.element( index )` — `NodeBuffer_N.value[ index ]`.
     pub fn element(&self, index: impl Into<NodeRef>) -> NodeRef {
         NodeRef::new(Node::BufferElement {
-            buffer: self.0.clone(),
+            buffer: self.buffer.clone(),
             index: index.into(),
         })
     }
 
     /// The buffer's identity, which is how the renderer finds its GPU buffer.
     pub fn id(&self) -> crate::nodes::node::BufferId {
-        self.0.id
+        self.buffer.id
     }
 
     /// The element count `instancedArray` was given.
     pub fn count(&self) -> usize {
-        self.0.count
+        self.buffer.count
     }
 
     /// The element type `instancedArray` was given.
     pub fn element_ty(&self) -> Type {
-        self.0.element_ty
+        self.buffer.element_ty
     }
 }
 
@@ -4882,18 +4888,18 @@ impl StorageArray {
     /// the declaration is per buffer.
     pub fn to_atomic(&self) -> StorageArray {
         assert!(
-            matches!(self.0.element_ty, Type::U32 | Type::I32),
+            matches!(self.buffer.element_ty, Type::U32 | Type::I32),
             "three-rs: an atomic storage array holds u32 or i32 (WGSL atomic<T>)"
         );
-        StorageArray(
-            Rc::new(BufferNode {
-                id: self.0.id,
+        StorageArray {
+            buffer: Rc::new(BufferNode {
+                id: self.buffer.id,
                 source: BufferSource::AtomicStorage,
-                element_ty: self.0.element_ty,
-                count: self.0.count,
+                element_ty: self.buffer.element_ty,
+                count: self.buffer.count,
             }),
-            self.1,
-        )
+            per_vertex: self.per_vertex,
+        }
     }
 }
 
@@ -4923,8 +4929,8 @@ pub fn storage_data(words: &[u32], element_ty: Type) -> StorageArray {
     for (i, element) in words.chunks_exact(item_size).enumerate() {
         init[i * stride..i * stride + item_size].copy_from_slice(element);
     }
-    StorageArray(
-        Rc::new(BufferNode {
+    StorageArray {
+        buffer: Rc::new(BufferNode {
             id: crate::nodes::node::BufferId::next(),
             source: BufferSource::StorageData {
                 init: Rc::new(init),
@@ -4933,8 +4939,8 @@ pub fn storage_data(words: &[u32], element_ty: Type) -> StorageArray {
             element_ty,
             count,
         }),
-        true,
-    )
+        per_vertex: false,
+    }
 }
 
 /// [`storage_data`] over a float array.
@@ -4947,22 +4953,22 @@ impl StorageArray {
     /// `.toReadOnly()` — `var<storage, read>` in a kernel as well. The same
     /// buffer, so the same GPU buffer; only the declaration changes.
     pub fn to_read_only(&self) -> StorageArray {
-        let source = match &self.0.source {
+        let source = match &self.buffer.source {
             BufferSource::StorageData { init, .. } => BufferSource::StorageData {
                 init: init.clone(),
                 read_only: true,
             },
             _ => panic!("three-rs: to_read_only() is ported for storage over a CPU array"),
         };
-        StorageArray(
-            Rc::new(BufferNode {
-                id: self.0.id,
+        StorageArray {
+            buffer: Rc::new(BufferNode {
+                id: self.buffer.id,
                 source,
-                element_ty: self.0.element_ty,
-                count: self.0.count,
+                element_ty: self.buffer.element_ty,
+                count: self.buffer.count,
             }),
-            self.1,
-        )
+            per_vertex: self.per_vertex,
+        }
     }
 
     /// `.toAttribute()` — `bufferAttribute( storageAttribute, type )`: the
@@ -4974,13 +4980,13 @@ impl StorageArray {
     /// padded storage stride: a `vec3` array is read 16 bytes apart.
     pub fn to_attribute(&self) -> NodeRef {
         let buffer = Rc::new(InstanceBuffer {
-            id: self.0.id,
-            source: self.0.source.clone(),
-            count: self.0.count,
-            item_size: storage_item_size(self.0.element_ty),
-            per_vertex: !self.1,
+            id: self.buffer.id,
+            source: self.buffer.source.clone(),
+            count: self.buffer.count,
+            item_size: storage_item_size(self.buffer.element_ty),
+            per_vertex: self.per_vertex,
         });
-        instanced_attribute(&buffer, 0, self.0.element_ty)
+        instanced_attribute(&buffer, 0, self.buffer.element_ty)
     }
 }
 

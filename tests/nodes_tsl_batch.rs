@@ -2268,7 +2268,7 @@ fn subgroup_arith_matches_three() {
 /// `subgroupElect()` as a `bool` and `subgroupBallot()` as a `vec4<u32>`.
 ///
 /// naga 30 reserves `subgroupElect` but its WGSL front end has no lowering
-/// for it (`naga-30.0.0/src/front/wgsl/lower/mod.rs`, no arm beside
+/// for it (`naga-30.0.1/src/front/wgsl/lower/mod.rs`, no arm beside
 /// `subgroupBallot`'s), so the module is checked against three's text and
 /// naga sees it without the `subgroupElect()` term.
 #[test]
@@ -2317,7 +2317,7 @@ fn subgroup_bits_matches_three() {
 /// are `uint`s.
 ///
 /// WGSL takes an `i32` or a `u32` lane id; naga 30's validator only a `u32`
-/// (`naga-30.0.0/src/valid/function.rs` `validate_subgroup_gather`), so
+/// (`naga-30.0.1/src/valid/function.rs` `validate_subgroup_gather`), so
 /// three's spelling is checked as text and naga sees the same calls with
 /// `uint` ids.
 #[test]
@@ -2547,7 +2547,11 @@ fn subgroup_fragment_matches_three() {
         quad_swap_diagonal(x()),
         float(1.0),
     ]);
-    let ours = fragment(node);
+    let program = program_for(node, false);
+    // The renderer's feature guard reads this (`docs/nodes.md` §84.3).
+    assert!(program.subgroups);
+    assert!(!program_for(vec4_join(vec![x(), y(), x(), float(1.0)]), false).subgroups);
+    let ours = program.fragment_wgsl;
     assert_body_of("subgroup_fragment", ours.clone());
     let header = "// global\ndiagnostic( off, derivative_uniformity );\n\n\n// directives\nenable subgroups;\n\n// structs\n";
     assert!(fixture("subgroup_fragment").contains(header));
