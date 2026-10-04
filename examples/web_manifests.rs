@@ -318,6 +318,9 @@ mod webgpu_lightprobe_cubecamera;
 #[path = "webgpu_ocean.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_ocean;
+#[path = "webgpu_oit.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_oit;
 #[path = "webgpu_postprocessing_3dlut.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_postprocessing_3dlut;
@@ -594,6 +597,7 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_postprocessing_outline", || {
         drop(webgpu_postprocessing_outline::init())
     }),
+    ("webgpu_oit", || drop(webgpu_oit::init())),
 ];
 
 /// Where the committed manifests live, one `<example>.json` each.

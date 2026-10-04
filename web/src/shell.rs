@@ -333,6 +333,7 @@ PostprocessingDofBasic, webgpu_postprocessing_dof_basic, "../../examples/webgpu_
 PostprocessingSsr, webgpu_postprocessing_ssr, "../../examples/webgpu_postprocessing_ssr.rs";
 Postprocessing3dlut, webgpu_postprocessing_3dlut, "../../examples/webgpu_postprocessing_3dlut.rs";
 PostprocessingOutline, webgpu_postprocessing_outline, "../../examples/webgpu_postprocessing_outline.rs";
+Oit, webgpu_oit, "../../examples/webgpu_oit.rs";
 }
 
 /// Where an example's assets come from: three.js at the commit this port is

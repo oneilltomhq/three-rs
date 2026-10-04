@@ -10,6 +10,7 @@
 
 three-rs/lut_3d_frames
 three-rs/nodes_frame
+three-rs/oit_frames
 three-rs/outline_frames
 three-rs/pmrem_equirect
 three-rs/pmrem_scene
