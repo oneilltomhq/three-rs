@@ -615,6 +615,15 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Changed
 
+- Which fields each material kind reads is declared once, in
+  `MaterialKind::table()` (`src/materials/fields.rs`): an exhaustive `match`
+  that gives each kind its fragment flow, the fields it reads, the fields it
+  is loud about and its draw-time rules. `materials::setup()` picks the flow
+  from it, `unsupported_fields()` is derived from it, and the renderer's
+  once-per-material warning reads it under one registry, replacing the
+  `if`/`else` chain and the two hand-kept rule lists that disagreed (#253).
+  A no-GPU test checks every kind's program against its row. No shader
+  changes, apart from the `env_map` fix under Fixed.
 - **`MrtNode::set_blend_mode` takes `impl Into<BlendMode>`** rather than a
   `Blending`, and returns `&mut Self` so calls chain. `blend_mode()` returns
   a `BlendMode`. A bare `Blending` still converts. Under an MRT, a target's

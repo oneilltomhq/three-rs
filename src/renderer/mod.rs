@@ -5089,7 +5089,7 @@ impl Renderer {
             return node.clone();
         }
 
-        warn_unsupported(item.key.id, &item.material, &item.setup);
+        materials::fields::warn_unsupported(item.key.id, &item.material, &item.setup);
 
         // `PassNode.setup()`, generalized: sync every registered pass's
         // render-target sample count with the renderer's before this build,
@@ -8432,72 +8432,6 @@ fn compute_flow_key(flow: &ComputeFlow) -> u64 {
     flow.workgroup_size.hash(&mut hasher);
     flow.name.hash(&mut hasher);
     hasher.finish()
-}
-
-/// The fields of `material` the port does not read, each said once per
-/// material on stderr when its program is built — the "loud" half of the
-/// material-field audit in `docs/api.md`. The list is
-/// [`MeshBasicNodeMaterial::unsupported_fields`] plus the one case only a
-/// draw can see: an anisotropic material lit by a direct light, whose
-/// anisotropic `BRDF_GGX` is not ported, so the highlight would be the
-/// isotropic one.
-fn warn_unsupported(id: usize, material: &MeshBasicNodeMaterial, setup: &SetupContext) {
-    thread_local! {
-        static WARNED: std::cell::RefCell<std::collections::HashSet<(usize, &'static str)>> =
-            std::cell::RefCell::new(std::collections::HashSet::new());
-    }
-    let mut fields = material.unsupported_fields();
-    let direct_light = setup.lights.iter().any(|light| {
-        matches!(
-            light.kind,
-            LightKind::Point | LightKind::Spot | LightKind::Directional
-        )
-    });
-    if material.kind == materials::MaterialKind::Physical
-        && material.anisotropy > 0.0
-        && direct_light
-        && material.lights
-    {
-        fields.push("anisotropy (under a direct light)");
-    }
-    // `PointsNodeMaterial.setupVertexSprite()` is ported for a `sizeNode`
-    // without size attenuation, which is what the ladder draws.
-    if material.kind == materials::MaterialKind::Points && setup.sprite {
-        if material.size_attenuation {
-            fields.push("sizeAttenuation (PointsNodeMaterial on a Sprite)");
-        }
-        if material.size_node.is_none() {
-            fields.push("size without sizeNode (PointsNodeMaterial on a Sprite)");
-        }
-    }
-    let label = format!(
-        "{:?}{}",
-        material.kind,
-        if material.name.is_empty() {
-            String::new()
-        } else {
-            format!(" \"{}\"", material.name)
-        }
-    );
-    WARNED.with(|warned| {
-        let mut warned = warned.borrow_mut();
-        for field in fields {
-            if warned.insert((id, field)) {
-                eprintln!(
-                    "three-rs: material {id} ({label}): {field} is set but not supported, and is ignored",
-                );
-            }
-        }
-        // Read by an accessor (`materialLightMap` / `materialSpecularStrength`)
-        // but not by the material's own lighting flow.
-        for field in material.accessor_only_fields() {
-            if warned.insert((id, field)) {
-                eprintln!(
-                    "three-rs: material {id} ({label}): {field} is set, but the built-in lighting flow does not apply it; only the materialLightMap / materialSpecularStrength accessors read it",
-                );
-            }
-        }
-    });
 }
 
 /// One light's [`LightState`] for the render: `LightsNode.setupLights()`'s
