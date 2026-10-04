@@ -16,8 +16,8 @@ use crate::materials::MeshBasicNodeMaterial;
 use crate::math::Color;
 use crate::nodes::node::{SettableValue, Type};
 use crate::nodes::tsl::{
-    block, float, premultiply_alpha, texture_uv, to_var, uniform_settable, unpremultiply_alpha, uv,
-    vec2,
+    block, float, premultiply_alpha, texture_uv, texture_with_uv, to_var, uniform_settable,
+    unpremultiply_alpha, uv, vec2,
 };
 use crate::nodes::NodeRef;
 use crate::objects::QuadMesh;
@@ -69,6 +69,13 @@ pub struct GaussianBlurNode {
     resolution_scale: f64,
 }
 
+/// The texture one blur pass reads, and whether its taps go through the
+/// map's uv matrix (`texture( map )`) or not (a pass texture).
+struct Tap<'a> {
+    map: &'a Texture,
+    matrix: bool,
+}
+
 /// `gaussianBlur( node, directionNode, sigma, options )`.
 ///
 /// Three.js takes a node and runs it through `convertToTexture()`; the port
@@ -111,10 +118,14 @@ fn scaled_size(size: u32, resolution_scale: f64) -> u32 {
 }
 
 /// The texture type a target has to take to match `map` — three's
-/// `this._horizontalRT.texture.type = map.type`.
+/// `this._horizontalRT.texture.type = map.type`. Only the type follows the
+/// input: the targets stay RGBA, so `DepthOfFieldNode`'s red `HalfFloat` CoC
+/// is blurred into an RGBA `HalfFloat` pair.
 fn texture_type_of(map: &Texture) -> TextureType {
     match map.format() {
-        wgpu::TextureFormat::Rgba16Float => TextureType::HalfFloat,
+        wgpu::TextureFormat::Rgba16Float
+        | wgpu::TextureFormat::Rg16Float
+        | wgpu::TextureFormat::R16Float => TextureType::HalfFloat,
         _ => TextureType::UnsignedByte,
     }
 }
@@ -126,6 +137,29 @@ impl GaussianBlurNode {
         direction: Option<NodeRef>,
         sigma: u32,
         options: GaussianBlurOptions,
+    ) -> Self {
+        Self::build(map, direction, sigma, options, false)
+    }
+
+    /// The same over a `texture( map )` node rather than a pass texture: the
+    /// horizontal pass's taps go through the map's `mat3` uv matrix, as
+    /// `TextureNode.sample()` keeps it. `DepthOfFieldNode`'s near-field blur
+    /// over its `_CoCTextureNode` is the caller.
+    pub(crate) fn with_uv_matrix(
+        map: &Texture,
+        direction: Option<NodeRef>,
+        sigma: u32,
+        options: GaussianBlurOptions,
+    ) -> Self {
+        Self::build(map, direction, sigma, options, true)
+    }
+
+    fn build(
+        map: &Texture,
+        direction: Option<NodeRef>,
+        sigma: u32,
+        options: GaussianBlurOptions,
+        uv_matrix: bool,
     ) -> Self {
         // `new RenderTarget( 1, 1, { depthBuffer: false } )`, whose texture
         // type `updateBefore()` then sets to the input's every frame. The
@@ -156,11 +190,11 @@ impl GaussianBlurNode {
             None => vec2(1.0, 1.0),
         };
 
-        let blur = |map: &Texture, pass_direction: NodeRef, name: &'static str| {
+        let blur = |map: &Texture, pass_direction: NodeRef, name: &'static str, matrix: bool| {
             let mut material = MeshBasicNodeMaterial::new();
             material.name = name;
             material.fragment_node = Some(Self::blur(
-                map,
+                Tap { map, matrix },
                 direction.clone(),
                 pass_direction,
                 inv_size_node.clone(),
@@ -169,11 +203,12 @@ impl GaussianBlurNode {
             ));
             QuadMesh::new(material)
         };
-        let horizontal_quad = blur(map, vec2(1.0, 0.0), "Gaussian_blur_horizontal");
+        let horizontal_quad = blur(map, vec2(1.0, 0.0), "Gaussian_blur_horizontal", uv_matrix);
         let vertical_quad = blur(
             &horizontal.texture(),
             vec2(0.0, 1.0),
             "Gaussian_blur_vertical",
+            false,
         );
 
         // `passTexture( this, this._verticalRT.texture )`, with the input's
@@ -199,7 +234,7 @@ impl GaussianBlurNode {
     /// unrolled by a JS `for` loop, so every tap is its own statement with
     /// its own literal weight.
     fn blur(
-        map: &Texture,
+        tap: Tap,
         direction: NodeRef,
         pass_direction: NodeRef,
         inv_size: NodeRef,
@@ -208,7 +243,11 @@ impl GaussianBlurNode {
     ) -> NodeRef {
         let uv_node = uv();
         let sample = |coord: NodeRef| {
-            let texel = texture_uv(map, coord);
+            let texel = if tap.matrix {
+                texture_with_uv(tap.map, coord)
+            } else {
+                texture_uv(tap.map, coord)
+            };
             if premultiplied_alpha {
                 premultiply_alpha(texel)
             } else {
@@ -223,7 +262,15 @@ impl GaussianBlurNode {
         // every tap.
         let direction = direction.mul(pass_direction);
 
-        let diffuse_sum = to_var(None, sample(uv_node.clone()).mul(float(coefficients[0])));
+        // `vec4( sampleTexture( uvNode ).mul( … ) ).toVar()`: a no-op for an
+        // RGBA input, a splat for a red one (`DepthOfFieldNode`'s CoC), whose
+        // taps are `float`s.
+        let diffuse_sum = to_var(
+            None,
+            sample(uv_node.clone())
+                .mul(float(coefficients[0]))
+                .to(Type::Vec4),
+        );
         let mut statements = vec![diffuse_sum.clone()];
         for (i, &w) in coefficients.iter().enumerate().skip(1) {
             let x = float(i as f64);

@@ -709,6 +709,36 @@ three's dump, and on `tests/traa_frames.rs`, which checks over sixteen frames
 that the silhouette blends while the inside and the background hold. The
 example is in the native viewer (`viewer traa`).
 
+## Depth of field
+
+```rust
+let dof_pass = dof(
+    &scene_pass.texture(),
+    scene_pass.view_z_node("depth"),
+    focus_distance, // uniform( 500 )
+    focal_length,   // uniform( 200 )
+    bokeh_scale,    // uniform( 10 )
+);
+render_pipeline.output_node = Some(dof_pass.node());
+```
+
+`DepthOfFieldNode` owns six targets and draws nine quads per frame, run from
+the first draw that samples `dof_pass.node()`, as TRAA's resolve is. It needs
+nothing from the caller beyond the call. `docs/nodes.md` §66 has the passes
+and the four graph pieces it brought: `outputStruct()`, red targets,
+`uniformArray( Vector2[] )`, and a Gaussian through the CoC texture's uv
+matrix.
+
+**There is no rung for it**, for TRAA's reason: three lists
+`webgpu_postprocessing_dof` in its e2e exception list. All six distinct quad
+shaders are gated against three's dump instead (`dof_*` in
+`tests/nodes_display_wgsl.rs`), and the page is in the native viewer
+(`viewer postprocessing_dof`).
+
+`webgpu_postprocessing_dof_basic` is graded, but it does not use this node.
+Its depth of field is a `boxBlur` of the pass, mixed in by
+`smoothstep( min, max, | viewZ - focus.z | )`.
+
 ## The display nodes of #144
 
 `src/nodes/display/` now also has these ports of
@@ -721,7 +751,8 @@ example is in the native viewer (`viewer traa`).
 
 `tests/nodes_display_wgsl.rs` gates each against three's dump of a page that
 uses it. `webgpu_procedural_texture`, `webgpu_postprocessing_sobel` and
-`webgpu_postprocessing_transition` are the graded rungs.
+`webgpu_postprocessing_transition` are the graded rungs, and
+`webgpu_postprocessing_dof_basic` grades `boxBlur`.
 
 The nodes follow the shapes above:
 

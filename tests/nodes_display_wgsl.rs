@@ -348,3 +348,33 @@ fn traa_clip_aabb_matches_three() {
 fn traa_flicker_reduction_matches_three() {
     check("traa", Region::Function("flickerReduction"));
 }
+
+#[test]
+fn dof_coc_matches_three() {
+    check("dof_coc", Region::Body);
+}
+
+#[test]
+fn dof_coc_gaussian_horizontal_matches_three() {
+    check("dof_coc_gaussian_horizontal", Region::Body);
+}
+
+#[test]
+fn dof_coc_blurred_matches_three() {
+    check("dof_coc_blurred", Region::Body);
+}
+
+#[test]
+fn dof_blur64_matches_three() {
+    check("dof_blur64", Region::Body);
+}
+
+#[test]
+fn dof_blur16_matches_three() {
+    check("dof_blur16", Region::Body);
+}
+
+#[test]
+fn dof_composite_matches_three() {
+    check("dof_composite", Region::Body);
+}

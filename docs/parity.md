@@ -22,12 +22,12 @@ This matrix judges every exported name in three.js revision 5f610f5 (r187) — `
 | loaders | 20 | 2 | 2 | 12 | 4 | 12% |
 | renderers | 39 | 9 | 9 | 3 | 18 | 43% |
 | nodes | 141 | 91 | 28 | 17 | 5 | 67% |
-| tsl | 683 | 407 | 40 | 217 | 19 | 61% |
+| tsl | 683 | 408 | 40 | 216 | 19 | 61% |
 | addons/controls | 9 | 0 | 2 | 7 | 0 | 0% |
 | addons/loaders | 71 | 6 | 2 | 63 | 0 | 8% |
 | addons/postprocessing | 30 | 0 | 0 | 0 | 30 | — |
-| addons/other | 102 | 11 | 4 | 64 | 23 | 14% |
-| **total** | **1315** | **651** | **122** | **425** | **117** | **54%** |
+| addons/other | 102 | 12 | 4 | 63 | 23 | 15% |
+| **total** | **1315** | **652** | **122** | **424** | **117** | **54%** |
 
 TSL by family:
 
@@ -39,12 +39,12 @@ TSL by family:
 | textures | 23 | 8 | 2 | 13 | 0 |
 | lighting/material | 121 | 74 | 9 | 38 | 0 |
 | accessors | 95 | 46 | 10 | 38 | 1 |
-| display/postprocessing | 75 | 40 | 8 | 27 | 0 |
+| display/postprocessing | 75 | 41 | 8 | 26 | 0 |
 | compute/storage | 53 | 19 | 3 | 31 | 0 |
 | materialx | 49 | 48 | 0 | 1 | 0 |
 | utils | 77 | 29 | 5 | 39 | 4 |
 
-Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compressed`, which has a live `rung!` but a hyphen in its name). 10 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
+Graded examples: 86 (the README gallery plus `webgpu_textures_2d-array_compressed`, which has a live `rung!` but a hyphen in its name). 10 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
 
 ## math
 
@@ -680,7 +680,7 @@ Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compresse
 |---|---|---|---|---|
 | `AfterimagePass` | N.A. | — | — | WebGL composer; AfterimagePass -> AfterImageNode afterImage(): Present; after_image (src/nodes/display/after_image.rs:37); tests/nodes_display_wgsl.rs; webgpu_postprocessing_afterimage (ungraded) |
 | `BloomPass` | N.A. | — | — | WebGL composer; BloomPass -> nearest BloomNode bloom(): Present; bloom (src/nodes/display/bloom.rs:219); webgpu_postprocessing_bloom |
-| `BokehPass` | N.A. | — | — | WebGL composer; BokehPass -> DepthOfFieldNode dof(): Absent |
+| `BokehPass` | N.A. | — | — | WebGL composer; BokehPass -> DepthOfFieldNode dof(): Present |
 | `ClearPass` | N.A. | — | — | WebGL composer; ClearPass -> no TSL node (renderer clear / autoClear): Present; Renderer clear (src/renderer); webgpu_postprocessing_masking |
 | `CubeTexturePass` | N.A. | — | — | WebGL composer; CubeTexturePass -> no TSL node (scene.background cube): Present; CubeTexture background; webgpu_materials_envmaps |
 | `DotScreenPass` | N.A. | — | — | WebGL composer; DotScreenPass -> DotScreenNode dotScreen(): Present; dot_screen (src/nodes/display/dot_screen.rs:15); tests/nodes_display_wgsl.rs; webgpu_postprocessing (ungraded) |
@@ -711,7 +711,7 @@ Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ## addons/other
 
-102 rows: 11 Present, 4 Partial, 64 Absent, 23 N.A.
+102 rows: 12 Present, 4 Partial, 63 Absent, 23 N.A.
 
 | three.js name | verdict | three-rs symbol | verified by | note |
 |---|---|---|---|---|
@@ -829,13 +829,13 @@ These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) an
 | `BilateralBlurNode.js` | Absent | — |
 | `BleachBypass.js` | Absent | — |
 | `BloomNode.js` | Present | bloom/BloomNode; webgpu_postprocessing_bloom, _bloom_emissive, _bloom_selective, _anamorphic |
-| `boxBlur.js` | Present | box_blur; tests/nodes_display_wgsl.rs (WGSL gate only, no graded rung) |
+| `boxBlur.js` | Present | box_blur; tests/nodes_display_wgsl.rs; webgpu_postprocessing_dof_basic (graded) |
 | `ChromaticAberrationNode.js` | Present | chromatic_aberration; webgpu_postprocessing_ca |
 | `CRT.js` | Absent | — |
 | `DenoiseNode.js` | Absent | — |
 | `depthAwareBlend.js` | Absent | — |
 | `depthAwareBlur.js` | Absent | — |
-| `DepthOfFieldNode.js` | Absent | — |
+| `DepthOfFieldNode.js` | Present | dof/DepthOfFieldNode; tests/nodes_display_wgsl.rs (`dof_*`: all six quads); webgpu_postprocessing_dof (ported, ungraded: three's own e2e exception list) |
 | `DotScreenNode.js` | Present | dot_screen; tests/nodes_display_wgsl.rs; webgpu_postprocessing (ported, ungraded) |
 | `FilmNode.js` | Absent | — |
 | `FSR1Node.js` | Absent | — |
@@ -1374,15 +1374,15 @@ Partial: `tangentViewFrame`, `bitangentViewFrame`, `builtin`, `cameraViewport`, 
 
 ### display/postprocessing
 
-40 of 75 applicable present (8 Partial, 27 Absent, 0 N.A.).
+41 of 75 applicable present (8 Partial, 26 Absent, 0 N.A.).
 
-Missing (Absent): `outputStruct`, `getTextureIndex`, `viewportSafeUV`, `getViewPosition`, `getScreenPosition`, `getScreenPositionFromClip`, `getNormalFromDepth`, `workingToColorSpace`, `convertColorSpace`, `blendBurn`, `blendDodge`, `blendScreen`, `blendOverlay`, `blendColor`, `grayscale`, `vibrance`, `cdl`, `posterize`, `directionToFaceDirection`, `screenSize`, `viewportCoordinate`, `viewportUV`, `viewportTexture`, `viewportMipTexture`, `viewportOpaqueMipTexture`, `viewportSharedTexture`, `viewportDepthTexture`, `viewZToOrthographicDepth`, `viewZToReversedOrthographicDepth`, `orthographicDepthToViewZ`, `viewZToPerspectiveDepth`, `viewZToReversedPerspectiveDepth`, `viewZToLogarithmicDepth`, `logarithmicDepthToViewZ`, `depth`, `linearDepth`, `viewportLinearDepth`, `depthPass`, `cineonToneMapping`.
+Missing (Absent): `getTextureIndex`, `viewportSafeUV`, `getViewPosition`, `getScreenPosition`, `getScreenPositionFromClip`, `getNormalFromDepth`, `workingToColorSpace`, `convertColorSpace`, `blendBurn`, `blendDodge`, `blendScreen`, `blendOverlay`, `blendColor`, `grayscale`, `vibrance`, `cdl`, `posterize`, `directionToFaceDirection`, `screenSize`, `viewportCoordinate`, `viewportUV`, `viewportTexture`, `viewportMipTexture`, `viewportOpaqueMipTexture`, `viewportSharedTexture`, `viewportDepthTexture`, `viewZToOrthographicDepth`, `viewZToReversedOrthographicDepth`, `orthographicDepthToViewZ`, `viewZToPerspectiveDepth`, `viewZToReversedPerspectiveDepth`, `viewZToLogarithmicDepth`, `logarithmicDepthToViewZ`, `depth`, `linearDepth`, `viewportLinearDepth`, `depthPass`, `cineonToneMapping`.
 
 Partial: `colorSpaceToWorking`, `negateOnBackSide`, `passTexture`.
 
 | three.js name | verdict | three-rs symbol | verified by | note |
 |---|---|---|---|---|
-| `outputStruct` | Absent | — | — |  |
+| `outputStruct` | Present | output_struct (src/nodes/tsl.rs) | tests/nodes_display_wgsl.rs (`dof_coc_matches_three`) |  |
 | `getTextureIndex` | Absent | — | — |  |
 | `mrt` | Present | mrt (src/nodes/mrt.rs:79) | tests/renderer_mrt.rs, webgpu_deferred (graded) |  |
 | `viewportSafeUV` | Present | viewport_safe_uv (src/nodes/display/viewport_texture.rs:200) | webgpu_backdrop (graded) |  |

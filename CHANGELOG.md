@@ -72,6 +72,22 @@ have their own sections after the release they ship with. The format follows [Ke
   `depth_texture_load`, `all`, `view_z_to_perspective_depth` and
   `get_view_position`. Also `Renderer::init_render_target` and
   `RenderPipeline::claim_view_offset`. (#165)
+- **`dof`** (`nodes::display`), `DepthOfFieldNode.js`: bokeh depth of field
+  in nine full-screen draws. All six distinct quad shaders are gated against
+  three's dump (`dof_*` in `tests/nodes_display_wgsl.rs`). three lists the
+  page in its e2e exception list, so it has no graded rung.
+  `webgpu_postprocessing_dof` is in the native viewer. See `docs/nodes.md`
+  §66.
+- **`webgpu_postprocessing_dof_basic`** is graded: 36 of 100000 pixels. It
+  is the page's own `boxBlur` + `smoothstep` mix, not `DepthOfFieldNode`.
+- **`tsl::output_struct()`**, `outputStruct()` as a material's `outputNode`.
+  Each member keeps its own type, where an `mrt()` member is a `vec4`.
+- **Red render targets**: `RenderTarget::set_red_format()`. A texture node
+  over a one-channel map is now a `float` node read as `.x`, as three's
+  `getTextureType()` makes it.
+- **`tsl::uniform_array_vec2()`** and `UniformArray::element_xy()`.
+- **`Scene::environment_rotation`**, `scene.environmentRotation`, applied
+  through `materialEnvRotation`.
 
 ### Changed
 
@@ -91,6 +107,8 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Fixed
 
+- glTF `alphaMode: MASK` now sets `alpha_test = alphaCutoff`. Before, masked
+  cut-outs drew as solid quads.
 - A `HemisphereLight` with no `AmbientLight` beside it no longer has its
   irradiance overwritten with zero before the Phong, Lambert and Toon models
   read it.

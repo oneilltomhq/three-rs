@@ -235,6 +235,10 @@ mod webgpu_postprocessing_bloom_emissive;
 #[allow(dead_code)]
 mod webgpu_postprocessing_motion_blur;
 
+#[path = "../../examples/webgpu_postprocessing_dof_basic.rs"]
+#[allow(dead_code)]
+mod webgpu_postprocessing_dof_basic;
+
 #[path = "../../examples/webgpu_pmrem_cubemap.rs"]
 #[allow(dead_code)]
 mod webgpu_pmrem_cubemap;
@@ -1985,6 +1989,55 @@ fn webgpu_postprocessing_motion_blur() {
         name,
         &mut app,
         webgpu_postprocessing_motion_blur::animate,
+        |app| app.renderer.device(),
+    );
+}
+
+#[test]
+fn webgpu_postprocessing_dof_basic() {
+    let name = "webgpu_postprocessing_dof_basic";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_postprocessing_dof_basic::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_postprocessing_dof_basic::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    // The draw calls and triangles the README's graded table records.
+    let info = app.renderer.info();
+    println!("{name}: info {info:?}");
+
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_postprocessing_dof_basic::animate,
         |app| app.renderer.device(),
     );
 }
@@ -5655,6 +5708,9 @@ fn steady_frame_builds_nothing() {
     // The velocity history is per object and per camera, filled on the first
     // frame; the steady frames roll it over and build nothing.
     rung!(webgpu_postprocessing_motion_blur);
+    // The PMREM is built in `init()`; the steady frames are the scene pass,
+    // the box-blurred mix and the FXAA quad.
+    rung!(webgpu_postprocessing_dof_basic);
     rung!(webgpu_lights_phong);
     rung!(webgpu_lights_selective);
     rung!(webgpu_morphtargets);

@@ -129,6 +129,7 @@ its tests read only five- and six-cell rows, so they skip that table.
 | example | reason |
 |---|---|
 | `webgpu_postprocessing_traa` | three's exception list, "Black screen". Gated on its resolve shader and on `tests/traa_frames.rs` |
+| `webgpu_postprocessing_dof` | three's exception list, "Black screen". Gated on `DepthOfFieldNode`'s six quads against three's dump (`dof_*` in `tests/nodes_display_wgsl.rs`) |
 
 ## Reference images stay out of the tree
 

@@ -1028,6 +1028,7 @@ impl NodeBuilder {
             }
             Node::Context { node, .. } | Node::Isolate { node } => vec![node.clone()],
             Node::StructNew { values, .. } => values.clone(),
+            Node::OutputStruct { members } => members.clone(),
             Node::StructGet { value, .. } => vec![value.clone()],
             Node::Atomic { pointer, value, .. } => {
                 let mut v = vec![pointer.clone()];
@@ -2093,13 +2094,11 @@ impl NodeBuilder {
                 let suv = self.generate(&uv);
                 // `TextureNode.generate()` builds the snippet as a `vec4` and
                 // `format()`s it to the node type: an RG map's `vec2` node
-                // gets `.xy` on the fetch itself.
-                let narrow = |s: String| {
-                    if node.ty() == Type::Vec2 {
-                        format!("{s}.xy")
-                    } else {
-                        s
-                    }
+                // gets `.xy` on the fetch itself, a red map's `float` `.x`.
+                let narrow = |s: String| match node.ty() {
+                    Type::Vec2 => format!("{s}.xy"),
+                    Type::F32 => format!("{s}.x"),
+                    _ => s,
                 };
                 let snippet = match mode {
                     SampleMode::Sample => {
@@ -2549,6 +2548,12 @@ impl NodeBuilder {
             // `StructNode.generate()`: the struct's declaration, then its
             // value in a var of the struct's type — three's
             // `nodeVar31 = StructType0( closest, texel, farthest );`.
+            // `materials::setup()` unpacks a material's `outputStruct()` into
+            // the flow's MRT members; there is no other place it can stand.
+            Node::OutputStruct { .. } => {
+                panic!("three-rs: outputStruct() is only a material's outputNode")
+            }
+
             Node::StructNew { layout, values } => {
                 let (layout, values) = (layout.clone(), values.clone());
                 self.add_code(layout.name, &layout.wgsl());
@@ -2923,10 +2928,28 @@ pub struct MaterialFlow {
     /// i ) mi }` and one `output.mi = …` per member, in the flow rather than in
     /// the result section — which is what three.js's own dump shows.
     pub mrt: Option<Vec<NodeRef>>,
+    /// Whether [`mrt`](Self::mrt) holds a material's own `outputStruct()`
+    /// members rather than an `MRTNode`'s. `MRTNode.setup()` wraps every
+    /// member in `vec4()`, so its struct is all `vec4<f32>`; a bare
+    /// `OutputStructNode` declares each member as its own type —
+    /// `DepthOfFieldNode`'s CoC pass writes two `f32`s.
+    pub mrt_typed: bool,
     /// Vertex-stage statements, run before the position node.
     pub vertex_statements: Vec<NodeRef>,
     /// The clip-space position the vertex stage writes.
     pub position: NodeRef,
+}
+
+/// The WGSL type of one `OutputType` member: `vec4` for an `MRTNode`'s
+/// (`MRTNode.setup()` wraps each in `vec4()`), the member's own type for a
+/// bare `outputStruct()`.
+#[inline(never)]
+fn mrt_member_type(member: &NodeRef, typed: bool) -> Type {
+    if typed {
+        member.ty()
+    } else {
+        Type::Vec4
+    }
 }
 
 impl MaterialFlow {
@@ -2943,6 +2966,7 @@ impl MaterialFlow {
             output_assign: None,
             output_node: None,
             mrt: None,
+            mrt_typed: false,
             vertex_statements: Vec::new(),
             position,
         }
@@ -3096,6 +3120,7 @@ impl NodeBuilder {
     #[doc(hidden)]
     pub fn with_output_components(mut self, components: u32) -> Self {
         self.output_type = match components {
+            1 => Type::F32,
             2 => Type::Vec2,
             _ => Type::Vec4,
         };
@@ -3162,9 +3187,14 @@ impl NodeBuilder {
         // `NodeMaterial.setup()` registers the `Output` property *before* the
         // output node's own flow runs, so `Output` is declared above the temps
         // that flow needs — the order three's own dumps show.
+        // A red target's `Output` is the `f32` the program writes.
+        let output_prop_ty = match self.output_type {
+            Type::F32 => Type::F32,
+            _ => Type::Vec4,
+        };
         let output_prop = flow
             .emit_output_property
-            .then(|| self.declare_var(Some("Output"), Type::Vec4));
+            .then(|| self.declare_var(Some("Output"), output_prop_ty));
         // The entry point writes a `vec4`: three builds the output node with
         // `vec4` as its output type, so a `fragmentNode` that returns a
         // `vec3` — `webgpu_tsl_interoperability`'s `crtFragment` — is widened
@@ -3188,9 +3218,15 @@ impl NodeBuilder {
         // `OutputStructNode.generate()`: one `output.mN = <member>` line per
         // member, pushed onto the *flow* — the entry point's result section is
         // then empty and only `return output;` is left.
-        if let Some(members) = &flow.mrt {
-            for (index, member) in members.iter().enumerate() {
-                let snippet = self.format(member, Type::Vec4);
+        let mrt_types = flow.mrt.as_ref().map(|members| {
+            members
+                .iter()
+                .map(|member| mrt_member_type(member, flow.mrt_typed))
+                .collect::<Vec<_>>()
+        });
+        if let (Some(members), Some(types)) = (&flow.mrt, &mrt_types) {
+            for (index, (member, ty)) in members.iter().zip(types).enumerate() {
+                let snippet = self.format(member, *ty);
                 self.emit(format!("output.m{index} = {snippet};"));
             }
         }
@@ -3204,7 +3240,7 @@ impl NodeBuilder {
         let fragment_wgsl = self.assemble_with_mrt(
             Stage::Fragment,
             &color,
-            flow.mrt.as_ref().map(|members| members.len()),
+            mrt_types.as_deref(),
             flow.depth.is_some(),
         );
         let vertex_wgsl = self.assemble(Stage::Vertex, &position);
@@ -3561,16 +3597,16 @@ impl NodeBuilder {
         self.assemble_with_mrt(stage, result, None, false)
     }
 
-    /// `mrt_members` is `Some(n)` for a fragment stage with an
-    /// `OutputStructNode` result: the struct is `OutputType` with `n`
-    /// `@location( i ) mi : vec4<f32>` members, and the entry point's result
+    /// `mrt_members` is `Some(types)` for a fragment stage with an
+    /// `OutputStructNode` result: the struct is `OutputType` with one
+    /// `@location( i ) mi : T` member per type, and the entry point's result
     /// section is empty because `generate()` already wrote the assignments into
     /// the flow.
     fn assemble_with_mrt(
         &self,
         stage: Stage,
         result: &str,
-        mrt_members: Option<usize>,
+        mrt_members: Option<&[Type]>,
         depth: bool,
     ) -> String {
         let s = &self.stages[stage.index()];
@@ -3579,10 +3615,11 @@ impl NodeBuilder {
         if stage == Stage::Fragment {
             out.push_str("// global\ndiagnostic( off, derivative_uniformity );\n\n\n");
             match mrt_members {
-                Some(count) => {
+                Some(types) => {
                     out.push_str("// structs\n\nstruct OutputType {\n");
-                    for index in 0..count {
-                        out.push_str(&format!("\t@location( {index} ) m{index} : vec4<f32>,\n"));
+                    for (index, ty) in types.iter().enumerate() {
+                        let ty = wgsl::type_name(*ty);
+                        out.push_str(&format!("\t@location( {index} ) m{index} : {ty},\n"));
                     }
                     out.push_str("\t\n};\nvar<private> output : OutputType;\n\n");
                 }

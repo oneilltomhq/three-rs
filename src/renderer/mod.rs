@@ -2317,6 +2317,7 @@ impl Renderer {
             .collect();
 
         let camera_uniforms = UniformContext {
+            env_rotation: scene_env_rotation(scene),
             camera_id: camera.id(),
             camera_projection: camera.projection_matrix(),
             camera_projection_inverse: camera.projection_matrix_inverse(),
@@ -3412,6 +3413,14 @@ impl Renderer {
                 material_attenuation_distance: item.material.attenuation_distance,
                 material_attenuation_color: item.material.attenuation_color,
                 material_ao_map_intensity: item.material.ao_map_intensity,
+                // `materialEnvRotation`: the scene's rotation reaches only the
+                // materials that read the scene environment; an own `envMap`
+                // uses `material.envMapRotation`, which is always zero here.
+                env_rotation: if item.material.env_map.is_some() {
+                    Matrix4::identity()
+                } else {
+                    camera_uniforms.env_rotation
+                },
                 tone_mapping_exposure: self.tone_mapping_exposure,
                 material_line_width: item.material.linewidth,
                 // `ScreenNode.update()`: `SIZE` is the bound target's
@@ -7905,4 +7914,17 @@ fn update_skeleton(
         skeleton.borrow_mut().update();
         node_frame.settle(claim, true);
     }
+}
+
+/// The scene half of three's `materialEnvRotation`:
+/// `makeRotationFromEuler( scene.environmentRotation ).transpose()` while the
+/// scene has an environment (a PMREM or an `environmentNode`), identity
+/// otherwise.
+fn scene_env_rotation(scene: &Scene) -> Matrix4 {
+    let mut m = Matrix4::identity();
+    if scene.environment.is_some() || scene.environment_node.is_some() {
+        m.make_rotation_from_euler(&scene.environment_rotation)
+            .transpose();
+    }
+    m
 }

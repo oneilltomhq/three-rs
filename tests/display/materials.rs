@@ -5,11 +5,14 @@
 
 use three_rs::materials::{quad_vertex_node, render_output, MeshBasicNodeMaterial};
 use three_rs::nodes::display::{
-    after_image, box_blur, dot_screen, fxaa, gaussian_blur, hash_blur_with, motion_blur,
+    after_image, box_blur, dof, dot_screen, fxaa, gaussian_blur, hash_blur_with, motion_blur,
     pixelation_pass, rgb_shift, sobel, traa, viewport_shared_texture_at, BoxBlurOptions,
     GaussianBlurOptions, HashBlurOptions,
 };
-use three_rs::nodes::tsl::{distance, float, screen_uv, texture_uv, uniform_value, uv, vec4_join};
+use three_rs::nodes::tsl::{
+    distance, float, pass_depth_texture, perspective_depth_to_view_z, screen_uv, texture_uv,
+    uniform_value, uv, vec4_join,
+};
 use three_rs::nodes::Type;
 use three_rs::textures::{DepthTexture, Texture};
 use three_rs::ToneMapping;
@@ -194,6 +197,55 @@ pub fn display_quads() -> Vec<DisplayQuad> {
         fixture: "webgpu_postprocessing_traa_m05_traa_resolve.wgsl",
         material: resolve,
     });
+
+    // webgpu_postprocessing_dof: `dof( scenePassColor, scenePassViewZ,
+    // uniform( 500 ), uniform( 200 ), uniform( 10 ) )`'s quads, in draw order
+    // (`m04`, the near field's `gaussianBlur( _CoCTextureNode, 1, 2 )`
+    // horizontal pass `m06` — `float` taps through the CoC texture's uv
+    // matrix, summed into a `vec4` splat — then `m08`, `m10`, `m11`, `m12`;
+    // `m10` is the blur64 module both fields share). The viewZ is the scene pass's
+    // `perspectiveDepthToViewZ( depth, near, far )`.
+    let view_z = perspective_depth_to_view_z(
+        pass_depth_texture(&DepthTexture::new()),
+        uniform_value(Type::F32, vec![1.0]),
+        uniform_value(Type::F32, vec![3500.0]),
+    );
+    let dof = dof(
+        &input(),
+        view_z,
+        uniform_value(Type::F32, vec![500.0]),
+        uniform_value(Type::F32, vec![200.0]),
+        uniform_value(Type::F32, vec![10.0]),
+    );
+    let dof_quads = [
+        ("dof_coc", "webgpu_postprocessing_dof_m04_coc.wgsl", 0),
+        (
+            "dof_coc_gaussian_horizontal",
+            "webgpu_postprocessing_dof_m06_coc_gaussian_horizontal.wgsl",
+            1,
+        ),
+        (
+            "dof_coc_blurred",
+            "webgpu_postprocessing_dof_m08_coc_blurred.wgsl",
+            3,
+        ),
+        ("dof_blur64", "webgpu_postprocessing_dof_m10_blur64.wgsl", 4),
+        ("dof_blur16", "webgpu_postprocessing_dof_m11_blur16.wgsl", 6),
+        (
+            "dof_composite",
+            "webgpu_postprocessing_dof_m12_composite.wgsl",
+            7,
+        ),
+    ];
+    for (label, fixture, index) in dof_quads {
+        let mut material = dof.quad_materials()[index].clone();
+        material.vertex_node = Some(quad_vertex_node());
+        quads.push(DisplayQuad {
+            label,
+            fixture,
+            material,
+        });
+    }
 
     quads
 }
