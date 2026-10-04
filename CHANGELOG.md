@@ -8,6 +8,17 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Added
 
+- **`WaterMesh`** (`addons::objects`), a port of
+  `examples/jsm/objects/WaterMesh.js`: a planar `reflector()` distorted by
+  four scrolling taps of a normal map, with a sun highlight and a Fresnel mix
+  into the water colour. Every uniform is a public `SettableValue`.
+  `webgpu_ocean` is graded green at 0 of 100000 pixels, and the material's
+  WGSL is gated against three's dump in `tests/nodes_water_wgsl.rs`.
+  `Water2Mesh` is not ported.
+- **`ReflectorNode::add_target_on_setup()`**: adds the mirror's `target` to
+  an object just before the reflector's first update, which is when three
+  runs an `add()` written inside a material's `Fn()`. See `docs/nodes.md`
+  §76.
 - **`SkyMesh`** (`addons::objects`), a port of `examples/jsm/objects/SkyMesh.js`.
   It is the Preetham daylight model with a sun disc and an fbm cloud layer.
   Every uniform is a public `SettableValue`. `webgpu_sky` is graded green at 0

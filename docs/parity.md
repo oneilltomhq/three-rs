@@ -567,7 +567,7 @@ Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `LoopNode` | Present | Node::Loop (src/nodes/node.rs:1530), loop_index (src/nodes/tsl.rs:4266) | webgpu_volume_perlin, webgpu_tsl_raging_sea |  |
 | `MaxMipLevelNode` | Absent | — | — | no maxMipLevel() |
 | `MemberNode` | Present | Node::StructMember (src/nodes/node.rs:1636), .get (src/nodes/tsl.rs:3904) | webgpu_struct_drawindirect |  |
-| `ReflectorNode` | Present | ReflectorNode (src/nodes/reflector_node.rs:183) | webgpu_mirror |  |
+| `ReflectorNode` | Present | ReflectorNode (src/nodes/reflector_node.rs:186) | webgpu_mirror, webgpu_ocean |  |
 | `RotateNode` | Present | rotate (src/nodes/tsl.rs:733) | tests/nodes_tsl_batch.rs, webgpu_layers |  |
 | `RTTNode` | Present | rtt (src/nodes/display/rtt.rs:73) | webgpu_procedural_texture |  |
 | `SampleNode` | Absent | — | — | no sample() |
@@ -739,16 +739,16 @@ Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `Lensflare` | N.A. | — | — | WebGL-only; LensflareMesh counterpart Absent |
 | `LensflareMesh` | Absent | — | — |  |
 | `MarchingCubes` | Absent | — | — |  |
-| `Reflector` | N.A. | — | — | WebGL-only; TSL reflector() Present; counterpart reflector() / ReflectorNode (src/nodes/reflector_node.rs:183); webgpu_mirror |
+| `Reflector` | N.A. | — | — | WebGL-only; TSL reflector() Present; counterpart reflector() / ReflectorNode (src/nodes/reflector_node.rs:186); webgpu_mirror |
 | `ReflectorForSSRPass` | N.A. | — | — | WebGL-only (SSRPass helper) |
 | `Refractor` | N.A. | — | — | WebGL-only |
 | `ShadowMesh` | Absent | — | — |  |
 | `Sky` | N.A. | — | — | WebGL-only; SkyMesh is the WebGPU counterpart (Present) |
 | `SkyMesh` | Present | SkyMesh (src/addons/objects/sky_mesh.rs:44) | webgpu_sky (graded); tests/nodes_sky_wgsl.rs |  |
-| `Water` | N.A. | — | — | WebGL-only; WaterMesh counterpart Absent |
+| `Water` | N.A. | — | — | WebGL-only; WaterMesh is the WebGPU counterpart (Present) |
 | `Water2` | N.A. | — | — | WebGL-only; Water2Mesh counterpart Absent |
-| `Water2Mesh` | Absent | — | — |  |
-| `WaterMesh` | Absent | — | — |  |
+| `Water2Mesh` | Absent | — | — | not ported with WaterMesh: `WaterNode`'s flow-map `updateBefore` and the `webgpu_water` page (Draco pool, UltraHDR, MRT bloom, FXAA) are a rung of their own, and three's e2e skips that page |
+| `WaterMesh` | Present | WaterMesh (src/addons/objects/water_mesh.rs:111) | webgpu_ocean (graded); tests/nodes_water_wgsl.rs | the mirror is created at construction rather than at first build; its target is still added at first build, as upstream (docs/nodes.md §76) |
 | `BufferGeometryUtils` | Absent | — | — |  |
 | `CameraUtils` | Absent | — | — |  |
 | `ColorUtils` | Absent | — | — |  |
@@ -1386,7 +1386,7 @@ Partial: `colorSpaceToWorking`, `negateOnBackSide`, `passTexture`.
 | `getTextureIndex` | Absent | — | — |  |
 | `mrt` | Present | mrt (src/nodes/mrt.rs:79) | tests/renderer_mrt.rs, webgpu_deferred (graded) |  |
 | `viewportSafeUV` | Present | viewport_safe_uv (src/nodes/display/viewport_texture.rs:200) | webgpu_backdrop (graded) |  |
-| `reflector` | Present | reflector (src/nodes/reflector_node.rs:217) | webgpu_mirror (graded) |  |
+| `reflector` | Present | reflector (src/nodes/reflector_node.rs:233) | webgpu_mirror, webgpu_ocean (graded) |  |
 | `rtt` | Present | rtt (src/nodes/display/rtt.rs:73) | webgpu_postprocessing_anamorphic (graded) |  |
 | `convertToTexture` | Present | convert_to_texture (src/nodes/display/rtt.rs:86) | webgpu_postprocessing_ca (graded) |  |
 | `getViewPosition` | Present | get_view_position (src/nodes/tsl.rs:900) | indirect: used by src/nodes/display/traa.rs (tests/nodes_display_wgsl.rs traa gates) |  |
@@ -1680,7 +1680,7 @@ The first refresh of this matrix closed the previous top five. Velocity and TRAA
 2. **EventDispatcher** (issues 153, 159). 8 pages subscribe to `change` or `finished` events. In ordinary use these are render-on-demand behind OrbitControls and chaining animation clips when one ends, and neither works in the port today. `AnimationMixer` and `AnimationAction` fire nothing.
 3. **Controls** (`FirstPersonControls` 8 pages, `TransformControls` 3, `FlyControls` 1). Input handling that the application owns, but 12 pages cannot be ported without them, and `addons/controls` already gives a pattern to follow.
 4. **`transformNormalToView`** (6 pages). One line; the port's `webgpu_tsl_raging_sea` already writes it inline.
-5. **`WaterMesh`** (2 pages) and the remaining display files (`OutlineNode`, `SMAANode`, `Lut3DNode`, `FilmNode`, `LensflareNode`, 1 to 2 pages each). Small, self-contained, and each unlocks one page.
+5. **`Water2Mesh`** (1 page; `WaterMesh` is Present) and the remaining display files (`OutlineNode`, `SMAANode`, `Lut3DNode`, `FilmNode`, `LensflareNode`, 1 to 2 pages each). Small, self-contained, and each unlocks one page.
 
 **Runners-up, and why they rank lower:**
 - RectAreaLight and LTC (3 pages).
