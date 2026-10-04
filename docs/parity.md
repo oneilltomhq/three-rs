@@ -44,11 +44,11 @@ TSL by family:
 | materialx | 49 | 48 | 0 | 1 | 0 |
 | utils | 77 | 47 | 16 | 4 | 10 |
 
-Graded examples: 96 (the rows of the README's graded table, `webgpu_textures_2d-array_compressed` among them; its `rung!` spells the name with an underscore). 13 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
+Graded examples: 96 (the rows of the README's graded table, `webgpu_textures_2d-array_compressed` among them; its `rung!` spells the name with an underscore). 14 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
 
 ### Pages
 
-three ships 231 `webgpu_*` pages at 5f610f5. The README headline counts graded pages out of the gradeable ones, and the two tables below are what takes a page out of that denominator or keeps it out of the graded count (#293). A page is **N.A.** when no frame of it can be diffed against three's reference on a headless, session-less, media-less grading machine; the pieces of an N.A. page that are portable are judged as rows above, and the page itself is not a port target. A page is **ignored** when it is ported and its e2e test exists but is `#[ignore]`d because three.js itself fails its own reference screenshot on the grading machine (Intel Iris Xe, Mesa 25.3, Vulkan), so a pass or fail of the port says nothing. Of the 17 pages #293 lists, 16 are N.A. and one (`webgpu_sandbox`) turns out to be an ordinary scene and stays gradeable; 13 pages are ignored; 94 of the 215 gradeable pages are graded.
+three ships 231 `webgpu_*` pages at 5f610f5. The README headline counts graded pages out of the gradeable ones, and the two tables below are what takes a page out of that denominator or keeps it out of the graded count (#293). A page is **N.A.** when no frame of it can be diffed against three's reference on a headless, session-less, media-less grading machine; the pieces of an N.A. page that are portable are judged as rows above, and the page itself is not a port target. A page is **ignored** when it is ported and its e2e test exists but is `#[ignore]`d because three.js itself fails its own reference screenshot on the grading machine (Intel Iris Xe, Mesa 25.3, Vulkan), so a pass or fail of the port says nothing. Of the 17 pages #293 lists, 16 are N.A. and one (`webgpu_sandbox`) turns out to be an ordinary scene and stays gradeable; 14 pages are ignored; 94 of the 215 gradeable pages are graded.
 
 Three's own `test/e2e/puppeteer.js` still screenshots 13 of the 17 (it excepts only the three TSL editors and `webgpu_compute_audio`), so most have a reference JPEG; the third column says what that JPEG is a picture of and why diffing the port against it would not verify the page.
 
@@ -79,6 +79,7 @@ Ported, `#[ignore]`d. Each row gives three's own score against its reference JPE
 | `webgpu_instance_path` | 314 | 314 | identical (0) | the reference GPU's rasterisation of the path's thin triangles | local frame |
 | `webgpu_postprocessing_afterimage` | 521 | 521 | identical (0) | 50000 one-pixel additive sprites; the reference's coverage differs | local frame |
 | `webgpu_postprocessing_retro` | 1503 | 1503 | 4243 over 2 of 255 (max 49), all on the JPEG-textured mug and table | the mug's JPEG texture is decoded by a different decoder than the browser's; the retro quantisation amplifies the last-bit differences | cannot grade here until the texture is fed as PNG to both sides; keep ignored |
+| `webgpu_upscaling_fsr1` | 703 | 698 | 690 over 2 of 255 (max 31), scattered over the model; three's own compare against three's local screenshot finds 0 | single edge pixels over the model's fine detail, the same in three's diff and the port's: the reference GPU's MSAA coverage of the half-resolution scene, which FSR upscales and sharpens | local frame |
 | `webgpu_refraction` | 344 | 336 | 13 over 2 of 255 | the reference GPU's resolve of the normal-mapped backdrop edges | local frame (13 pixels is under the limit) |
 | `webgpu_postprocessing` | 107 | 107 | identical (0) | 7 pixels over the limit on bloom edges | local frame |
 | `webgpu_postprocessing_smaa` | 258 | 258 | identical (0) | the boxes' diagonal wireframe lines rasterise differently from the reference GPU | local frame |
@@ -866,7 +867,7 @@ Ported, `#[ignore]`d. Each row gives three's own score against its reference JPE
 
 ### Supplementary: `examples/jsm/tsl/display/*.js`
 
-These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 39 Present, 4 Partial, 5 Absent.
+These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 40 Present, 4 Partial, 4 Absent.
 
 | file | status | three-rs port and check |
 |---|---|---|
@@ -884,7 +885,7 @@ These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) an
 | `DepthOfFieldNode.js` | Present | dof/DepthOfFieldNode; tests/nodes_display_wgsl.rs (`dof_*`: all seven distinct quad shaders); webgpu_postprocessing_dof (ported, ungraded: three's own e2e exception list) |
 | `DotScreenNode.js` | Present | dot_screen; tests/nodes_display_wgsl.rs; webgpu_postprocessing (ported, ungraded) |
 | `FilmNode.js` | Present | film (src/nodes/display/film.rs:15); tests/nodes_display_wgsl.rs (film_sepia_bleach dump, m07 without an intensity, m09 with one; no webgpu page uses it) |
-| `FSR1Node.js` | Absent | — |
+| `FSR1Node.js` | Present | fsr1/Fsr1Node (src/nodes/display/fsr1.rs); tests/nodes_display_wgsl.rs (fsr1_easu and fsr1_rcas gates, webgpu_upscaling_fsr1 m36 and m38), tests/fsr1_frames.rs; webgpu_upscaling_fsr1 (ported, ungraded: three fails its own reference here); contextNode and dispose() are not ported |
 | `FXAANode.js` | Present | fxaa; webgpu_postprocessing_fxaa |
 | `GaussianBlurNode.js` | Present | gaussian_blur; tests/nodes_display_wgsl.rs; webgpu_procedural_texture |
 | `GodraysNode.js` | Partial | godrays/GodraysNode (src/nodes/display/godrays.rs:74); tests/nodes_display_wgsl.rs; webgpu_postprocessing_godrays (graded); point lights only: the DirectionalLight branch, log depth and dispose() are not ported |
@@ -1721,7 +1722,7 @@ The first refresh of this matrix closed the previous top five. Velocity and TRAA
 1. **The screen-space effect nodes** (`DenoiseNode`; `denoise` 6 pages). `SSRNode` is Present (`webgpu_postprocessing_ssr`, graded). `GTAONode` and `builtinAOContext` are Present now (`webgpu_postprocessing_ao`, ungraded: it is on three's e2e exception list), and so are `DepthOfFieldNode` (`webgpu_postprocessing_dof`), `SSGINode` (`webgpu_postprocessing_ssgi`) and `SSSNode` with `builtinShadowContext` (`webgpu_postprocessing_sss`), all ungraded for the same reason. What is left needs a velocity target and a temporal resolve, and both now exist; these pages are the direct payoff of the velocity work. Porting them also gives the depth reads (`viewportDepthTexture`, `linearDepth`, `getViewPosition`) their first graded consumer.
 2. **EventDispatcher** (issues 153, 159). 8 pages subscribe to `change` or `finished` events. In ordinary use these are render-on-demand behind OrbitControls and chaining animation clips when one ends, and neither works in the port today. `AnimationMixer` and `AnimationAction` fire nothing.
 3. **The TransformControls pages** (`webgpu_modifier_curve`, `webgpu_shadowmap_progressive`, `webgpu_tsl_compute_attractors_particles`). `FirstPersonControls` (8 pages), `FlyControls` (1) and now `TransformControls` are ported and gated against three's classes (`docs/controls.md`). What is left is wiring the gizmo into the pages: `webgpu_modifier_curve`'s port still leaves it out, and the viewer's controls hook is typed for `OrbitControls`.
-4. The remaining display files (`DenoiseNode`, `depthAwareBlur`, `FSR1Node`, `SSAONode`, `TAAUNode`, 0 to 2 pages each). Small and self-contained; most unlock one page.
+4. The remaining display files (`DenoiseNode`, `depthAwareBlur`, `SSAONode`, `TAAUNode`, 0 to 2 pages each). Small and self-contained; most unlock one page.
 
 **Runners-up, and why they rank lower:**
 - RectAreaLight and LTC (3 pages).

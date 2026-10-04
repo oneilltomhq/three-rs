@@ -99,7 +99,7 @@ impl SharpenNode {
 
         let mut material = MeshBasicNodeMaterial::new();
         material.name = "Sharpen_RCAS";
-        material.fragment_node = Some(rcas(map, sharpness, denoise));
+        material.fragment_node = Some(rcas(map, sharpness, denoise, false));
 
         let node = to_var(None, texture_uv(&target.texture(), uv()));
 
@@ -179,17 +179,34 @@ fn luma(s: &NodeRef) -> NodeRef {
 
 /// `setup()`'s `rcas` `Fn()`, which has no layout and so inlines into
 /// `main()`.
+///
+/// `FSR1Node`'s RCAS pass is the same `Fn` over its EASU target, except that
+/// it converts the size first, `vec2( textureSize( textureLoad( easuTex ) )
+/// )`: one `vec2<f32>` that both axes read, so a `let`, where `SharpenNode`'s
+/// unconverted `uvec2` is spelled out at each read. `vec2_size` picks
+/// `FSR1Node`'s form.
 #[inline(never)]
-fn rcas(map: &Texture, sharpness: NodeRef, denoise: bool) -> NodeRef {
+pub(super) fn rcas(map: &Texture, sharpness: NodeRef, denoise: bool, vec2_size: bool) -> NodeRef {
     let target_uv = uv();
     // `textureSize( textureLoad( inputTex ) )`, at three's default level.
     let tex_size = || texture_size(TextureSource::Texture2D(map.clone()), int(0));
+    // Three caches the converted size, read twice, in a `let`; the port's
+    // conversion is not a cached node, so it is a `toConst()` here, which
+    // is the same WGSL.
+    let mut statements = Vec::new();
+    let (size_x, size_y) = if vec2_size {
+        let size = to_const(None, tex_size().to(Type::Vec2));
+        statements.push(size.clone());
+        (size.x(), size.y())
+    } else {
+        (tex_size().x(), tex_size().y())
+    };
 
     let p = to_const(
         None,
         ivec2(
-            floor(target_uv.x().mul(tex_size().x())).to(Type::I32),
-            floor(target_uv.y().mul(tex_size().y())).to(Type::I32),
+            floor(target_uv.x().mul(size_x)).to(Type::I32),
+            floor(target_uv.y().mul(size_y)).to(Type::I32),
         ),
     );
 
@@ -283,23 +300,21 @@ fn rcas(map: &Texture, sharpness: NodeRef, denoise: bool) -> NodeRef {
 
     // Three's `toConst()`s join the `Fn`'s stack where they are made, so
     // they are declared in this order rather than at first read.
-    block(
-        vec![
-            p,
-            con,
-            mn4,
-            mx4,
-            rcas_limit,
-            hit_min,
-            hit_max,
-            lobe_rgb,
-            lobe,
-            nz,
-            nz_range,
-            nz_factor,
-            effective_lobe,
-            result.clone(),
-        ],
-        vec4_join(vec![result, e.a()]),
-    )
+    statements.extend([
+        p,
+        con,
+        mn4,
+        mx4,
+        rcas_limit,
+        hit_min,
+        hit_max,
+        lobe_rgb,
+        lobe,
+        nz,
+        nz_range,
+        nz_factor,
+        effective_lobe,
+        result.clone(),
+    ]);
+    block(statements, vec4_join(vec![result, e.a()]))
 }

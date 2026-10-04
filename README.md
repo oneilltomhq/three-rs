@@ -18,7 +18,7 @@ by scenes written for the port.
 **Status: 96 of 215 gradeable three.js WebGPU pages graded (16 N.A.).** Early,
 working, incomplete. Three ships 231 `webgpu_*` pages; 16 cannot grade against
 a reference frame (XR sessions, editor UIs, benchmarks, video and DOM layout:
-the page table in [`docs/parity.md`](docs/parity.md) says which and why), 13
+the page table in [`docs/parity.md`](docs/parity.md) says which and why), 14
 more are ported but ignored because Three fails its own reference on the
 grading machine, and the `webgpu_*` examples in the gallery below pass the
 grader. The rest (and Three's 600-odd examples overall) have not been
@@ -281,10 +281,10 @@ for an indirect draw, as three's does, not what the GPU was told to draw.
 
 Some pages are ported but cannot be graded. Either three's own e2e harness
 skips them, or three.js itself misses its own reference screenshot on this
-machine, so a matching port would miss it too. Ten pages that three misses
+machine, so a matching port would miss it too. Twelve pages that three misses
 here are only `#[ignore]`d rungs in `tests/e2e/main.rs` (`docs/parity.md`
-counts them, with retro, as eleven). These two are in the native viewer, not
-in the gallery or the browser shell:
+counts them, with retro and fsr1, as fourteen). The pages below are in the
+native viewer, not in the gallery or the browser shell:
 
 | example | why it has no grade |
 |---|---|
@@ -295,6 +295,7 @@ in the gallery or the browser shell:
 | [`webgpu_postprocessing_ao`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_ao.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_ao-progress.md) | in the same exception list. It is gated instead on its GTAO shader against three's dump and on `tests/gtao_frames.rs` |
 | [`webgpu_postprocessing_dof`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_dof.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_dof-progress.md) | in three's e2e exception list (`test/e2e/puppeteer.js`, "Black screen"). It is gated instead on each of `DepthOfFieldNode`'s seven distinct quad shaders against three's dump (`dof_*` in `tests/nodes_display_wgsl.rs`) |
 | [`webgpu_postprocessing_retro`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_retro.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_retro-progress.md) | three.js scores 1.5% against its own reference here, over the 0.1% limit, and the port scores the same 1503 pixels. It is gated instead on its two post-processing shaders against three's dump and on `tests/retro_frames.rs` |
+| [`webgpu_upscaling_fsr1`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_upscaling_fsr1.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_upscaling_fsr1-progress.md) | three.js scores 0.7% against its own reference here, over the 0.1% limit, and the port scores 698 pixels to three's 703. It is gated instead on its EASU and RCAS shaders against three's dump and on `tests/fsr1_frames.rs` |
 
 Measured on Intel Iris Xe, Mesa 25.3.6, Fedora 43, against three.js 5f610f5
 (past r186, for the cube PMREM of 2f80402; the pin becomes the r187 tag once
@@ -364,17 +365,19 @@ examples are there, and so are the ungraded `webgpu_postprocessing_traa`, `webgp
 `webgpu_postprocessing_sss`, `webgpu_postprocessing_ssgi`,
 `webgpu_postprocessing_ao`,
 `webgpu_postprocessing_dof`, `webgpu_postprocessing_smaa`,
-`webgpu_postprocessing_pixel` and `webgpu_postprocessing_retro`. The last three
-are ported but their e2e tests are `#[ignore]`d, because three itself fails
-their references on this machine; their
+`webgpu_postprocessing_pixel`, `webgpu_postprocessing_retro` and
+`webgpu_upscaling_fsr1`. The last four are ported but their e2e tests are
+`#[ignore]`d, because three itself fails their references on this machine;
+their
 [smaa](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_smaa-progress.md),
-[pixel](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_pixel-progress.md)
-and [retro](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_retro-progress.md)
+[pixel](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_pixel-progress.md),
+[retro](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_retro-progress.md)
+and [fsr1](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_upscaling_fsr1-progress.md)
 notes have the numbers. Each one animates, orbits, dollies and pans through
 its *own* `animate()`, `resize()` and `OrbitControls` — the viewer drives the
 example, it does not restate it. `--list` prints the examples with their keys,
 and a key stands in for the name on the command line; in the window, `[` and
-`]` step to the previous and next example, because 69 of them do not fit in
+`]` step to the previous and next example, because 70 of them do not fit in
 the 36 single keys a keyboard has. The window prints one line a second with
 the frame rate and the steady-state render time (mean and max over the last
 60 frames, after a 10-frame warm-up):

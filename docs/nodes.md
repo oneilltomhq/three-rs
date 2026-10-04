@@ -8900,3 +8900,109 @@ the following:
 - Over thirteen frames of fresh noise the variance keeps dropping
   (4.1, 1.1, 0.6, 0.35), and no texel is NaN.
 - A resize restarts the target at the new size.
+
+## 91. `FSR1Node` (`webgpu_upscaling_fsr1`)
+
+### 91.1 What three does
+
+`fsr1( node, sharpness = 0.2, denoise = false )` is an `FSR1Node` over
+`convertToTexture( node )`. It is AMD FidelityFX Super Resolution 1.0, a
+spatial upscaler. Like `SharpenNode` (§86) it is a plain `Node` with
+`updateBeforeType = FRAME`. It owns two half-float targets with no depth
+buffer, `_easuRT` and `_rcasRT`, and its texture node is
+`passTexture( this, _rcasRT.texture )`. `updateBefore()` sizes both targets
+to the drawing buffer, then draws two quads with one `QuadMesh`, with the
+renderer's state reset around the draws. The input's size is whatever the
+input texture is. On the page that is a scene pass at
+`setResolutionScale( 0.5 )`, half the canvas. `setSize( width, height )`
+sizes the output.
+
+- **`FSR1_EASU`** (edge-adaptive spatial upsampling) maps the output pixel
+  into the input, finds the texel `fp = floor( pp )` and its fraction, and
+  `textureLoad`s a 12-texel footprint around it: the 4×4 square without its
+  corners. Two arrow helpers, which join the `Fn`'s stack as they run, do
+  the work:
+  - `_accumulateEdge` runs once per bilinear quadrant, `(b,e,f,g,j)`,
+    `(c,f,g,h,k)`, `(f,i,j,k,n)` and `(g,j,k,l,o)`, weighted by the
+    fraction. It takes the luma `r · 0.5 + g + b · 0.5` and adds an edge
+    direction into `dir` and a squared, normalised edge length into `len`.
+  - The direction is then normalised, with `select`s guarding a zero
+    direction below `1 / 32768`. `len` is halved and squared, and that
+    shapes an approximate Lanczos2 kernel into an ellipse along the edge
+    (`stretch`, `len2`, `lob = 0.5 + ( 1/4 - 0.04 - 0.5 ) · len`,
+    `clp = 1 / lob`).
+  - `_accumulateTap` runs once per texel and adds `colour · w` into `aC` and
+    `w` into `aW`.
+
+  The result is `aC / aW`, clamped to the min and max of the four nearest
+  texels, so the negative lobe cannot ring.
+- **`FSR1_RCAS`** is `SharpenNode`'s quad (§86.1) over the EASU target,
+  with the same lobe, limiters, `con = exp2( -sharpness )` and denoise
+  branch. One difference is in the texel lookup. It reads the size as
+  `vec2( textureSize( … ) )`, which is used twice, so three's usage cache
+  declares it once, as `let nodeConst0 = vec2<f32>( textureDimensions( … ) )`.
+  `SharpenNode` reads `textureSize( … ).x` and `.y` on integers.
+
+`sharpness` and `denoise` are `nodeObject()`s. A number for `sharpness` is a
+constant folded into the shader, as in `SharpenNode`, and `denoise` changes
+only the literal in `false == true`, not the graph.
+
+### 91.2 The port
+
+`nodes::display::fsr1( node, sharpness, denoise )` wraps `node` in
+`convert_to_texture` and keeps the `RttNode` alive. `Fsr1Node::new( &Texture,
+sharpness, denoise )` is the constructor over a texture already in hand,
+which is the case where three's `convertToTexture()` passes a pass texture
+through. The page and `tests/fsr1_frames.rs` use it on
+`scene_pass.texture()`. `sharpness` is a float node, and
+`Fsr1Node::DEFAULT_SHARPNESS` is three's 0.2. `denoise` is a `bool`.
+`Fsr1State` implements `NodeUpdate` and is registered as the updater of the
+RCAS texture (§63, §86.2). `update_before` sizes both targets and draws both
+quads, as three's does. `node()`, `texture()`, `easu_texture()` and
+`set_size()` are three's texture node, the two targets' textures and
+`setSize`.
+
+The RCAS quad is `sharpen.rs`' `rcas()`, which takes a flag for the `vec2`
+size form. Under that flag, `rcas()` makes the converted size a `toConst()`
+listed first in its block. The port's conversion is not a cached node, so
+without the `toConst()` it would inline `textureDimensions` twice. With it,
+the port declares the same `let nodeConst0` three's cache does.
+
+EASU is three's `Fn` statement for statement:
+
+- `accumulate_edge` and `accumulate_tap` push their `toConst()`s and
+  `addAssign()`s into the caller's statement list in the JS order.
+- `easu()` lists the taps, the four quadrants, the kernel and the twelve
+  accumulations in three's order in one `block`.
+- The `select`s assign into `dir.x` and `dir`, as three's `.assign()` and
+  `.mulAssign()` do.
+
+The page's dump gives the two fixtures. Module `m36` is
+`fsr1_easu_matches_three` and `m38` is `fsr1_rcas_matches_three`. Since
+`denoise` does not change the graph, there is no denoise dump. Against the
+dump the WGSL differs only cosmetically:
+
+- The twelve EASU lumas and the five RCAS lumas are `nodeVar`s where three
+  has `let nodeConst`s, which is the usual single-assignment difference
+  (§8).
+- RCAS's `exp2( -0.2 )` and `0.1875` are `let` where three has `const`, as
+  in §86.2.
+
+`tests/fsr1_frames.rs` draws a hard vertical edge with a half-resolution
+scene pass and reads the result straight to the canvas. It checks that:
+
+- both targets are at canvas size and the pass is at half of it;
+- away from the edge the two greys come through unchanged;
+- the steepest step per row is steeper than a bilinear upscale of the same
+  pass texture: 3086 summed over 28 rows, against bilinear's 1764 and EASU
+  alone's 2606;
+- EASU alone, at sharpness 30, stays inside the edge's range;
+- after a resize both targets follow the drawing buffer;
+- the free `fsr1()` of a plain colour gives back that colour.
+
+`webgpu_upscaling_fsr1` is ungraded. three.js scores 703 of 100000 pixels
+against its own reference on this machine, twice, which is over the 0.1%
+limit. The port's rung is ignored, and it scores 698.
+
+Not ported: `material.contextNode = context( builder.getSharedContext() )`.
+Both quad materials are built in the constructor, as `RttNode`'s is.
