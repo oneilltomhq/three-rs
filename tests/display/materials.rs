@@ -18,9 +18,11 @@ use three_rs::nodes::display::{
     HashBlurOptions, LensflareParams, OutlineParams, RetroPassOptions, SsrOptions,
 };
 use three_rs::nodes::tsl::{
-    distance, float, osc_sine, pass_depth_texture, perspective_depth_to_view_z, posterize,
-    replace_default_uv, screen_size, screen_uv, texture_3d_sampled, texture_uv, time,
-    uniform_value, uv, vec2, vec4_join,
+    bind_analytic_noise, d_gtr, distance, equirect_dir_pdf, equirect_uv_to_dir, f_schlick, float,
+    geometry_term, get_specular_dominant_factor, ggx_reflection_sample, ggx_reflection_struct, int,
+    mis_power_heuristic, osc_sine, pass_depth_texture, perspective_depth_to_view_z, posterize,
+    replace_default_uv, screen_size, screen_uv, smith_g, struct_get, texture_3d_sampled,
+    texture_uv, time, uniform_value, uv, vec2, vec3, vec3_join, vec4_join,
 };
 use three_rs::nodes::Type;
 use three_rs::textures::{DepthTexture, Texture};
@@ -799,5 +801,61 @@ pub fn display_quads() -> Vec<DisplayQuad> {
         ),
     ));
 
+    specular_helpers_quads(&mut quads);
+
     quads
+}
+
+/// `tools/dump-pages/specular_helpers.html`: one `convertToTexture()` quad
+/// per helper group of `SpecularHelpers.js`, `RNoise.js` and
+/// `ImportanceSampledEnvironment.js`.
+fn specular_helpers_quads(quads: &mut Vec<DisplayQuad>) {
+    // `m01`: `ggxReflectionSample( N, V, p.x, p.y, vec3( 0.9, 0.6, 0.3 ),
+    // vec4( p, p.yx ) )`, every member of the result read.
+    let p = uv();
+    let n = vec3_join(vec![p.sub(0.5), float(1.0)]).normalize();
+    let v = vec3_join(vec![p.swizzle("yx").sub(0.5), float(1.0)]).normalize();
+    let sample = ggx_reflection_sample(
+        n,
+        v,
+        p.x(),
+        p.y(),
+        vec3(0.9, 0.6, 0.3),
+        vec4_join(vec![p.clone(), p.swizzle("yx")]),
+    );
+    let layout = ggx_reflection_struct();
+    let get = |name: &str| struct_get(&sample, &layout, name);
+    quads.push(quad(
+        "specular_ggx_reflection_sample",
+        "specular_helpers_m01_ggx_reflection_sample.wgsl",
+        vec4_join(vec![
+            get("reflectDir").add(get("sampleWeight")).add(get("f0")),
+            get("pdf").add(get("NdotV")).add(get("alpha")),
+        ]),
+    ));
+
+    // `m03`: the scalar BRDF terms and the equirect helpers in one colour.
+    let p = uv();
+    let dir = equirect_uv_to_dir(p.clone());
+    let pdf = equirect_dir_pdf(dir.clone());
+    let w = mis_power_heuristic(pdf, p.x());
+    let d = d_gtr(p.x(), p.y(), float(2.0));
+    let g1 = smith_g(p.y(), p.x());
+    let g = geometry_term(p.x(), p.y(), float(0.5));
+    let f = f_schlick(vec3(0.04, 0.04, 0.04), p.y());
+    let sdf = get_specular_dominant_factor(p.y(), p.x());
+    quads.push(quad(
+        "specular_helpers",
+        "specular_helpers_m03_specular_helpers.wgsl",
+        vec4_join(vec![dir.mul(w).add(f), d.add(g1).add(g).add(sdf)]),
+    ));
+
+    // `m04`: `bindAnalyticNoise( uniform( vec2( 800, 500 ) ), 47 )( uv(),
+    // int( 3 ) )`.
+    let noise = bind_analytic_noise(uniform_value(Type::Vec2, vec![800.0, 500.0]), 47);
+    quads.push(quad(
+        "analytic_noise",
+        "specular_helpers_m04_analytic_noise.wgsl",
+        noise(uv(), int(3)),
+    ));
 }

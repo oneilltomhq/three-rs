@@ -1147,3 +1147,49 @@ fn film_matches_three() {
 fn film_no_intensity_matches_three() {
     check("film_no_intensity", Region::Body);
 }
+
+#[test]
+fn specular_ggx_reflection_sample_matches_three() {
+    check("specular_ggx_reflection_sample", Region::Body);
+}
+
+#[test]
+fn specular_sample_ggx_vndf_matches_three() {
+    check(
+        "specular_ggx_reflection_sample",
+        Region::Function("SampleGGXVNDF"),
+    );
+}
+
+#[test]
+fn specular_helpers_matches_three() {
+    check("specular_helpers", Region::Body);
+}
+
+#[test]
+fn specular_equirect_uv_to_dir_matches_three() {
+    check("specular_helpers", Region::Function("equirectUvToDir"));
+}
+
+#[test]
+fn specular_equirect_dir_pdf_matches_three() {
+    check("specular_helpers", Region::Function("equirectDirPdf"));
+}
+
+#[test]
+fn specular_mis_power_heuristic_matches_three() {
+    check("specular_helpers", Region::Function("misPowerHeuristic"));
+}
+
+#[test]
+fn specular_dominant_factor_matches_three() {
+    check(
+        "specular_helpers",
+        Region::Function("getSpecularDominantFactor"),
+    );
+}
+
+#[test]
+fn analytic_noise_matches_three() {
+    check("analytic_noise", Region::Body);
+}
