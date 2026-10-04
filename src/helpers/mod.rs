@@ -10,7 +10,13 @@
 //! `pub node` beside three's public fields (`light`, `box3`, `plane`, `cone`,
 //! …), whose methods keep three's names in snake case (`update`,
 //! `set_colors`, `set_direction`, …). Optional constructor arguments are
-//! [`Option`]s that take three's default when `None`.
+//! plain values: pass three's default, which each `new` names, or take
+//! `Default` where three's constructor needs no arguments at all
+//! ([`AxesHelper`], [`ArrowHelper`], [`BoxHelper`]). An argument is an
+//! [`Option`] only where three's `undefined` means something no value can:
+//! [`ArrowHelper`]'s head length and width (defaults derived from
+//! `length`), [`BoxHelper`]'s object (none yet), and the light helpers'
+//! `color`, where `None` follows the light's own colour on every `update()`.
 //!
 //! Each helper keeps three's geometry (attribute names, vertex order, index),
 //! its material class (`LineBasicMaterial` is

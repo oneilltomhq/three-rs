@@ -10,7 +10,7 @@ use crate::objects::LineSegments;
 /// `new AxesHelper( size = 1 )` — a `LineSegments` of three lines from the
 /// origin, `size` long along +X, +Y and +Z, drawn with vertex colours: each
 /// axis runs from its full colour at the origin (red, green, blue) to a
-/// lighter tint at its tip.
+/// shifted hue at its tip: `(1, 0.6, 0)`, `(0.6, 1, 0)` and `(0, 0.6, 1)`.
 ///
 /// `toneMapped: false` has no counterpart, as in
 /// [`GridHelper`](super::GridHelper): the port tone maps in the output pass.

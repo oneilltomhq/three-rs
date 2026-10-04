@@ -38,7 +38,9 @@ impl HemisphereLightHelper {
     /// `new HemisphereLightHelper( light, size, color )`. Three's
     /// `OctahedronGeometry` takes an undefined size as 1.
     ///
-    /// Panics if `light` is not a light.
+    /// Panics if `color` is `None` and `light` is not a light, here and on
+    /// every [`update`](Self::update): only then does the helper read the
+    /// light's colour.
     pub fn new(light: &Node, size: f64, color: Option<Color>) -> Self {
         let node = Object3D {
             object_type: "HemisphereLightHelper",

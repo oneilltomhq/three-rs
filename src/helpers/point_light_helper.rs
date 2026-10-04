@@ -35,7 +35,9 @@ impl PointLightHelper {
     /// `new PointLightHelper( light, sphereSize, color )`. Three's
     /// `SphereGeometry` takes an undefined size as 1.
     ///
-    /// Panics if `light` is not a light.
+    /// Panics if `color` is `None` and `light` is not a light, here and on
+    /// every [`update`](Self::update): only then does the helper read the
+    /// light's colour.
     pub fn new(light: &Node, sphere_size: f64, color: Option<Color>) -> Self {
         let geometry = sphere_geometry(sphere_size, 4, 2);
         // `new MeshBasicMaterial( { wireframe: true, fog: false, toneMapped:
