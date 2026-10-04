@@ -18,12 +18,12 @@ by scenes written for the port.
 **Status: 99 of 215 gradeable three.js WebGPU pages graded (16 N.A.).** Early,
 working, incomplete. Three ships 231 `webgpu_*` pages; 16 cannot grade against
 a reference frame (XR sessions, editor UIs, benchmarks, video and DOM layout:
-the page table in [`docs/parity.md`](docs/parity.md) says which and why), 14
-more are ported but ignored because Three fails its own reference on the
-grading machine, and the `webgpu_*` examples in the gallery below pass the
-grader. The rest (and Three's 600-odd examples overall) have not been
-attempted. The API follows Three's object model but is not stable. Vulkan on
-Linux is the only backend that has been run.
+the page table in [`docs/parity.md`](docs/parity.md) says which and why),
+a few more are ported but ignored because Three fails its own reference on
+the grading machine (the same table lists them), and the `webgpu_*` examples
+in the gallery below pass the grader. The rest (and Three's 600-odd examples
+overall) have not been attempted. The API follows Three's object model but is
+not stable. Vulkan on Linux is the only backend that has been run.
 
 [`docs/parity.md`](docs/parity.md) judges every three.js export, row by row,
 as present, partial or absent in the port, with the test or graded example
@@ -31,70 +31,131 @@ that verifies each present row.
 
 ## What is ported
 
-- **Math and core.** Vector/Matrix/Quaternion/Euler/Color and the geometric
-  helpers (Box, Sphere, Plane, Ray, Frustum, Triangle, ...), `Object3D` scene
-  graph, `BufferGeometry` with named attributes, groups, draw ranges and morph
-  attributes, layers, cameras. Verified against Three's QUnit tests.
-- **Geometries.** Box, Plane, Cylinder, Cone, Torus, the polyhedra, Circle,
-  Ring, Lathe, Capsule, plus the Teapot and RoundedBox addons, bit-exact
-  against samples generated from Three. The curve family (`Curve`,
-  `CurvePath`, lines, Béziers, ellipses/arcs, splines, `CatmullRomCurve3`),
-  `Path` / `Shape` / `ShapePath`, `ShapeUtils` with Earcut, and `Shape`,
-  `Extrude` and `Tube` geometries, with their QUnit ports and a 1e-6 oracle
-  against Three's own output.
-- **Node system (TSL).** A `NodeBuilder` that generates both WGSL stages and the
-  bind group layout from a node graph, following Three's `nodes/` and
-  `renderers/webgpu/nodes/`. Generated WGSL is kept structurally identical to
-  Three's dumps; deliberate divergences are listed in `docs/nodes.md`.
-- **Materials.** `MeshBasic`, `MeshPhong`, `MeshStandard` (physical lighting
-  model with DFG LUT), `Sprite`, `LineBasic`, and the shadow-pass material.
-  Bump maps, env maps, blending modes, tone mapping.
-- **Lights and shadows.** Ambient, Hemisphere, Point, Spot, Directional and
-  `LightProbe` (nine spherical-harmonic coefficients, irradiance only);
-  planar and cube shadow maps with Three's Vogel-disk filter.
-- **Renderer.** Render lists, instancing, morph targets, render targets,
-  MSAA, the linear-to-sRGB output pass, `PassNode` post-processing, mipmaps,
-  cube textures, `CubeCamera` / `CubeRenderTarget`, line topology, viewport /
-  scissor / `clearDepth` and `autoClear`. `velocity` as an MRT output, with
-  three's previous-frame matrices and skinned `positionPrevious`, and temporal
-  reprojection anti-aliasing (`traa`) on top of it. Weighted blended
-  order-independent transparency (`oit_pass`), on per-attachment MRT blend
-  modes and clear colours. A `PassNode` can draw its scene at a fraction of
-  the canvas and swap each draw's material, which is how `retroPass` draws a
-  scene the way a PS1 did. Clipping planes through `ClippingGroup` (union and
-  intersection, hardware `clip_distances` where the device has them,
-  alpha-to-coverage edges), and per-material stencil state.
-- **Addons.** `src/addons/` holds the `three/addons/…` tier that the graded
-  examples import: `lines` (`LineSegmentsGeometry`, `LineGeometry`,
-  `LineSegments2`, `Line2` — fat lines, with `Line2NodeMaterial` in core beside
-  them, as three.js ships it), `geometry_utils`, `text_geometry`
-  (`TextGeometry`), `curve_modifier_gpu` (`Flow`), `lights`
-  (`LightProbeGenerator`), `helpers` (`LightProbeHelper`), `objects::SkyMesh`
-  (the Preetham sky with sun disc and clouds), `objects::WaterMesh` (a
-  reflective water surface over `reflector()`), `objects::Water2Mesh` (water
-  that mixes a mirror with a refracting screen read, scrolled along a flow
-  direction or flow map), and `controls`
-  (`OrbitControls`, `FirstPersonControls`, `FlyControls`,
-  `TransformControls`), ports of the JS
-  classes graded against the JS classes themselves. An addon that
-  needs nothing from core would be a workspace crate instead — `addons/controls`
-  is one — and that stays the preferred shape; these live in the root crate
-  because the e2e harness pulls examples in with `#[path = "../../examples/…"]`,
-  and an example in another crate would need its own test binary.
-- **Loaders.** glTF/GLB (all accessor types, skins, animations, `KHR_mesh_quantization`,
-  `KHR_draco_mesh_compression`, `EXT_meshopt_compression`, `KHR_texture_basisu`,
-  `KHR_texture_transform`, `EXT_texture_webp` / `EXT_texture_avif`, and the
-  `KHR_materials_*` extensions: specular, ior, clearcoat, sheen, transmission,
-  volume, anisotropy, diffuse roughness, emissive strength, unlit), textures
-  (PNG, JPEG, GIF, WebP, AVIF), cube textures, KTX2, HDR and Ultra HDR, `BufferGeometryLoader`,
-  typeface.json fonts (`FontLoader`).
-- **Animation.** Interpolants, keyframe tracks, clips, `PropertyMixer`,
-  `AnimationAction` and `AnimationMixer`.
-- **Workspace crate.** `sdf-text`: signed-distance-field text rendering with
-  a `BatchedText` object (ttf-parser outlines, analytic rasteriser), and the
-  SDF text examples with their gates. Its `d33_treemap_labels` example lays
-  its treemap out with [d3-hierarchy](https://github.com/oneilltomhq/d3-hierarchy),
-  a port of d3-hierarchy 3.1.2 that began in this repository.
+One paragraph per area, describing what the code holds today and the larger
+gaps. [`docs/parity.md`](docs/parity.md) is the row-level truth: every
+three.js export, its verdict and the test or graded example that checks it.
+
+**Math and core.** The math library whole: vectors, `Matrix2`/`3`/`4`,
+`Quaternion`, `Euler`, `Color` with `ColorManagement`, `Box2`/`Box3`,
+`Sphere`, `Plane`, `Ray`, `Line3`, `Triangle`, `Frustum`, `Spherical`,
+`Cylindrical`, `SphericalHarmonics3` and the interpolants, each with its
+QUnit port. `MathUtils` has the interpolation and power-of-two helpers but
+not the random, UUID or `normalize` ones, and there is no
+`BezierInterpolant`. The `Object3D` scene graph with layers, typed scene
+events and render hooks; `BufferGeometry` with groups, draw ranges, morph
+and instanced attributes; typed `BufferAttribute`s (every array type three
+uses, `normalized`) and interleaved buffers; `Raycaster` and `Timer`. All
+the cameras (perspective, orthographic, array, cube, stereo), `Scene`, `Fog`
+and `FogExp2`. The objects: `Mesh`, `Sprite`, `Points`, `Line`,
+`LineSegments`, `InstancedMesh`, `BatchedMesh`, `SkinnedMesh` with
+`Skeleton` and `Bone`, `Group` and `ClippingGroup`; not `LOD`. The core
+helpers (axes, arrow, grid, polar grid, box, `Box3`, plane, camera,
+skeleton, and the directional, hemisphere, point and spot light helpers).
+
+**Geometries.** Every core geometry except `EdgesGeometry` and
+`WireframeGeometry`: box, plane, sphere, circle, ring, cylinder, cone,
+torus, torus knot, capsule, lathe, the polyhedra, shape, extrude and tube,
+plus the `TeapotGeometry` and `RoundedBoxGeometry` addons, bit-exact
+against samples generated from three. The curve family (`Curve`,
+`CurvePath`, lines, Béziers, ellipses and arcs, splines,
+`CatmullRomCurve3`), `Path` / `Shape` / `ShapePath` and `ShapeUtils` with
+Earcut, with their QUnit ports and a 1e-6 oracle against three's own
+output.
+
+**Node system (TSL).** A `NodeBuilder` that generates both WGSL stages and
+the bind group layouts from a node graph, following three's `nodes/` and
+`renderers/webgpu/nodes/`, and most of the `three/tsl` exports, with the
+generated WGSL gated against three's own dumps; deliberate divergences are
+listed in [`docs/nodes.md`](docs/nodes.md). It covers the material and
+lighting flow, morphing, skinning and batching, MRT, velocity, clipping,
+PMREM, the reflector, screen reads, compute (storage buffers and textures,
+atomics, barriers, workgroup memory, subgroups, indirect dispatch), the
+MaterialX noise library, `wgslFn` / `code` and user-defined nodes through
+`Node::Custom`. The post-processing nodes of `examples/jsm/tsl/display`
+(bloom, GTAO, SSAO, SSR, SSGI, SSS, TRAA, TAAU, FSR1, SMAA, FXAA, depth of
+field, outline, OIT, the stereo passes, the denoisers and the rest) live in
+`nodes::display`. Missing: `reference()` / `materialReference()` by name,
+custom tone mapping, and JSON node loading.
+
+**Materials.** Basic, Lambert, Phong, Standard, Physical (clearcoat, sheen,
+anisotropy, transmission and volume, iridescence, specular and ior,
+diffuse roughness), Toon, Normal, Points, Sprite, `LineBasic` and the fat
+`Line2NodeMaterial` (no dashes), as node materials with their node slots.
+Bump and normal maps, environment maps, blending modes and `BlendMode`,
+alpha test and alpha hash, wireframe, stencil state, backdrop nodes, fog
+and tone mapping. Absent: `ShadowMaterial` (the shadow pass uses an
+internal override material, not it), depth, distance, matcap, dashed-line
+and SSS materials, dispersion, and the light, displacement and specular
+maps. A field the port does not read is reported, not silently dropped
+(`docs/api.md` §7).
+
+**Lights and shadows.** Ambient, hemisphere, point, spot (no projected
+`map`), directional and `LightProbe` (nine spherical-harmonic
+coefficients, irradiance only), and a user `LightingModel`. Planar and cube
+shadow maps with three's filters: basic, PCF on the Vogel disk (PCFSoft
+resolves to it, as in three's WebGPU renderer) and VSM, plus shadow
+opacity, skinned casters and custom `shadowNode` / `filterNode`.
+`RectAreaLight`, `IESSpotLight` and `ProjectorLight` are absent.
+
+**Renderer.** One `Renderer` on wgpu: Vulkan natively, the browser's
+WebGPU in the web shell. Render lists, instancing, morph targets, skinning
+and batching, render targets (MSAA, MRT, mip levels, red formats),
+`RenderPipeline`, `DirectRenderPipeline`, `PassNode` post-processing and
+`QuadMesh`, `PmremGenerator`, `CubeCamera` / `CubeRenderTarget`, mipmaps,
+line topology, viewport / scissor / `clearDepth` / `autoClear`, occlusion
+queries, `copyTextureToTexture` and pixel and storage-buffer readback.
+Compute with indirect dispatch and indirect draws, storage textures
+(2D and 3D) and storage buffers. The texture family: `Texture`,
+`DataTexture`, `Data3DTexture`, `CubeTexture`, `DepthTexture` and
+compressed 2D and array textures uploaded from KTX2 (compressed cube and 3D
+textures parse but do not upload). Velocity as an MRT output, with three's
+previous-frame matrices, under temporal anti-aliasing and motion blur;
+weighted blended order-independent transparency on per-attachment blend
+modes; a `PassNode` that draws at a fraction of the canvas and swaps each
+draw's material (`retroPass`); clipping planes through `ClippingGroup`
+(union and intersection, hardware `clip_distances` where the device has
+them, alpha-to-coverage edges) and per-material stencil state. Not ported:
+`BundleGroup`, `compileAsync`, `copyFramebufferToTexture`, storage array
+textures, and cache eviction.
+
+**Addons.** `src/addons/` holds the `three/addons/…` tier that the graded
+examples import: `controls` (`OrbitControls`, `FirstPersonControls`,
+`FlyControls`, `TransformControls`, each graded against the JS class
+itself), `lines` (fat lines: `LineSegmentsGeometry`, `LineGeometry`,
+`LineSegments2`, `Line2`), `text_geometry`, `curve_modifier_gpu` (`Flow`),
+`lights` (`LightProbeGenerator`), `helpers` (`LightProbeHelper`), `objects`
+(`SkyMesh`, `WaterMesh`, `Water2Mesh`), `camera_utils`, `improved_noise`,
+`simplex_noise`, `raymarching` (`RaymarchingBox`), `textures`
+(`FlakesTexture`) and `geometry_utils` (`hilbert3D` only). `RoomEnvironment`
+is in `environments`, `SortUtils`' radix sort in `utils`, and the
+`tsl/display` effect nodes in `nodes::display` (above). They live in the
+root crate for the harness reason given under [Addons](#addons).
+
+**Loaders.** glTF/GLB: every accessor type, skins, animations,
+`KHR_mesh_quantization`, `KHR_draco_mesh_compression`,
+`EXT_meshopt_compression`, `KHR_texture_basisu`, `KHR_texture_transform`,
+`EXT_texture_webp`, and the `KHR_materials_*` extensions (specular, ior,
+clearcoat, sheen, transmission, volume, anisotropy, iridescence, diffuse
+roughness, emissive strength, unlit); not cameras, `KHR_lights_punctual`,
+cubic-spline animation (linearised) or AVIF. Textures from PNG, JPEG, GIF
+and WebP (an AVIF image is refused with an error), cube textures, KTX2,
+`HdrLoader`, `HdrCubeTextureLoader`, `UltraHdrLoader`,
+`BufferGeometryLoader`, `ObjLoader` (faces, no MTL), the LUT loaders
+(`.cube`, `.3dl`, image) and typeface.json fonts (`FontLoader`). Every
+loader is synchronous; there is no `LoadingManager`, `Cache` or
+`ObjectLoader`.
+
+**Animation.** Keyframe tracks of every value type, clips, `PropertyMixer`,
+`PropertyBinding` (position, quaternion, scale and morph influences),
+`AnimationAction`, `AnimationMixer` (without its `loop` / `finished`
+events), `AnimationObjectGroup` and `AnimationUtils`. Bézier tracks have no
+interpolant.
+
+**Workspace crate.** `sdf-text`: signed-distance-field text rendering with
+a `BatchedText` object (ttf-parser outlines, analytic rasteriser), and the
+SDF text examples with their gates. Its `d33_treemap_labels` example lays
+its treemap out with [d3-hierarchy](https://github.com/oneilltomhq/d3-hierarchy),
+a port of d3-hierarchy 3.1.2 that began in this repository.
 
 ## Examples graded green
 
@@ -367,8 +428,8 @@ cargo run --release --bin viewer -- 8                        # the same, by key
 cargo run --release --bin viewer -- shadowmap --headless --frames 40
 ```
 
-Opens the named example in a window (winit, tested on Wayland). All 99 graded
-examples are there, and so are the ungraded `webgpu_postprocessing_traa`, `webgpu_water`,
+Opens the named example in a window (winit, tested on Wayland). Every graded
+example is there, and so are the ungraded `webgpu_postprocessing_traa`, `webgpu_water`,
 `webgpu_postprocessing_sss`, `webgpu_postprocessing_ssgi`,
 `webgpu_postprocessing_ao`,
 `webgpu_postprocessing_dof`, `webgpu_postprocessing_ssr_denoise`,
@@ -385,7 +446,7 @@ notes have the numbers. Each one animates, orbits, dollies and pans through
 its *own* `animate()`, `resize()` and `OrbitControls` — the viewer drives the
 example, it does not restate it. `--list` prints the examples with their keys,
 and a key stands in for the name on the command line; in the window, `[` and
-`]` step to the previous and next example, because 70 of them do not fit in
+`]` step to the previous and next example, because most of them do not fit in
 the 36 single keys a keyboard has. The window prints one line a second with
 the frame rate and the steady-state render time (mean and max over the last
 60 frames, after a 10-frame warm-up):
@@ -411,7 +472,7 @@ workspace crates that depend on `three-rs` and are not ports of anything in
 three.js' `src/`.
 
 `three_rs::addons::controls::OrbitControls` is the exception to that rule, and
-it is in the root crate rather than a workspace one: 71 of the 99 graded pages
+it is in the root crate rather than a workspace one: most of the graded pages
 create an `OrbitControls`, and an example pulled in by `#[path]` cannot reach a
 crate that depends on `three-rs`. It is a port of
 `examples/jsm/controls/OrbitControls.js` — the same state, the same defaults,
