@@ -859,6 +859,14 @@ fn init_indirect_texture(max_instance_count: usize) -> DataTexture {
 /// `BatchedMesh.js`'s utils: a straight typed-array copy when both arrays are
 /// the same kind and `src` is not interleaved, otherwise through the
 /// component getters and setters (which denormalize and renormalize).
+///
+/// "Same kind" is stricter than three's `src.array.constructor !==
+/// target.array.constructor` in one pair: a `Float16BufferAttribute` keeps its
+/// binary16 bits in a `Uint16Array`, so three block-copies an `F16` source
+/// into a `U16` target (and back) bit for bit, where the port's [`ArrayKind`]
+/// tells them apart and copies the decoded values through the getters.
+///
+/// [`ArrayKind`]: crate::core::ArrayKind
 fn copy_attribute_data(src: &BufferAttribute, target: &mut BufferAttribute, target_offset: usize) {
     let item_size = target.item_size;
     if src.is_interleaved() || src.kind() != target.kind() {
