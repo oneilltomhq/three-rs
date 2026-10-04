@@ -2305,12 +2305,9 @@ impl Renderer {
                     // disabled builds its materials with no lights *and* no
                     // environment (see `SetupContext::lighting_disabled`).
                     lighting_disabled: !self.lighting_enabled,
-                    // `renderItem.clippingContext`, on this device's
-                    // `clip-distances` support.
-                    clipping: item
-                        .clipping
-                        .as_ref()
-                        .map(|c| c.with_hardware(self.clip_distances)),
+                    // `renderItem.clippingContext`, built by the walk on
+                    // this device's `clip-distances` support.
+                    clipping: item.clipping.clone(),
                     // `builder.context.getAO` from the pass's
                     // `builtinAOContext`; `setupAmbientOcclusion()` applies
                     // it (and skips transparent materials).
@@ -2703,6 +2700,7 @@ impl Renderer {
                     &projection,
                     &view,
                     camera.coordinate_system(),
+                    self.clip_distances,
                 ),
                 0.0,
                 &mut shadow_list,
@@ -2789,10 +2787,7 @@ impl Renderer {
                         ambient_occlusion: None,
                         // A `ClippingGroup` with `clipShadows` clips the
                         // shadow draw too; the walk left the others out.
-                        clipping: item
-                            .clipping
-                            .as_ref()
-                            .map(|c| c.with_hardware(self.clip_distances)),
+                        clipping: item.clipping.clone(),
                         lights: Vec::new(),
                         // The shadow pass does not carry morph targets yet:
                         // nothing in the ladder both morphs and casts a shadow.
@@ -3146,6 +3141,7 @@ impl Renderer {
                     &face_camera.projection_matrix,
                     &face_camera.matrix_world_inverse,
                     camera.coordinate_system(),
+                    self.clip_distances,
                 ),
                 0.0,
                 &mut face_list,
@@ -3206,10 +3202,7 @@ impl Renderer {
                         ambient_occlusion: None,
                         // A `ClippingGroup` with `clipShadows` clips the
                         // shadow draw too; the walk left the others out.
-                        clipping: item
-                            .clipping
-                            .as_ref()
-                            .map(|c| c.with_hardware(self.clip_distances)),
+                        clipping: item.clipping.clone(),
                         lights: Vec::new(),
                         morph: None,
                         skin: None,
@@ -3344,7 +3337,7 @@ impl Renderer {
         // `PassNode.updateBefore()` writes `camera.layers.mask` and restores it
         // after its render. The port keeps the override on the renderer and
         // applies it here, which is the only place the mask is read.
-        let mut project_camera = ProjectCamera::new(camera);
+        let mut project_camera = ProjectCamera::new(camera, self.clip_distances);
         if let Some(layers) = self.camera_layers {
             project_camera.layers = layers;
         }

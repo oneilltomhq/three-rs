@@ -42,7 +42,7 @@ pub struct ClippingContext {
     /// `clip-distances` feature, so up to eight union planes become
     /// `@builtin( clip_distances )` in the vertex stage
     /// (`NodeMaterial.setupHardwareClipping()`) instead of a fragment
-    /// discard. Set by the renderer, not by the walk.
+    /// discard. Taken from the walk's [`ClippingView`].
     pub hardware: bool,
 }
 
@@ -55,8 +55,9 @@ impl std::hash::Hash for ClippingContext {
 }
 
 /// `ClippingContext.updateGlobal( scene, camera )`: what every context of one
-/// walk shares — the camera's view matrix, and whether the walk is a shadow
-/// pass (`scene.overrideMaterial.isShadowPassMaterial`).
+/// walk shares — the camera's view matrix, whether the walk is a shadow pass
+/// (`scene.overrideMaterial.isShadowPassMaterial`), and whether the device
+/// clips in hardware.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ClippingView {
     /// `viewMatrix` — `camera.matrixWorldInverse`.
@@ -65,16 +66,20 @@ pub(crate) struct ClippingView {
     pub view_normal_matrix: Matrix3,
     /// `shadowPass`.
     pub shadow_pass: bool,
+    /// `builder.isAvailable( 'clipDistance' )`, copied into every context
+    /// the walk builds ([`ClippingContext::hardware`]).
+    pub hardware: bool,
 }
 
 impl ClippingView {
-    pub(crate) fn new(view_matrix: Matrix4, shadow_pass: bool) -> Self {
+    pub(crate) fn new(view_matrix: Matrix4, shadow_pass: bool, hardware: bool) -> Self {
         let mut view_normal_matrix = Matrix3::default();
         view_normal_matrix.get_normal_matrix(&view_matrix);
         Self {
             view_matrix,
             view_normal_matrix,
             shadow_pass,
+            hardware,
         }
     }
 
@@ -109,6 +114,7 @@ impl ClippingContext {
             return parent.clone();
         }
         let mut context = parent.as_deref().cloned().unwrap_or_default();
+        context.hardware = view.hardware;
         let planes = group.clipping_planes.iter().map(|p| view.project(p));
         if group.clip_intersection {
             context.intersection.extend(planes);
@@ -119,18 +125,6 @@ impl ClippingContext {
             return None;
         }
         Some(Rc::new(context))
-    }
-
-    /// This context on a device with (or without) the `clip-distances`
-    /// feature.
-    pub(crate) fn with_hardware(self: &Rc<Self>, hardware: bool) -> Rc<Self> {
-        if self.hardware == hardware {
-            return self.clone();
-        }
-        Rc::new(Self {
-            hardware,
-            ..(**self).clone()
-        })
     }
 
     /// `NodeMaterial.setupHardwareClipping()`'s test: one to eight union

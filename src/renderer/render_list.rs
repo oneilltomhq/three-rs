@@ -154,8 +154,9 @@ pub(crate) struct ProjectCamera {
     /// camera.
     pub sub_frustums: Vec<Frustum>,
     /// `renderContext.clippingContext.updateGlobal( scene, camera )` — the
-    /// view matrix the `ClippingGroup` planes are projected with, and whether
-    /// this is a shadow pass (where only `clipShadows` groups clip).
+    /// view matrix the `ClippingGroup` planes are projected with, whether
+    /// this is a shadow pass (where only `clipShadows` groups clip), and
+    /// whether the device has `clip-distances`.
     pub clipping: ClippingView,
 }
 
@@ -169,12 +170,14 @@ impl ProjectCamera {
     /// The same thing for a camera the port models without an `Object3D`
     /// wrapper — the shadow cameras, whose projection and world-inverse
     /// matrices `LightShadow.updateMatrices()` has just refreshed. The walk
-    /// is a shadow pass for the clipping context.
+    /// is a shadow pass for the clipping context. `hardware_clipping` is
+    /// whether the device has the `clip-distances` feature.
     pub fn from_parts(
         layers: Layers,
         projection_matrix: &Matrix4,
         matrix_world_inverse: &Matrix4,
         coordinate_system: CoordinateSystem,
+        hardware_clipping: bool,
     ) -> Self {
         let mut proj_screen_matrix = Matrix4::identity();
         proj_screen_matrix.multiply_matrices(projection_matrix, matrix_world_inverse);
@@ -189,11 +192,13 @@ impl ProjectCamera {
             sub_frustums: Vec::new(),
             // Every caller is a shadow pass, which three renders with a
             // `ShadowPassMaterial` as the scene's `overrideMaterial`.
-            clipping: ClippingView::new(*matrix_world_inverse, true),
+            clipping: ClippingView::new(*matrix_world_inverse, true, hardware_clipping),
         }
     }
 
-    pub fn new(camera: &dyn RenderCamera) -> Self {
+    /// The walk for `camera`; `hardware_clipping` is whether the device has
+    /// the `clip-distances` feature.
+    pub fn new(camera: &dyn RenderCamera, hardware_clipping: bool) -> Self {
         let mut proj_screen_matrix = Matrix4::identity();
         proj_screen_matrix
             .multiply_matrices(&camera.projection_matrix(), &camera.matrix_world_inverse());
@@ -220,7 +225,7 @@ impl ProjectCamera {
             proj_screen_matrix,
             frustum,
             sub_frustums,
-            clipping: ClippingView::new(camera.matrix_world_inverse(), false),
+            clipping: ClippingView::new(camera.matrix_world_inverse(), false, hardware_clipping),
         }
     }
 }
@@ -521,7 +526,7 @@ mod tests {
         let mut list = RenderList::new();
         project_object(
             &scene.node,
-            &ProjectCamera::new(camera),
+            &ProjectCamera::new(camera, false),
             0.0,
             &mut list,
             true,
@@ -824,7 +829,7 @@ mod tests {
         let mut list = RenderList::new();
         project_object(
             &scene.node,
-            &ProjectCamera::new(&camera()),
+            &ProjectCamera::new(&camera(), false),
             0.0,
             &mut list,
             false,
@@ -936,6 +941,7 @@ mod tests {
                 &camera.projection_matrix(),
                 &camera.matrix_world_inverse(),
                 camera.coordinate_system(),
+                false,
             ),
             0.0,
             &mut list,
