@@ -762,8 +762,8 @@ Each frame the node draws one quad into one two-attachment target. The AO
 attachment is `R8Unorm`. The GI attachment is `Rg11b10Ufloat`. On an
 adapter that cannot render it the node logs three's error and the effect
 fails, as three's does: wgpu rejects the attachment. It allocates
-nothing per frame. `docs/nodes.md` §69 has the new `output_struct()` node it
-needed and the divergences.
+nothing per frame. `docs/nodes.md` §69 has the divergences, and §66 the
+`output_struct()` node it writes its two attachments with.
 
 **There is no rung.** three lists `webgpu_postprocessing_ssgi` in its own e2e
 exception list (`test/e2e/puppeteer.js`, under "Black screen"). The port is
@@ -771,6 +771,36 @@ gated on its SSGI, composite and TRAA resolve shaders against three's dump of
 the page, and on `tests/ssgi_frames.rs`. That test checks the AO darkening
 and the colour bleeding at a wall's foot, the temporal rotation, and that the
 options are live. The example is in the native viewer (`viewer ssgi`).
+
+## Depth of field
+
+```rust
+let dof_pass = dof(
+    &scene_pass.texture(),
+    scene_pass.view_z_node("depth"),
+    focus_distance, // uniform( 500 )
+    focal_length,   // uniform( 200 )
+    bokeh_scale,    // uniform( 10 )
+);
+render_pipeline.output_node = Some(dof_pass.node());
+```
+
+`DepthOfFieldNode` owns six targets and draws nine quads per frame, run from
+the first draw that samples `dof_pass.node()`, as TRAA's resolve is. It needs
+nothing from the caller beyond the call. `docs/nodes.md` §66 has the passes
+and the four graph pieces it brought: `outputStruct()`, red targets,
+`uniformArray( Vector2[] )`, and a Gaussian through the CoC texture's uv
+matrix.
+
+**There is no rung for it**, for TRAA's reason: three lists
+`webgpu_postprocessing_dof` in its e2e exception list. All seven distinct quad
+shaders are gated against three's dump instead (`dof_*` in
+`tests/nodes_display_wgsl.rs`), and the page is in the native viewer
+(`viewer postprocessing_dof`).
+
+`webgpu_postprocessing_dof_basic` is graded, but it does not use this node.
+Its depth of field is a `boxBlur` of the pass, mixed in by
+`smoothstep( min, max, | viewZ - focus.z | )`.
 
 ## The display nodes of #144
 
@@ -784,7 +814,8 @@ options are live. The example is in the native viewer (`viewer ssgi`).
 
 `tests/nodes_display_wgsl.rs` gates each against three's dump of a page that
 uses it. `webgpu_procedural_texture`, `webgpu_postprocessing_sobel` and
-`webgpu_postprocessing_transition` are the graded rungs.
+`webgpu_postprocessing_transition` are the graded rungs, and
+`webgpu_postprocessing_dof_basic` grades `boxBlur`.
 
 The nodes follow the shapes above:
 
@@ -815,3 +846,39 @@ Divergences, each noted where it lives:
   the viewport texture tap to `hash_blur_with`, and its WGSL gate compares
   three's loop exactly. The texture and the copy behind it are in
   `docs/nodes.md` §61.
+
+## Light shafts and lens flares (`webgpu_postprocessing_godrays`, `webgpu_postprocessing_lensflare`)
+
+`godrays`, `bilateral_blur`, `depth_aware_blend` and `lensflare` are the next
+display nodes. Like `TraaNode`, each one that owns a target registers its own
+update-before with the renderer, so the pipeline runs it and the example does
+not:
+
+```rust
+let godrays_pass = godrays(&scene_pass_depth, camera.clone(), &point_light);
+let blur_pass = bilateral_blur(&godrays_pass.texture(), None, 4, 0.1);
+render_pipeline.output_node = Some(depth_aware_blend(
+    &scene_pass_color,
+    &blur_pass.texture(),
+    &scene_pass_depth,
+    &camera,
+    options,
+));
+```
+
+Three things are new here:
+
+- **The pass's depth is read by an effect.** `godrays` reconstructs world
+  positions from `scene_pass.depth_texture()`. It runs the pass's
+  update-before first, so the depth it marches is this frame's.
+- **An effect reads a shadow map.** `godrays` samples the point light's cube
+  shadow through `LightShadow::point_depth_texture()`. The renderer draws the
+  shadow into that same texture.
+- **A hand-fired node sizes itself from its input.** The lens-flare page
+  still calls `blur_pass.render()` itself, as `GaussianBlurNode` requires.
+  `render()` now runs the input's update-before first, through
+  `Renderer::update_texture_source`. So the first frame's blur is not sized
+  from a 1×1 `rtt()`.
+
+`docs/nodes.md` §74 and §75 have the shaders, the gates and what is not
+ported.
