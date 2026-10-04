@@ -315,6 +315,9 @@ mod webgpu_lightprobe_cubecamera;
 #[path = "webgpu_ocean.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_ocean;
+#[path = "webgpu_postprocessing_3dlut.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_postprocessing_3dlut;
 #[path = "webgpu_postprocessing_dof_basic.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_postprocessing_dof_basic;
@@ -327,6 +330,9 @@ mod webgpu_postprocessing_lensflare;
 #[path = "webgpu_postprocessing_motion_blur.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_postprocessing_motion_blur;
+#[path = "webgpu_postprocessing_outline.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_postprocessing_outline;
 #[path = "webgpu_postprocessing_ssr.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_postprocessing_ssr;
@@ -575,6 +581,12 @@ const GRADED: &[(&str, fn())] = &[
     }),
     ("webgpu_postprocessing_ssr", || {
         drop(webgpu_postprocessing_ssr::init())
+    }),
+    ("webgpu_postprocessing_3dlut", || {
+        drop(webgpu_postprocessing_3dlut::init())
+    }),
+    ("webgpu_postprocessing_outline", || {
+        drop(webgpu_postprocessing_outline::init())
     }),
 ];
 

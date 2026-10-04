@@ -312,6 +312,28 @@ have their own sections after the release they ship with. The format follows [Ke
   `depth_texture_load`, `all`, `view_z_to_perspective_depth` and
   `get_view_position`. Also `Renderer::init_render_target` and
   `RenderPipeline::claim_view_offset`. (#165)
+- **`outline`** (`nodes::display`), `OutlineNode.js`: selection outlines,
+  with visible and hidden edges, `edgeThickness`, `edgeGlow` and
+  `downSampleRatio`. Its two scene renders go through a crate-private
+  renderer hook that stands in for `setRenderObjectFunction()`. The depth
+  and mask scene materials, the copy, edge-detection, X-blur and composite
+  quads, and the page's output are gated against three's dump; the sprite
+  depth and mask materials (the page has no sprites, so the dump has none)
+  and the Y blurs (one module with the X blur in three) are not.
+  `tests/outline_frames.rs` checks what a selection draws.
+- **`webgpu_postprocessing_outline`** is graded: 15 of 100000 pixels, the
+  same as three's own frame. Nothing is selected in the graded frame.
+- **`lut_3d`** (`nodes::display`), `Lut3DNode.js`, and
+  **`tsl::texture_3d_sampled`**, `texture3D( texture )` with no level.
+- **`LutCubeLoader`**, **`Lut3dlLoader`** and **`LutImageLoader`**
+  (`loaders`). Each is checked byte for byte against three's own loader,
+  quirks included (`tests/loaders_lut.rs`).
+- **`webgpu_postprocessing_3dlut`** is graded: 0 of 100000 pixels.
+  `tests/lut_3d_frames.rs` checks intensity and table swaps.
+- **`ObjLoader`** (`loaders`), `OBJLoader.js` for meshes: `v`, `vn`, `vt`,
+  `f`, `o`, `g`, `s`, `usemtl` and `mtllib`. `l` and `p` elements are
+  refused. There is no `MTLLoader`. Checked against three's parse
+  (`tests/loaders_obj.rs`).
 - **`ssr`** (`nodes::display`), `SSRNode.js`: screen-space reflections, a
   march through the depth buffer with roughness taken from a blurred mip
   chain. `stochastic`, `binaryRefine`, `reflectNonMetals`,
@@ -369,6 +391,10 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Changed
 
+- A plain texture sample built outside the fragment stage emits
+  `textureSampleLevel( …, 0 )`, as three's `_generateTextureSample()` does.
+  It used to emit `textureSample`, which WGSL rejects in a vertex shader.
+  The 3dlut page's smoke vertex shader is gated against three's dump.
 - **`InstancedBufferAttribute.array` is private**, read through `array()` and
   written through `array_mut()`, which bumps the new `version()`;
   `set_needs_update()` and `id()` join them. `set_matrix_at` / `set_color_at`

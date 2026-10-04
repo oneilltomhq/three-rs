@@ -24,10 +24,10 @@ This matrix judges every exported name in three.js revision 5f610f5 (r187) — `
 | nodes | 141 | 100 | 27 | 9 | 5 | 74% |
 | tsl | 683 | 556 | 51 | 51 | 25 | 84% |
 | addons/controls | 11 | 1 | 6 | 4 | 0 | 9% |
-| addons/loaders | 71 | 6 | 2 | 63 | 0 | 8% |
+| addons/loaders | 71 | 9 | 3 | 59 | 0 | 13% |
 | addons/postprocessing | 30 | 0 | 0 | 0 | 30 | — |
 | addons/other | 102 | 13 | 4 | 62 | 23 | 16% |
-| **total** | **1317** | **812** | **136** | **246** | **123** | **68%** |
+| **total** | **1317** | **815** | **137** | **242** | **123** | **68%** |
 
 TSL by family:
 
@@ -44,7 +44,7 @@ TSL by family:
 | materialx | 49 | 48 | 0 | 1 | 0 |
 | utils | 77 | 47 | 15 | 5 | 10 |
 
-Graded examples: 90 (the README gallery plus `webgpu_textures_2d-array_compressed`, which has a live `rung!` but a hyphen in its name). 10 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
+Graded examples: 92 (the README gallery plus `webgpu_textures_2d-array_compressed`, which has a live `rung!` but a hyphen in its name). 10 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
 
 ## math
 
@@ -598,7 +598,7 @@ Graded examples: 90 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ## addons/loaders
 
-71 rows: 6 Present, 2 Partial, 63 Absent, 0 N.A.
+71 rows: 9 Present, 3 Partial, 59 Absent, 0 N.A.
 
 | three.js name | verdict | three-rs symbol | verified by | note |
 |---|---|---|---|---|
@@ -624,16 +624,16 @@ Graded examples: 90 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `KTX2Loader` | Present | Ktx2Loader (src/loaders/ktx2_loader.rs:103) | tests/ktx2_loader.rs (byte oracle); webgpu_loader_gltf_compressed | cube/3D results parse but into_texture refuses them (no renderer path) |
 | `KTXLoader` | Absent | — | — |  |
 | `LDrawLoader` | Absent | — | — |  |
-| `LUT3dlLoader` | Absent | — | — |  |
-| `LUTCubeLoader` | Absent | — | — |  |
-| `LUTImageLoader` | Absent | — | — |  |
+| `LUT3dlLoader` | Present | Lut3dlLoader (src/loaders/lut_3dl_loader.rs:49) | tests/loaders_lut.rs (byte oracle against three's parse under node); webgpu_postprocessing_3dlut | synchronous load(); setType() refuses types other than UnsignedByte/Float |
+| `LUTCubeLoader` | Present | LutCubeLoader (src/loaders/lut_cube_loader.rs:58) | tests/loaders_lut.rs (byte oracle against three's parse under node); webgpu_postprocessing_3dlut (graded) | synchronous load(); setType() refuses types other than UnsignedByte/Float |
+| `LUTImageLoader` | Present | LutImageLoader (src/loaders/lut_image_loader.rs:52) | tests/loaders_lut.rs (byte oracle against three's loader in Chrome, flip off and on); webgpu_postprocessing_3dlut | an image with fewer than size slices of size² texels is refused in load() rather than left to fail at the upload; a longer one is cut to the size³ texels three's upload reads |
 | `LWOLoader` | Absent | — | — |  |
 | `MD2Loader` | Absent | — | — |  |
 | `MDDLoader` | Absent | — | — |  |
 | `MTLLoader` | Absent | — | — |  |
 | `MaterialXLoader` | Absent | — | — | mx_* TSL library exists (src/nodes/materialx), loader does not |
 | `NRRDLoader` | Absent | — | — |  |
-| `OBJLoader` | Absent | — | — |  |
+| `OBJLoader` | Partial | ObjLoader (src/loaders/obj_loader.rs:67) | tests/loaders_obj.rs (byte oracle against three's parse under node); webgpu_postprocessing_outline (graded) | faces only: `l`/`p` elements and the points fallback are refused; no setMaterials (no MTLLoader); usemtl names not carried onto materials |
 | `PCDLoader` | Absent | — | — |  |
 | `PDBLoader` | Absent | — | — |  |
 | `PLYLoader` | Absent | — | — |  |
@@ -692,9 +692,9 @@ Graded examples: 90 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `GTAOPass` | N.A. | — | — | WebGL composer; GTAOPass -> GTAONode ao(): Present; GtaoNode (src/nodes/display/gtao.rs:70); webgpu_postprocessing_ao (ungraded) |
 | `GlitchPass` | N.A. | — | — | WebGL composer; GlitchPass -> no TSL counterpart: Absent |
 | `HalftonePass` | N.A. | — | — | WebGL composer; HalftonePass -> no TSL node (inline TSL in webgpu_tsl_halftone, graded); webgpu_tsl_halftone |
-| `LUTPass` | N.A. | — | — | WebGL composer; LUTPass -> Lut3DNode lut3D(): Absent |
+| `LUTPass` | N.A. | — | — | WebGL composer; LUTPass -> Lut3DNode lut3D(): Present; lut_3d (src/nodes/display/lut_3d.rs:17); webgpu_postprocessing_3dlut |
 | `MaskPass` | N.A. | — | — | WebGL composer; MaskPass -> pass().a mix pattern: Present; PassNode (src/renderer/pass.rs:54); webgpu_postprocessing_masking |
-| `OutlinePass` | N.A. | — | — | WebGL composer; OutlinePass -> OutlineNode outline(): Absent |
+| `OutlinePass` | N.A. | — | — | WebGL composer; OutlinePass -> OutlineNode outline(): Present; outline (src/nodes/display/outline.rs:100); webgpu_postprocessing_outline |
 | `OutputPass` | N.A. | — | — | WebGL composer; OutputPass -> renderOutput() (core): Present; render_output (src/materials/node_material.rs:1040); webgpu_postprocessing_bloom_emissive |
 | `Pass` | N.A. | — | — | WebGL composer; Pass -> PassNode/TempNode (core): Present; PassNode (src/renderer/pass.rs:54); webgpu_postprocessing_masking |
 | `RenderPass` | N.A. | — | — | WebGL composer; RenderPass -> pass(scene,camera) (core): Present; pass (src/renderer/pass.rs:117); webgpu_postprocessing_masking |
@@ -822,7 +822,7 @@ Graded examples: 90 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ### Supplementary: `examples/jsm/tsl/display/*.js`
 
-These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 24 Present, 2 Partial, 22 Absent.
+These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 26 Present, 2 Partial, 20 Absent.
 
 | file | status | three-rs port and check |
 |---|---|---|
@@ -848,10 +848,10 @@ These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) an
 | `hashBlur.js` | Present | hash_blur; tests/nodes_display_wgsl.rs (loop gated against three's webgpu_backdrop_area dump, taps through viewportSharedTexture) |
 | `ImportanceSampledEnvironment.js` | Absent | — |
 | `LensflareNode.js` | Present | lensflare/LensflareNode (src/nodes/display/lensflare.rs:84); tests/nodes_display_wgsl.rs; webgpu_postprocessing_lensflare (graded); takes a texture: the caller writes convertToTexture()'s rtt(); no dispose() |
-| `Lut3DNode.js` | Absent | — |
+| `Lut3DNode.js` | Present | lut_3d; tests/nodes_display_wgsl.rs; webgpu_postprocessing_3dlut (graded); the table is fixed when the node is built (no `lutNode.value` swap) |
 | `MotionBlur.js` | Present | motion_blur; tests/nodes_display_wgsl.rs; webgpu_postprocessing_motion_blur (graded) |
 | `OITPassNode.js` | Absent | — |
-| `OutlineNode.js` | Absent | — |
+| `OutlineNode.js` | Present | outline; tests/nodes_display_wgsl.rs (the depth and mask materials and the five quad shaders, dumped by three with an object selected, and the page's output); tests/outline_frames.rs; webgpu_postprocessing_outline (graded, empty selection) |
 | `ParallaxBarrierPassNode.js` | Absent | — |
 | `PixelationPassNode.js` | Present | pixelation_pass/PixelationPassNode (src/nodes/display/pixelation_pass.rs:35,24); tests/nodes_display_wgsl.rs; webgpu_postprocessing_pixel (ported, ungraded: three.js fails its own reference on this machine) |
 | `radialBlur.js` | Present | radial_blur; webgpu_postprocessing_radial_blur |
@@ -1677,7 +1677,7 @@ The first refresh of this matrix closed the previous top five. Velocity and TRAA
 1. **The screen-space effect nodes** (`DenoiseNode`; `denoise` 6 pages). `SSRNode` is Present (`webgpu_postprocessing_ssr`, graded). `GTAONode` and `builtinAOContext` are Present now (`webgpu_postprocessing_ao`, ungraded: it is on three's e2e exception list), and so are `DepthOfFieldNode` (`webgpu_postprocessing_dof`), `SSGINode` (`webgpu_postprocessing_ssgi`) and `SSSNode` with `builtinShadowContext` (`webgpu_postprocessing_sss`), all ungraded for the same reason. What is left needs a velocity target and a temporal resolve, and both now exist; these pages are the direct payoff of the velocity work. Porting them also gives the depth reads (`viewportDepthTexture`, `linearDepth`, `getViewPosition`) their first graded consumer.
 2. **EventDispatcher** (issues 153, 159). 8 pages subscribe to `change` or `finished` events. In ordinary use these are render-on-demand behind OrbitControls and chaining animation clips when one ends, and neither works in the port today. `AnimationMixer` and `AnimationAction` fire nothing.
 3. **The TransformControls pages** (`webgpu_modifier_curve`, `webgpu_shadowmap_progressive`, `webgpu_tsl_compute_attractors_particles`). `FirstPersonControls` (8 pages), `FlyControls` (1) and now `TransformControls` are ported and gated against three's classes (`docs/controls.md`). What is left is wiring the gizmo into the pages: `webgpu_modifier_curve`'s port still leaves it out, and the viewer's controls hook is typed for `OrbitControls`.
-4. The remaining display files (`OutlineNode`, `Lut3DNode`, `FilmNode`, 1 to 2 pages each). Small, self-contained, and each unlocks one page.
+4. The remaining display files (`FilmNode`, 1 to 2 pages each). Small, self-contained, and each unlocks one page.
 
 **Runners-up, and why they rank lower:**
 - RectAreaLight and LTC (3 pages).

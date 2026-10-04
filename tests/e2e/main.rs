@@ -482,6 +482,10 @@ mod webgpu_lightprobe;
 #[allow(dead_code)]
 mod webgpu_lightprobe_cubecamera;
 
+#[path = "../../examples/webgpu_postprocessing_3dlut.rs"]
+#[allow(dead_code)]
+mod webgpu_postprocessing_3dlut;
+
 #[path = "../../examples/webgpu_postprocessing_godrays.rs"]
 #[allow(dead_code)]
 mod webgpu_postprocessing_godrays;
@@ -489,6 +493,10 @@ mod webgpu_postprocessing_godrays;
 #[path = "../../examples/webgpu_postprocessing_lensflare.rs"]
 #[allow(dead_code)]
 mod webgpu_postprocessing_lensflare;
+
+#[path = "../../examples/webgpu_postprocessing_outline.rs"]
+#[allow(dead_code)]
+mod webgpu_postprocessing_outline;
 
 fn three_js_dir() -> PathBuf {
     three_rs::testing::three_js_dir()
@@ -1344,6 +1352,104 @@ fn webgpu_postprocessing_sobel() {
         name,
         &mut app,
         webgpu_postprocessing_sobel::animate,
+        |app| app.renderer.device(),
+    );
+}
+
+/// The coffee mug and its smoke through `renderOutput()` and `Lut3DNode`,
+/// graded by `Bourbon 64.CUBE` at full intensity. The nine tables are all
+/// loaded in `init()`, through the three LUT loaders, as the page does.
+#[test]
+fn webgpu_postprocessing_3dlut() {
+    let name = "webgpu_postprocessing_3dlut";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_postprocessing_3dlut::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_postprocessing_3dlut::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_postprocessing_3dlut::animate,
+        |app| app.renderer.device(),
+    );
+}
+
+/// Spheres, a torus, a floor and `tree.obj` under a shadow-casting light,
+/// with `OutlineNode`'s outline added over the scene pass. No pointer has
+/// moved, so the selection is empty: the outline's passes are skipped and
+/// its composite adds nothing, as in three.js' frame. `tests/outline_frames.rs`
+/// covers a selection.
+#[test]
+fn webgpu_postprocessing_outline() {
+    let name = "webgpu_postprocessing_outline";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_postprocessing_outline::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_postprocessing_outline::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_postprocessing_outline::animate,
         |app| app.renderer.device(),
     );
 }
@@ -6219,6 +6325,13 @@ fn steady_frame_builds_nothing() {
     // steady frames resize nothing and build nothing.
     rung!(webgpu_postprocessing_godrays);
     rung!(webgpu_postprocessing_lensflare);
+    // The nine tables are parsed in `init()` and only the graded one is ever
+    // uploaded, on frame one; `animate()` rewrites the size and intensity
+    // uniforms in place and keeps the one `Lut3DNode`.
+    rung!(webgpu_postprocessing_3dlut);
+    // An empty selection: `OutlineNode.updateBefore()` returns before its
+    // first draw every frame, so only the scene pass and the output build.
+    rung!(webgpu_postprocessing_outline);
 }
 
 // ---------------------------------------------------------------------------

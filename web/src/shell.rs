@@ -330,6 +330,8 @@ PostprocessingGodrays, webgpu_postprocessing_godrays, "../../examples/webgpu_pos
 PostprocessingLensflare, webgpu_postprocessing_lensflare, "../../examples/webgpu_postprocessing_lensflare.rs";
 PostprocessingDofBasic, webgpu_postprocessing_dof_basic, "../../examples/webgpu_postprocessing_dof_basic.rs";
 PostprocessingSsr, webgpu_postprocessing_ssr, "../../examples/webgpu_postprocessing_ssr.rs";
+Postprocessing3dlut, webgpu_postprocessing_3dlut, "../../examples/webgpu_postprocessing_3dlut.rs";
+PostprocessingOutline, webgpu_postprocessing_outline, "../../examples/webgpu_postprocessing_outline.rs";
 }
 
 /// Where an example's assets come from: three.js at the commit this port is

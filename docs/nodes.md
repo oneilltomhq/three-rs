@@ -6330,7 +6330,7 @@ things that are not nodes:
 - Changing `focusDistance`, `focalLength` or `bokehScale` from a GUI. They
   are ordinary uniforms, so a host can set them, but no page here does.
 
-Sections 72, 73, 77 and 79 to 82 are reserved for the ports on sibling branches. They are numbered as those branches land.
+Sections 77 and 79 to 82 are reserved for the ports on sibling branches. They are numbered as those branches land.
 
 ## 67. TSL sweep 2: the accessors batch
 
@@ -6935,6 +6935,213 @@ against fixture `webgpu_postprocessing_sss_m12_ground.wgsl`.
 - `resetRendererState()`'s `setRenderObjectFunction( null )`, as in
   `rtt.rs` and `after_image.rs`: `Renderer::render_quad` never goes through
   the render-object function.
+
+## 72. `OutlineNode` (`webgpu_postprocessing_outline`)
+
+### 72.1 What three does
+
+`outline( scene, camera, { selectedObjects, edgeThickness, edgeGlow,
+downSampleRatio } )` is a `TempNode` with `updateBeforeType = FRAME`. Its
+value is `passTexture( this, composite.texture )`: red where the outline of a
+selected object is visible, green where it is hidden behind something else.
+The page adds `( visibleEdge * visibleEdgeColor + hiddenEdge *
+hiddenEdgeColor ) * edgeStrength`, times an `oscSine` pulse when
+`pulsePeriod > 0`, to the scene pass.
+
+`updateBefore()` builds a selection cache (every `Mesh` and `Sprite` under
+the selected objects). If it is empty it skips everything, and on the frame
+the selection *becomes* empty it clears the composite to transparent black
+once. Otherwise, under `resetRendererAndSceneState()`, with a white clear:
+
+1. It renders the scene into a target with a `FloatType` `DepthTexture`,
+   through a render-object function that draws only the objects *not*
+   selected, with a black depth-only material.
+2. It renders the scene again into the mask, drawing only the selected
+   objects with `prepareMask`: `vec3( 0, depthTest, 1 )`, where
+   `depthTest` is `positionView.z <= viewZ` of the step-1 depth (turned back
+   into view z, perspective or orthographic, chosen at `setup()`). It is 1
+   where the fragment is behind something not selected, and 0 where it is
+   in front. Outside the selection the white clear leaves 1 in every channel.
+3. It copies the mask into `maskDownSample` at `1 / downSampleRatio` of the
+   drawing buffer, `Math.round`ed.
+4. Edge detection: four taps one texel apart, `d` the length of the two
+   central differences of the mask's red channel, and the result is
+   `vec4( edgeColor, 1 ) * d`. `edgeColor` is red (`_visibleEdgeColor`)
+   when `1 - visibilityFactor > 0.001` and green (`_hiddenEdgeColor`)
+   otherwise, where `visibilityFactor` is the smallest of the four taps'
+   green. So `.r` (the visible edge) is set where any tap is visible and
+   `.g` (the hidden edge) where all of them are hidden.
+5. A separable Gaussian of radius `edgeThickness` (`MAX_RADIUS = 4` taps a
+   side, the offsets scaled by `kernelRadius / MAX_RADIUS`), X then Y, at
+   that resolution.
+6. The same blur at radius 4 at half that resolution again.
+7. The composite: `mask.r * ( edge1 + edge2 * edgeGlow )`, at full size.
+   `mask.r` is 1 outside the selection and 0 on it, which is why the ring
+   sits *outside* the silhouette.
+
+### 72.2 The port
+
+`nodes::display::outline` builds the same eleven materials in three's order
+and draws them in three's order. `OutlineNode::materials()` (doc-hidden)
+lists them for the WGSL gates. The page's own graded frame never builds the
+quad materials, because nothing is selected until the pointer moves. So
+`tools/dump-pages/outline_selected.html` is the page with
+`selectedObjects.push( torus )` added, and `tests/nodes_display_wgsl.rs`
+gates the depth and mask materials and the five quad shaders against that
+dump, plus the page's output shader against the page's own dump.
+
+**The render-object functions.** Three installs two closures with
+`renderer.setRenderObjectFunction()`. The port has no per-object callback,
+so it has a hook that does the same: `Renderer.outline_selection`, an
+`OutlineSelection { selected, draw_selected, material, sprite_material }`
+(`src/renderer/mod.rs`). While it is set, the opaque and transparent loops
+skip every object whose membership in `selected` differs from
+`draw_selected`, and draw the rest with the pass's material in place of
+their own. It is `pub(crate)` and set only for the length of
+`render_selection()`, the same scoping as `toon_outline` for
+`ToonOutlinePassNode`.
+
+**What `resetSceneState()` turns off.** Three nulls `scene.background` and
+`scene.overrideMaterial` for the two renders. The hook ignores both: the
+background is neither drawn nor used as a force-clear colour, and the
+selection's material wins over an override. The renderer also skips the
+shadow maps while the hook is set. In three they render from
+`ShadowNode.updateBefore()`, which only a lit program reaches, and both
+outline materials are unlit, so three draws none there either.
+
+**`cameraNear` / `cameraFar`.** Three uses `reference( 'near', 'float',
+camera )`, refreshed per object. The port has settable uniforms, written
+from the camera at the top of `update_before()`. The values the shader sees
+are the same.
+
+**The blur materials.** Three has one material per resolution and rewrites
+its colour texture and `_blurDirection` between the X and Y draws. Here
+each draw has its own material, with its source texture bound and its
+direction a constant `uniform`, as `bloom` already does for
+`UnrealBloomPass`. The four programs come from the same two `Fn()` bodies,
+and the two shapes are the ones gated.
+
+**The empty composite.** The page's output samples the composite on every
+frame, including the first, when nothing has drawn into it. Three's
+`Textures.updateTexture()` gives a render target texture its GPU texture
+when it is first bound, so it reads a zeroed 1×1 target. The port has no
+lazy creation at bind time, so `update_before()` calls
+`Renderer::init_render_target( composite )` first. That call is idempotent.
+
+**Gates.**
+
+- The e2e rung grades the page at 15 of 100000 pixels. It has an empty
+  selection, so this frame tests that the node costs nothing and adds
+  nothing.
+- The WGSL gates (`tests/nodes_display_wgsl.rs`, eight of them) cover the
+  depth and mask scene materials, the copy, edge-detection, X-blur and
+  composite quads, and the page's output. Not gated: the sprite depth and
+  mask materials (the page has no sprites, so three's dump has none) and the
+  two Y-blur materials (three draws X and Y with one module; the port's Y
+  materials differ from the gated X ones only in the texture and the baked
+  direction).
+- `tests/outline_frames.rs` draws a selection on the GPU. It checks that a
+  selected box gets a red ring outside its silhouette and no green, that a
+  blocker in front turns the ring green, that `edgeGlow = 1` adds outline
+  without reaching inside the selection, that a plain render after the
+  outline frame is unchanged (the selection hook is put back), that
+  deselecting clears the composite and it stays clear, and that an
+  orthographic camera also gets a ring.
+
+**The example.** `tree.obj` is loaded synchronously by the new `ObjLoader`.
+The page's `onPointerMove()` and `checkIntersection()` are `pointer_move(
+app, x, y, width, height )`: the nearest hit becomes the one selected
+object, and a miss keeps the selection, as in the page. The viewer routes
+the pointer to `OrbitControls` only, as it does for
+`webgpu_lines_fat_raycasting`, so selecting there needs a host that calls
+`pointer_move`. `tests/outline_frames.rs` covers what selecting draws.
+
+### 72.3 Not ported
+
+- `dispose()`.
+- Reassigning `downSampleRatio`, `edgeThicknessNode` or `edgeGlowNode` after
+  construction. Three picks a new node up at the next `setup()`; the port
+  builds its materials once.
+- `getTextureNode()` as a separate object. `OutlineNode::node()` *is* the
+  composite tap.
+- Renaming the scene (`Outline [ Depth ]`, `Outline [ Mask ]`) and the quad
+  for the two renders. In three these names only label the passes in the
+  inspector.
+
+## 73. `Lut3DNode` and the LUT loaders (`webgpu_postprocessing_3dlut`)
+
+### 73.1 What three does
+
+`lut3D( input, texture3D( lut ), size, intensity )` is
+`mix( base, vec4( lut.sample( uvw ).rgb, base.a ), intensity )`, with
+`uvw = 0.5 / size + base.rgb * ( 1 - 1 / size )`, so that the table's edge
+texels are sampled at their centres. `size` is a `uniform`. The page puts it
+over `renderOutput( pass( scene, camera ) )`, with `outputColorTransform =
+false`, and loads nine tables through three loaders:
+
+- five `.CUBE` files (`LUTCubeLoader`);
+- one `.3dl` (`LUT3dlLoader`);
+- three PNG strips (`LUTImageLoader`).
+
+### 73.2 The port
+
+`nodes::display::lut_3d` is the same graph, gated against the page's dump.
+`Lut3DNode::size()` is the settable `size` uniform. The rung grades it at 0
+of 100000 pixels. `tests/lut_3d_frames.rs` checks the arithmetic on the GPU
+with two-texel identity and inversion tables: the inversion maps `c` to
+`1 - c` exactly, intensity 0 returns the input, and swapping tables changes
+the next frame.
+
+The lookup is `texture_3d_sampled( &table )`: `texture3D( texture )` with no
+level, which emits `textureSample` like three. The existing `texture_3d`
+always takes a level, for a raymarch loop. In the same change, a plain
+sample built outside the fragment stage now emits `textureSampleLevel( …,
+0 )`, as three's `_generateTextureSample()` does. The page's smoke samples
+its noise texture in `positionNode`, and WGSL has no implicit derivatives in
+a vertex shader. Before this change the builder emitted a `textureSample`
+there, which no graded page had hit. `tests/nodes_display_wgsl.rs` gates
+the smoke's vertex `main()` against three's dump (`m03`), the one
+vertex-stage gate there.
+
+**The loaders** are in `three_rs::loaders`. Each is synchronous: `load(
+path )` returns the table, and `parse()` takes the bytes or text. All three
+are byte-checked against three's own loaders by `tests/loaders_lut.rs`.
+`tests/lut/gen.mjs` runs `LUTCubeLoader` and `LUT3dlLoader` under node, and
+`LUTImageLoader` in Chrome, and writes `tests/lut/oracle.json`.
+
+- `LutCubeLoader` and `Lut3dlLoader` reproduce the loaders' regular
+  expressions by hand (`lut_text.rs`), because the crate has no regex
+  engine. That includes the `m` flag's line ends and JavaScript `Number()`.
+  The quirks are kept: the `Uint8Array` store truncates and wraps rather
+  than clamping, `.cube` domains are parsed but never applied, a size-3
+  `.3dl` reads its grid line as a row, and an all-zero `.3dl` comes out NaN
+  (stored as 0).
+- `LutImageLoader` does the canvas copies on the decoded RGBA8 texels. That
+  includes `flip = true` with `_horz2Vert`'s off-by-one, which loses slice 0.
+  The canvas round-trip is exact for the vendor PNGs, which are opaque and
+  carry no colour profile.
+
+### 73.3 Not ported
+
+- Swapping the table under a built node. The page writes
+  `lutPass.lutNode.value = lut.texture3D` every frame. A texture is an
+  identity in the port's graph, as `TransitionNode`'s textures are, so a
+  page that changes the table builds a new `Lut3DNode`. The example does
+  this. The graded frame never changes table, so `tests/lut_3d_frames.rs`
+  checks the swap.
+- `setType()` with anything but `UnsignedByteType` or `FloatType`. Three
+  fills a `Float32Array` for any other type but sets `texture3D.type` to the
+  type it was given, so the texture is mislabelled; the port returns an
+  error.
+- An image that does not hold exactly `size` slices of `size²` texels. Three
+  builds a mismatched `Data3DTexture`; its upload writes each layer from its
+  own offset, so a longer buffer still works (the texels past `size³` are
+  never read) and only a shorter one fails, at the upload. The port keeps the
+  first `size³` texels of a longer one and returns `Error::Lut` from `load()`
+  for a shorter one.
+- From `Loader`: `manager`, `path`, `crossOrigin`, and the callback form of
+  `load()`.
+- `LUT_1D_SIZE` tables, which three does not read either.
 
 ## 74. `GodraysNode`, `bilateralBlur()` and `depthAwareBlend()` (`webgpu_postprocessing_godrays`)
 
