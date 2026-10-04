@@ -6780,11 +6780,28 @@ impl Renderer {
     /// however many views it has. An attribute added after the first upload
     /// is uploaded here, as three's `createAttribute()` would on first use.
     ///
+    /// Buffers no current attribute keys (one replaced by `set_attribute` or
+    /// removed by `delete_attribute`) are dropped first.
+    ///
     /// The index is not versioned: `BufferGeometry.index` is an [`Index`], not
     /// a [`BufferAttribute`](crate::core::BufferAttribute), so there is no
     /// `needsUpdate` to read. Changing the index is still a new geometry.
     fn refresh_geometry(&mut self, geometry: &Rc<BufferGeometry>) {
         let id = geometry.id();
+
+        // A buffer whose attribute `set_attribute` replaced or
+        // `delete_attribute` removed is no longer any attribute's: drop it,
+        // rather than hold its memory for the geometry's life.
+        let gpu = &mut self
+            .geometries
+            .get_mut(&id)
+            .expect("three-rs: refresh_geometry() on an uploaded geometry")
+            .gpu;
+        gpu.buffers.retain(|(key, _, _)| {
+            geometry
+                .attributes()
+                .any(|(_, attribute)| attribute.buffer_key() == *key)
+        });
 
         for (name, attribute) in geometry.attributes() {
             let key = attribute.buffer_key();
