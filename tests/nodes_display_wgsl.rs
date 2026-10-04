@@ -441,6 +441,26 @@ fn traa_flicker_reduction_matches_three() {
 }
 
 #[test]
+fn taau_seed_matches_three() {
+    check("taau_seed", Region::Body);
+}
+
+#[test]
+fn taau_resolve_matches_three() {
+    check("taau_resolve", Region::Body);
+}
+
+#[test]
+fn taau_clip_aabb_matches_three() {
+    check("taau_resolve", Region::Function("clipAABB"));
+}
+
+#[test]
+fn taau_flicker_reduction_matches_three() {
+    check("taau_resolve", Region::Function("flickerReduction"));
+}
+
+#[test]
 fn anaglyph_matches_three() {
     check("anaglyph", Region::Body);
 }
@@ -1597,6 +1617,16 @@ fn sharpen_rcas_denoise_matches_three() {
 }
 
 #[test]
+fn fsr1_easu_matches_three() {
+    check("fsr1_easu", Region::Body);
+}
+
+#[test]
+fn fsr1_rcas_matches_three() {
+    check("fsr1_rcas", Region::Body);
+}
+
+#[test]
 fn recurrent_denoise_diffuse_matches_three() {
     check("recurrent_denoise_diffuse", Region::Body);
 }
@@ -1665,4 +1695,24 @@ fn recurrent_denoise_specular_dominant_direction_matches_three() {
         "recurrent_denoise_specular",
         Region::Function("getSpecularDominantDirection"),
     );
+}
+
+#[test]
+fn denoise_matches_three() {
+    check("denoise", Region::Body);
+}
+
+#[test]
+fn denoise_from_depth_matches_three() {
+    check("denoise_from_depth", Region::Body);
+}
+
+#[test]
+fn ssao_matches_three() {
+    check("ssao", Region::Body);
+}
+
+#[test]
+fn ssao_blur_matches_three() {
+    check("ssao_blur", Region::Body);
 }
