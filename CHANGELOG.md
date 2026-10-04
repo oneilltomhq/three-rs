@@ -8,6 +8,17 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Added
 
+- **`webgpu_loader_gltf_transmission`** (graded, 6 of 100000 pixels; #230):
+  `IridescentDishWithOlives.glb` under the blurred `royal_esplanade` PMREM,
+  ported forward from `rung-gltf-transmission` now that the Draco decoder
+  has landed. The ladder's first graded frame of two stacked transmissive
+  materials over one opaque copy, a `thicknessTexture`, a
+  `specularColorTexture`, glTF `COLOR_0`, an `AnimationMixer` on a
+  non-skinned node and an auto-rotating `OrbitControls` updated with no
+  delta. The gold leaf's `alphaMode: MASK` is gated against three's dump of
+  the page as the `materialAlphaTest` uniform
+  (`gltf_transmission_gold_leaf_alpha_test_matches_three`;
+  docs/nodes.md §94).
 - **`webgpu_postprocessing_ssr_denoise`** (ungraded: three's own e2e
   exception list): the stochastic `ssr()`, `temporal_reproject()` and
   `recurrent_denoise()` in a history loop, added to the beauty, graded and
