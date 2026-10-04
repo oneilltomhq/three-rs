@@ -31,18 +31,12 @@ pub struct Mesh {
     /// `Mesh.morphTargetInfluences` — one weight per `morphAttributes.position`
     /// entry, filled in by `updateMorphTargets()` from the constructor.
     pub morph_target_influences: Vec<f64>,
-    /// `LineSegmentsGeometry`'s instanced attributes, when this mesh is a
-    /// [`LineSegments2`](crate::addons::lines::LineSegments2).
-    ///
-    /// three.js keeps them on the geometry, as an `InstancedInterleavedBuffer`
-    /// with two `InterleavedBufferAttribute` views; the port's node system
-    /// carries an instanced attribute's data on the node, so they ride here
-    /// instead and reach `setup()` through
-    /// [`SetupContext::line_segments`](crate::materials::SetupContext). See
-    /// [`crate::nodes::lines`] for the trade, and
-    /// `docs/webgpu_lines_fat-progress.md` for the follow-up that moves them on
-    /// to `BufferGeometry`.
-    pub line_segments: Option<crate::nodes::lines::LineSegmentsAttributes>,
+    /// `Some` when this mesh is a
+    /// [`LineSegments2`](crate::addons::lines::LineSegments2): the object's
+    /// own state (its `_resolution`), which also routes `raycast()` to the
+    /// fat-line version. The segments themselves are on the geometry, as
+    /// `instanceStart` / `instanceEnd` interleaved views.
+    pub line_segments: Option<crate::addons::lines::LineSegments2State>,
     /// `mesh.count`, which is **not** a `Mesh` property in three.js: a page
     /// sets it ad hoc (`webgpu_instance_path`'s `mesh.count = 1000`,
     /// `webgpu_particles`' `smokeInstancedSprite.count = 2000`) and

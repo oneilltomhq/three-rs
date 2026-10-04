@@ -220,7 +220,6 @@ fn main() {
             morph: None,
             skin: None,
             batch: None,
-            line_segments: None,
             sprite: false,
             mrt: None,
             output: None,
@@ -1580,7 +1579,7 @@ fn main() {
         "line2",
         &line2,
         SetupContext {
-            line_segments: Some(fat.as_segments().attributes()),
+            geometry_attributes: fat.as_segments().geometry().attribute_descs(),
             ..SetupContext::default()
         },
     );
@@ -1596,7 +1595,7 @@ fn main() {
         "line2_alpha_to_coverage",
         &coverage,
         SetupContext {
-            line_segments: Some(fat.as_segments().attributes()),
+            geometry_attributes: fat.as_segments().geometry().attribute_descs(),
             ..SetupContext::default()
         },
     );

@@ -29,7 +29,7 @@ fn layout(vertex_colors: bool) -> Vec<VertexBufferDesc> {
     let flow = setup(
         &material,
         &SetupContext {
-            line_segments: Some(geometry.as_segments().attributes()),
+            geometry_attributes: geometry.as_segments().geometry().attribute_descs(),
             ..SetupContext::default()
         },
         None,

@@ -7,7 +7,6 @@ pub mod builder;
 pub mod code;
 pub mod display;
 pub(crate) mod frame;
-pub mod lines;
 pub mod materialx;
 pub mod morph;
 pub(crate) mod mrt;

@@ -2179,7 +2179,6 @@ impl Renderer {
                     morph: morph.clone(),
                     skin: skin.as_ref().map(|s| s.0),
                     batch: batch.clone(),
-                    line_segments: object.payload.line_segments().cloned(),
                     sprite: object.payload.is_sprite(),
                     mrt: mrt_context.clone(),
                     output: output_context.clone(),
@@ -2610,7 +2609,6 @@ impl Renderer {
                         // A fat line does not cast a shadow: three's shadow
                         // material takes the plain MVP path, which the quad
                         // geometry is not in.
-                        line_segments: None,
                         sprite: false,
                         // A shadow pass renders into a depth-only target; MRT
                         // is a colour-attachment feature and three.js's
@@ -3018,7 +3016,6 @@ impl Renderer {
                         // A fat line does not cast a shadow: three's shadow
                         // material takes the plain MVP path, which the quad
                         // geometry is not in.
-                        line_segments: None,
                         sprite: false,
                         // A shadow pass renders into a depth-only target; MRT
                         // is a colour-attachment feature and three.js's

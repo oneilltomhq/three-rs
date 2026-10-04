@@ -43,7 +43,7 @@ fn program() -> NodeProgram {
     let flow = setup(
         &material,
         &SetupContext {
-            line_segments: Some(geometry.attributes()),
+            geometry_attributes: geometry.geometry().attribute_descs(),
             ..SetupContext::default()
         },
         None,

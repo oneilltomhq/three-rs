@@ -56,12 +56,6 @@ pub struct SetupContext {
     pub skin: Option<crate::nodes::skinning::SkinEntry>,
     /// `object.isBatchedMesh`: the three data textures `batch()` reads.
     pub batch: Option<crate::nodes::batch::BatchEntry>,
-    /// A `LineSegmentsGeometry`'s interleaved instanced attributes, which
-    /// `Line2NodeMaterial` reads as `instanceStart` / `instanceEnd` and
-    /// `instanceColorStart` / `instanceColorEnd`. See
-    /// [`crate::nodes::lines`] for why they travel here rather than on the
-    /// geometry.
-    pub line_segments: Option<crate::nodes::lines::LineSegmentsAttributes>,
     /// `object.center && object.center.isVector2` — the object is a `Sprite`,
     /// so `SpriteNodeMaterial.setupPositionView()` offsets the quad by
     /// `center - 0.5`. A `SpriteNodeMaterial` on anything else (the
@@ -139,6 +133,16 @@ pub struct SetupContext {
     /// which every non-transparent material drawn by that pass multiplies into
     /// its `AmbientOcclusion`. See [`AoContext`].
     pub ambient_occlusion: Option<AoContext>,
+}
+
+impl SetupContext {
+    /// `builder.hasGeometryAttribute( name )`, over
+    /// [`geometry_attributes`](Self::geometry_attributes).
+    pub(crate) fn has_geometry_attribute(&self, name: &str) -> bool {
+        self.geometry_attributes
+            .iter()
+            .any(|desc| desc.name == name)
+    }
 }
 
 /// `builtinAOContext( aoNode )` — the `getAO` hook a pass installs on the
@@ -428,16 +432,13 @@ fn setup_diffuse_color(
     // first and then adds the coverage multiply and the per-end colour. Its
     // `blending = NoBlending` is why `is_opaque()` above is false and the
     // `DiffuseColor.w = 1.0` line is absent from three's dump.
-    if material.kind == MaterialKind::Line2 {
-        if let Some(attributes) = &ctx.line_segments {
-            crate::materials::line2::setup_diffuse_color(
-                material.alpha_to_coverage,
-                material.world_units,
-                material.vertex_colors,
-                attributes,
-                fragment,
-            );
-        }
+    if material.kind == MaterialKind::Line2 && ctx.has_geometry_attribute("instanceStart") {
+        crate::materials::line2::setup_diffuse_color(
+            material.alpha_to_coverage,
+            material.world_units,
+            material.vertex_colors && ctx.has_geometry_attribute("instanceColorStart"),
+            fragment,
+        );
     }
 }
 
@@ -546,13 +547,10 @@ fn setup_inner(
     // `super.setupPosition()` last, so its `positionLocal.assign()` is the
     // first statement of the vertex flow — ahead of morphing and skinning,
     // neither of which a fat line has.
-    if material.kind == MaterialKind::Line2 {
-        if let Some(attributes) = &ctx.line_segments {
-            pre_vertex.push(crate::materials::line2::setup_position(
-                attributes,
-                material.world_units,
-            ));
-        }
+    if material.kind == MaterialKind::Line2 && ctx.has_geometry_attribute("instanceStart") {
+        pre_vertex.push(crate::materials::line2::setup_position(
+            material.world_units,
+        ));
     }
 
     // --- setupPosition: the `context.position` stack, flowed into the vertex
