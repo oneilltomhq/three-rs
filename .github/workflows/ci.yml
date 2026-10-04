@@ -87,7 +87,7 @@ jobs:
       - name: wasm-bindgen version
         id: wasm-bindgen
         run: echo "version=$(sed -n '/^name = "wasm-bindgen"$/{n;s/^version = "\(.*\)"$/\1/p;q}' Cargo.lock)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         id: wasm-bindgen-cache
         with:
           path: ~/.cargo/bin/wasm-bindgen
@@ -109,7 +109,7 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: vendor/three.js/package-lock.json
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.cache/puppeteer
           key: puppeteer-${{ runner.os }}-${{ hashFiles('vendor/three.js/package-lock.json') }}
@@ -154,7 +154,7 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: vendor/three.js/package-lock.json
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.cache/puppeteer
           key: puppeteer-${{ runner.os }}-${{ hashFiles('vendor/three.js/package-lock.json') }}
