@@ -5,6 +5,13 @@
 //! (`mod( y, 2 ) > 1` at the pixel centre `y + 0.5`) shows the left eye, an
 //! even one the right.
 //!
+//! # Divergences
+//!
+//! * The eyes come from `stereo.update()` with the port's WebGPU-style
+//!   (`[0, 1]` depth) projection, so they clip near at `near` where three's,
+//!   copied from a WebGL-style matrix, clip at `2fn / (f + n)`; see
+//!   [`StereoPassNode`](super::StereoPassNode).
+//!
 //! # Not ported
 //!
 //! * `material.contextNode = context( builder.getSharedContext() )`: the

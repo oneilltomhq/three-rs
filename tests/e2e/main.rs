@@ -197,13 +197,12 @@ mod webgpu_backdrop;
 #[allow(dead_code)]
 mod webgpu_tsl_earth;
 
-#[path = "../../examples/webgpu_sky.rs"]
-#[allow(dead_code)]
-mod webgpu_sky;
-
 #[path = "../../examples/webgpu_display_stereo.rs"]
 #[allow(dead_code)]
 mod webgpu_display_stereo;
+#[path = "../../examples/webgpu_sky.rs"]
+#[allow(dead_code)]
+mod webgpu_sky;
 #[path = "../../examples/webgpu_tsl_halftone.rs"]
 #[allow(dead_code)]
 mod webgpu_tsl_halftone;

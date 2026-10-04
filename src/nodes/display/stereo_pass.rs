@@ -17,14 +17,22 @@
 //! * The eyes' projection matrices are the source camera's, which in the
 //!   port is a WebGPU-style (`[0, 1]` depth) projection by default; on
 //!   `webgpu_display_stereo` three's camera keeps the WebGL-style matrix its
-//!   constructor built, which `StereoCamera.update()` copies. Both renders
-//!   then clip near at the same distance in the port, while three's eyes clip
-//!   at roughly twice `near`. Nothing on the page is that close.
+//!   constructor built, which `StereoCamera.update()` copies. Under
+//!   WebGPU's `[0, 1]` clip, that matrix maps view depth `d` to
+//!   `((f + n) d - 2fn) / ((f - n) d)`, which reaches `0` at `d = 2fn / (f +
+//!   n)`: three's eyes clip near at about twice `near` (`0.1998` for the
+//!   page's `0.1` / `100`), the port's at `near`. The page's spheres orbit at
+//!   radius 5 and `OrbitControls` allows a distance of 1 to 25, so a sphere
+//!   can come within that band, but nothing in the graded frame comes that
+//!   close.
 //! * `renderTarget.scissorTest = true` and the two `scissor.set()` calls are
 //!   not ported: `WebGPURenderer` reads the scissor test from the canvas
 //!   target only (`Renderer.js`, `_renderScene()`), so in three they have no
 //!   effect, while the port's renderer honours a render target's scissor.
 //!   The viewports confine each eye to its half, as they do in three.
+//! * `renderer.clear()` also clears stencil in three; the port's
+//!   [`Renderer::clear`] takes colour and depth only, as it allocates no
+//!   stencil buffer, so there is no stencil to clear.
 //!
 //! # Not ported
 //!

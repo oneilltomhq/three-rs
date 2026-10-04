@@ -10,6 +10,13 @@
 //! entry for its textures is pointed at [`CompositeState`] instead, which
 //! renders the two eyes and the composite where `PassNode.updateBefore()`
 //! would have rendered the scene once.
+//!
+//! The default `updateStereoCamera()` runs `stereo.update()` with the port's
+//! WebGPU-style (`[0, 1]` depth) eye projections, so the parallax barrier's
+//! eyes clip near at `near` where three's, copied from a WebGL-style matrix,
+//! clip at `2fn / (f + n)`; see [`StereoPassNode`](super::StereoPassNode).
+//! The anaglyph override is unaffected: `frameCorners` writes a WebGL-style
+//! matrix in both.
 
 use std::cell::{Cell, RefCell, RefMut};
 use std::rc::Rc;
@@ -88,12 +95,13 @@ pub(super) const RENDERER_COORDINATE_SYSTEM: CoordinateSystem = CoordinateSystem
 /// rendered from, so the port updates it here, the current pose and not the
 /// previous one. At rest — the graded frame — the two agree.
 ///
-/// `try_borrow_mut()`: a caller holding the camera across the pipeline's
-/// render has just updated it.
+/// The borrow is unconditional, as three's update is: a caller holding a
+/// borrow of the camera across the pipeline's render panics here rather than
+/// render from stale eyes. No caller in the crate does — the example's
+/// `controls_and_camera()` borrow is tied to `&mut App`, so it cannot be
+/// alive across `animate()`.
 pub(super) fn update_source_camera(camera: &RefCell<PerspectiveCamera>) {
-    if let Ok(mut camera) = camera.try_borrow_mut() {
-        camera.update_matrix_world();
-    }
+    camera.borrow_mut().update_matrix_world();
 }
 
 /// `AnaglyphPassNode`'s own fields, which turn

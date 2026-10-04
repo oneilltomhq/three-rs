@@ -6047,9 +6047,14 @@ stereo node's own state, so the eyes are rendered where
 `StereoPassNode` reuses the pass's own render bracket through
 `PassNode::render_with`, which is crate-private and new. That bracket sizes
 the target, sets samples, toggles previous textures, sets `cameraNear` /
-`cameraFar`, and saves and restores the target and MRT. Inside it, the pass
-clears once, then renders each eye with `render_nested` into its half's
-viewport.
+`cameraFar`, and saves and restores the target and MRT. It also applies the
+pass's `auto_clear_depth`, opaque / transparent, lighting and
+`camera_layers` settings, and restores them after. Three's
+`StereoPassNode.updateBefore()` applies none of these, but they are all
+inert at their defaults, which a stereo pass never changes. Inside the
+bracket, the pass clears colour and depth once (three's `renderer.clear()`
+also clears stencil, which the port does not allocate), then renders each
+eye with `render_nested` into its half's viewport.
 
 **The anaglyph eyes keep their world matrices.** `frame_corners` writes the
 eye's quaternion. The port then composes `matrix_world` from position,
@@ -6068,8 +6073,13 @@ same order in `f64`. Changing `algorithm` or `colorMode` writes the two
 - **The eyes' projections are WebGPU-style.** The port's `PerspectiveCamera`
   defaults to a `[0, 1]` depth projection. On this page, three's camera keeps
   the WebGL-style matrix its constructor built, and `StereoCamera.update()`
-  copies it. So three's stereo and parallax eyes clip near at roughly twice
-  `near`, while the port's clip at `near`. Nothing on the page is that close.
+  copies it. Under WebGPU's `[0, 1]` clip, that matrix maps view depth `d`
+  to `((f + n) d - 2fn) / ((f - n) d)`, which is `0` at `d = 2fn / (f + n)`.
+  So three's stereo and parallax eyes clip near at about twice `near`
+  (`0.1998` for the page's `0.1` / `100`), while the port's clip at `near`.
+  The spheres orbit at radius 5 and `OrbitControls` allows a distance of 1
+  to 25, so a sphere can enter that band, but nothing in the graded frame
+  comes that close.
   `frame_corners` writes three's WebGL-style matrix whatever the coordinate
   system, as three does, so the anaglyph eyes are the same in both.
 - **The source camera's world matrix is brought up to date first.** Three

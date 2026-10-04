@@ -136,7 +136,11 @@ fn stereo_passes_place_each_eye() {
         }
     });
 
-    // Interleaved rows: odd rows from the top are the left eye.
+    // Interleaved rows: odd rows from the top are the left eye. This takes
+    // `read_canvas_pixels()`'s row 0 to be the top row, as
+    // `tests/renderer_viewport.rs` and `tests/renderer_lines.rs` index it;
+    // `viewport_and_scissor_measure_from_the_top_left` in the former fails
+    // if it were the bottom one.
     pipeline.output_node = Some(barrier.node());
     let (width, _, pixels) = frame(&mut pipeline, &mut renderer);
     assert_every_pixel(&pixels, width, "parallax barrier", |_, y| {
