@@ -6077,7 +6077,12 @@ pass's own frames on the GPU. The port needed these pieces:
   has one material struct for both kinds, so `is_node_material` decides by
   the node slots: a source with none set is classic. A classic source is
   cloned and given the retro `vertex_node`, `color_node` and `context_node`,
-  as Basic or as Phong. A node source is cloned as it is.
+  as Basic or as Phong. A node source is cloned as it is. The one case this
+  gets wrong is a node material with no slot set at all, say a bare
+  `MeshBasicNodeMaterial::new()`. Three's for-in copies its null
+  `vertexNode`, `colorNode` and `contextNode` over the retro ones, so three
+  draws it as itself, unsnapped and at the map's own level. The port cannot
+  tell it from a classic material, so it snaps it.
 - **`context_node` on a material.** `MeshBasicNodeMaterial::context_node` is
   `NodeMaterial.contextNode`. `NodeMaterial` setup pushes its keys for the
   whole build, through `push_context_value`. `tsl::texture()` reads `getUV`
@@ -6174,12 +6179,13 @@ arguments, `sepia( color )` and `bleach( color, opacity )`.
 
 No `webgpu_*` page uses any of them, so there is no example dump to gate
 against. `tools/dump-pages/film_sepia_bleach.html` is a minimal page for
-`tools/dump-webgpu.mjs --html`. It runs `bleach( scenePass, uniform( 0.8 ) )`
-and `sepia()` each through `convertToTexture()`, then
-`film( …, uniform( 0.5 ) )` as the `RenderPipeline`'s output, so each effect
-has a quad of its own. The dump's `m03`, `m05` and `m07` are the fixtures of
-`bleach_bypass_matches_three`, `sepia_matches_three` and
-`film_matches_three` in `tests/nodes_display_wgsl.rs`.
+`tools/dump-webgpu.mjs --html`. It runs `bleach( scenePass, uniform( 0.8 ) )`,
+`sepia()` and `film()` with no intensity each through `convertToTexture()`,
+then `film( …, uniform( 0.5 ) )` as the `RenderPipeline`'s output, so each
+effect has a quad of its own. The dump's `m03`, `m05`, `m07` and `m09` are
+the fixtures of `bleach_bypass_matches_three`, `sepia_matches_three`,
+`film_no_intensity_matches_three` and `film_matches_three` in
+`tests/nodes_display_wgsl.rs`.
 
 ### 80.3 Not ported
 

@@ -242,10 +242,10 @@ pub fn display_quads() -> Vec<DisplayQuad> {
         render_output(crt, ToneMapping::None),
     ));
 
-    // `tools/dump-pages/film_sepia_bleach.html` `m03`, `m05` and `m07`:
-    // `bleach( scenePass, uniform( 0.8 ) )` and `sepia()` of its texture,
-    // each converted to a texture, then `film( …, uniform( 0.5 ) )` as the
-    // `RenderPipeline`'s output.
+    // `tools/dump-pages/film_sepia_bleach.html` `m03`, `m05`, `m07` and
+    // `m09`: `bleach( scenePass, uniform( 0.8 ) )`, `sepia()` of its texture
+    // and `film()` of that, with no intensity, each converted to a texture,
+    // then `film( …, uniform( 0.5 ) )` as the `RenderPipeline`'s output.
     quads.push(quad(
         "bleach_bypass",
         "film_sepia_bleach_m03_bleach_bypass.wgsl",
@@ -257,8 +257,13 @@ pub fn display_quads() -> Vec<DisplayQuad> {
         sepia(texture_uv(&input(), uv())),
     ));
     quads.push(quad(
+        "film_no_intensity",
+        "film_sepia_bleach_m07_film_no_intensity.wgsl",
+        film(texture_uv(&input(), uv()), None, None),
+    ));
+    quads.push(quad(
         "film",
-        "film_sepia_bleach_m07_film.wgsl",
+        "film_sepia_bleach_m09_film.wgsl",
         render_output(
             film(texture_uv(&input(), uv()), Some(f32_uniform(0.5)), None),
             ToneMapping::None,

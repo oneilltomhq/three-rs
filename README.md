@@ -253,8 +253,10 @@ for an indirect draw, as three's does, not what the GPU was told to draw.
 
 Some pages are ported but cannot be graded. Either three's own e2e harness
 skips them, or three.js itself misses its own reference screenshot on this
-machine, so a matching port would miss it too. They are in the native
-viewer, not in the gallery or the browser shell:
+machine, so a matching port would miss it too. Ten pages that three misses
+here are only `#[ignore]`d rungs in `tests/e2e/main.rs` (`docs/parity.md`
+counts them, with retro, as eleven). These two are in the native viewer, not
+in the gallery or the browser shell:
 
 | example | why it has no grade |
 |---|---|

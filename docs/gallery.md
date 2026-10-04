@@ -124,9 +124,12 @@ exception list. Nor does a page that three.js itself renders more than the
 limit away from its own reference on this machine, since a port that matched
 three would fail the same way. Such a page is not a row in "Examples graded
 green", so it gets no thumbnail here and no build in the browser shell, whose manifests are
-exactly the graded set. The README lists it instead in a two-column table
-under the graded one: the example, and why it has no grade. The generator and
-its tests read only five- and six-cell rows, so they skip that table.
+exactly the graded set. The README lists the two such pages that are in the
+native viewer in a two-column table under the graded one: the example, and
+why it has no grade. The other ten pages three misses here are only
+`#[ignore]`d rungs in `tests/e2e/main.rs`; `docs/parity.md` counts them. The
+generator and its tests read only five- and six-cell rows, so they skip that
+table.
 
 | example | reason |
 |---|---|

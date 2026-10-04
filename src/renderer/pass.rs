@@ -504,8 +504,9 @@ impl PassState {
         // before `PassNode.setSize()` — a divisor of 1 is `PassNode`'s own.
         let divisor = self.size_divisor.get().max(1);
         let (width, height) = (width / divisor, height / divisor);
-        // `PassNode.setSize()`: `Math.floor( width * pixelRatio *
-        // resolutionScale )` — the drawing buffer already carries the pixel
+        // `PassNode.setSize()`: `Math.floor( this._width *
+        // this._resolutionScale )`, where `updateBefore()` has set `_width`
+        // from `renderer.getDrawingBufferSize()`, which carries the pixel
         // ratio. Kept at one texel or more: a zero-sized target is invalid
         // in wgpu, where three's WebGPU backend would fail the frame.
         let scale = self.resolution_scale.get();

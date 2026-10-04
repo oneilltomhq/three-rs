@@ -837,7 +837,7 @@ These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) an
 | `depthAwareBlur.js` | Absent | — |
 | `DepthOfFieldNode.js` | Absent | — |
 | `DotScreenNode.js` | Present | dot_screen; tests/nodes_display_wgsl.rs; webgpu_postprocessing (ported, ungraded) |
-| `FilmNode.js` | Present | film (src/nodes/display/film.rs:15); tests/nodes_display_wgsl.rs (film_sepia_bleach dump, m07; no webgpu page uses it) |
+| `FilmNode.js` | Present | film (src/nodes/display/film.rs:15); tests/nodes_display_wgsl.rs (film_sepia_bleach dump, m07 without an intensity, m09 with one; no webgpu page uses it) |
 | `FSR1Node.js` | Absent | — |
 | `FXAANode.js` | Present | fxaa; webgpu_postprocessing_fxaa |
 | `GaussianBlurNode.js` | Present | gaussian_blur; tests/nodes_display_wgsl.rs; webgpu_procedural_texture |
@@ -1378,7 +1378,7 @@ Partial: `tangentViewFrame`, `bitangentViewFrame`, `builtin`, `cameraViewport`, 
 
 Missing (Absent): `outputStruct`, `getTextureIndex`, `getScreenPosition`, `getScreenPositionFromClip`, `getNormalFromDepth`, `workingToColorSpace`, `convertColorSpace`, `blendBurn`, `blendDodge`, `blendScreen`, `blendColor`, `vibrance`, `cdl`, `directionToFaceDirection`, `viewportCoordinate`, `viewportUV`, `viewportMipTexture`, `viewportOpaqueMipTexture`, `viewZToReversedOrthographicDepth`, `orthographicDepthToViewZ`, `viewZToReversedPerspectiveDepth`, `viewZToLogarithmicDepth`, `logarithmicDepthToViewZ`, `depth`, `depthPass`, `cineonToneMapping`.
 
-Partial: `colorSpaceToWorking`, `negateOnBackSide`, `passTexture`.
+Partial: `colorSpaceToWorking`, `negateOnBackSide`, `viewportTexture`, `viewportDepthTexture`, `viewZToOrthographicDepth`, `linearDepth`, `viewportLinearDepth`, `passTexture`.
 
 | three.js name | verdict | three-rs symbol | verified by | note |
 |---|---|---|---|---|
@@ -1588,7 +1588,7 @@ Partial: none.
 
 Missing (Absent): `defaultShaderStages`, `defaultBuildStages`, `shaderStages`, `vectorComponents`, `bypass`, `uniformFlow`, `setName`, `builtinShadowContext`, `builtinAOContext`, `builtinGIContext`, `label`, `overrideNodes`, `subgroupIndex`, `invocationSubgroupIndex`, `drawIndex`, `uniformGroup`, `sharedUniformGroup`, `frameGroup`, `objectGroup`, `vertexStage`, `unpackRGBToNormal`, `unpackNormal`, `directionToColor`, `colorToDirection`, `sample`, `OnObjectUpdate`, `OnMaterialUpdate`, `OnFrameUpdate`, `OnAfterObjectUpdate`, `OnBeforeObjectUpdate`, `OnBeforeMaterialUpdate`, `OnBeforeFrameUpdate`, `OnBeforeRenderPipeline`, `OnAfterRenderPipeline`, `expression`, `debug`, `addNodeElement`, `wgsl`.
 
-Partial: `NodeShaderStage`, `cache`, `overrideNode`, `renderGroup`, `subBuild`.
+Partial: `NodeShaderStage`, `cache`, `overrideNode`, `renderGroup`, `replaceDefaultUV`, `subBuild`.
 
 | three.js name | verdict | three-rs symbol | verified by | note |
 |---|---|---|---|---|

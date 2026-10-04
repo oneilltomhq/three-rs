@@ -373,3 +373,8 @@ fn sepia_matches_three() {
 fn film_matches_three() {
     check("film", Region::Body);
 }
+
+#[test]
+fn film_no_intensity_matches_three() {
+    check("film_no_intensity", Region::Body);
+}

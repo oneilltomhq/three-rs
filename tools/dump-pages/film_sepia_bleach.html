@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 	<head>
-		<title>three-rs dump page - film(), sepia() and bleach() as three quads</title>
+		<title>three-rs dump page - film(), sepia() and bleach() as four quads</title>
 		<meta charset="utf-8">
 	</head>
 	<body>
@@ -13,14 +13,16 @@
 			webgpu_tsl_interoperability.html do not either), so this page is
 			their only dump.
 
-			Each effect gets its own quad: bleach() and sepia() are each wrapped
-			in convertToTexture(), which renders them on an RTT quad of their own,
-			and film() is the RenderPipeline's output. So the dump has one RTT quad
-			per effect, each reading the previous one's texture:
+			Each effect gets its own quad: bleach(), sepia() and film() without an
+			intensity are each wrapped in convertToTexture(), which renders them
+			on an RTT quad of their own, and film() with an intensity is the
+			RenderPipeline's output. So the dump has one quad per effect, each
+			reading the previous one's texture:
 
 			  bleach( scenePass, uniform( 0.8 ) )  -> RTT quad 1
 			  sepia( rtt1 )                        -> RTT quad 2
-			  film( rtt2, uniform( 0.5 ) )         -> RenderPipeline quad
+			  film( rtt2 )                         -> RTT quad 3
+			  film( rtt3, uniform( 0.5 ) )         -> RenderPipeline quad
 		-->
 		<script type="importmap">
 			{
@@ -61,9 +63,10 @@
 
 			const bleached = convertToTexture( bleach( scenePass, uniform( 0.8 ) ) );
 			const sepiaed = convertToTexture( sepia( bleached ) );
+			const grained = convertToTexture( film( sepiaed ) );
 
 			const renderPipeline = new THREE.RenderPipeline( renderer );
-			renderPipeline.outputNode = film( sepiaed, uniform( 0.5 ) );
+			renderPipeline.outputNode = film( grained, uniform( 0.5 ) );
 
 			renderer.setAnimationLoop( () => renderPipeline.render() );
 

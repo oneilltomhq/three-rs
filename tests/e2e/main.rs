@@ -1383,9 +1383,10 @@ fn webgpu_postprocessing_afterimage() {
 ///
 /// Ignored: three.js itself scores 1503 of 100000 pixels (1.5%) against its
 /// own `webgpu_postprocessing_retro.jpg` on this machine, over the 0.1% limit,
-/// and the port scores the same 1503. Against three's own frame here the
-/// port differs on 4243 scattered pixels of the JPEG-textured mug and table
-/// only. See `docs/webgpu_postprocessing_retro-progress.md`.
+/// and the port scores the same 1503. Against three's own frame here
+/// (`tools/dump-webgpu.mjs`' `actual_full.png`, 800×500) 4243 pixels differ
+/// by more than 2 of 255 (max 49), all scattered over the JPEG-textured mug
+/// and table. See `docs/webgpu_postprocessing_retro-progress.md`.
 #[test]
 #[ignore = "three.js itself fails its own reference for this page on this machine"]
 fn webgpu_postprocessing_retro() {

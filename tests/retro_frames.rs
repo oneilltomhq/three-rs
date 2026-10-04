@@ -18,7 +18,16 @@
 //! * the background is drawn back-facing, so `normalWorld` is flipped and the
 //!   sky straight ahead is bright, not clamped to black;
 //! * `affineDistortion` 1 interpolates the uv without perspective, which on a
-//!   tilted plane moves `v`, and 0 draws exactly what it drew before.
+//!   tilted plane moves `v`, and 0 draws exactly what it drew before;
+//! * the vertices snap to the quarter-size grid, so moving the plane by less
+//!   than half a texel changes nothing at all, where a plain pass moves its
+//!   edge;
+//! * a small node-material plane with a `colorNode`, top right, is drawn as
+//!   itself: three's property copy puts its `colorNode` back over
+//!   `materialColor`;
+//! * `barrelMask( barrelUV( -0.1 ) )` over the pass blacks out the middle of
+//!   each edge, which a pincushion pulls from outside the frame, and keeps the
+//!   corners.
 //!
 //! One `#[test]`: each `Renderer::new` builds its own device, and cargo runs
 //! test functions inside a binary concurrently.
@@ -27,9 +36,10 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use three_rs::geometries::plane_geometry;
-use three_rs::nodes::display::{retro_pass, RetroPassOptions};
+use three_rs::nodes::display::{barrel_mask, barrel_uv, retro_pass, RetroPassOptions};
 use three_rs::nodes::tsl::{
-    call, inline_fn, normal_world, texture_uv, uniform_settable, uv, vec3_join,
+    call, float, inline_fn, normal_world, texture_uv, uniform_settable, uv, vec3, vec3_join,
+    vec4_join,
 };
 use three_rs::nodes::Type;
 use three_rs::objects::Background;
@@ -109,6 +119,17 @@ fn retro_pass_frames() {
     let mesh = Mesh::new(Rc::new(plane_geometry(1.0, 1.0, 1, 1)), material);
     scene.add(&mesh);
 
+    // A node material: `colorNode` set, so three's for-in copies it (and the
+    // null `vertexNode` and `contextNode`) over the retro material's. At
+    // NDC 0.6..0.85 on both axes it covers texel columns 13 and 14 of 16 and
+    // rows 1 and 2 from the top; as a classic material it would be white.
+    let mut green = MeshBasicNodeMaterial::new();
+    green.color_node = Some(vec3(0.0, 1.0, 0.0));
+    let corner = Mesh::new(Rc::new(plane_geometry(0.25, 0.25, 1, 1)), green);
+    corner.borrow_mut().position.x = 0.725;
+    corner.borrow_mut().position.y = 0.725;
+    scene.add(&corner);
+
     let camera = PerspectiveCamera::new(90.0, 1.0, 0.1, 10.0);
     camera.node.borrow_mut().position.z = 1.0;
 
@@ -157,6 +178,36 @@ fn retro_pass_frames() {
     );
     assert!(plane.iter().any(|p| p[0] > 239) && plane.iter().any(|p| p[0] < 16));
 
+    // The node material keeps its own `colorNode`: green, not the white
+    // `materialColor` a classic source gets.
+    for (x, y) in [(53, 5), (58, 10)] {
+        let [r, g, b, _] = at(&first, x, y);
+        assert!(
+            r < 4 && g > 251 && b < 4,
+            "the node material at ({x}, {y}) is its own green ({r}, {g}, {b})"
+        );
+    }
+
+    // Moved right by 0.03 world units, which at one unit from a 90° camera is
+    // 0.03 in NDC: 0.24 of a quarter-size texel, 0.96 of a canvas pixel. The
+    // snapped vertices round back to the same texel corners, so the frame is
+    // unchanged, the checker texels sampled included. Without the snap the
+    // edge would cover the same texels (a texel centre is half a texel from
+    // either corner) but each texel would sample the map about two texels
+    // further left. The full-resolution plain pass moves its left edge off
+    // column 16.
+    mesh.borrow_mut().position.x = 0.03;
+    let shifted = frame(&mut pipeline, &mut renderer);
+    let changed = shifted.iter().zip(&first).filter(|(a, b)| a != b).count();
+    assert_eq!(changed, 0, "a sub-texel move snaps back to the same frame");
+    let full_moved = frame(&mut plain_pipeline, &mut renderer);
+    assert_ne!(
+        (16..48).map(|y| at(&full_moved, 16, y)).collect::<Vec<_>>(),
+        (16..48).map(|y| at(&full, 16, y)).collect::<Vec<_>>(),
+        "a plain pass moves the plane's left edge"
+    );
+    mesh.borrow_mut().position.x = 0.0;
+
     // `filterTextures = true`: the footprint is eight texels a pixel, whose
     // mip is the checker's average.
     retro.set_filter_textures(true);
@@ -188,4 +239,27 @@ fn retro_pass_frames() {
     assert_eq!(mixed_blocks(&affine), 0);
     affine_value.set(vec![0.0]);
     assert_eq!(frame(&mut pipeline, &mut renderer), perspective);
+    mesh.borrow_mut().set_rotation(0.0, 0.0, 0.0);
+
+    // `barrelMask( barrelUV( curvature ) )` over the pass. A negative
+    // curvature is a pincushion: the corners stay put and the middle of each
+    // edge reads from outside the unit square, which the mask blacks out.
+    let mask = barrel_mask(barrel_uv(float(-0.1), uv()));
+    let mut masked_pipeline = RenderPipeline::new();
+    masked_pipeline.output_node = Some(vec4_join(vec![retro.node().rgb().mul(mask), float(1.0)]));
+    let masked = frame(&mut masked_pipeline, &mut renderer);
+    for (x, y) in [(0, 32), (63, 32), (32, 0), (32, 63)] {
+        assert_eq!(
+            at(&masked, x, y)[..3],
+            [0, 0, 0],
+            "the edge's middle at ({x}, {y}) is outside the barrel"
+        );
+    }
+    for (x, y) in [(0, 0), (63, 0), (0, 63), (63, 63), (32, 32)] {
+        assert_eq!(
+            at(&masked, x, y)[..3],
+            at(&first, x, y)[..3],
+            "({x}, {y}) is inside the barrel"
+        );
+    }
 }
