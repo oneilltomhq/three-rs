@@ -29,6 +29,7 @@ mod gaussian_blur;
 mod godrays;
 mod gtao;
 mod hash_blur;
+mod importance_sampled_environment;
 mod lensflare;
 mod lut_3d;
 mod motion_blur;
@@ -74,6 +75,9 @@ pub use gaussian_blur::{gaussian_blur, GaussianBlurNode, GaussianBlurOptions};
 pub use godrays::{godrays, GodraysNode};
 pub use gtao::{ao, GtaoNode};
 pub use hash_blur::{hash_blur, hash_blur_with, HashBlurOptions};
+pub use importance_sampled_environment::{
+    EnvMapCdfGenerator, EnvironmentLobe, ImportanceSampledEnvironment,
+};
 pub use lensflare::{lensflare, LensflareNode, LensflareParams};
 pub use lut_3d::{lut_3d, Lut3DNode};
 pub use motion_blur::motion_blur;

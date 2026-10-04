@@ -1193,3 +1193,28 @@ fn specular_dominant_factor_matches_three() {
 fn analytic_noise_matches_three() {
     check("analytic_noise", Region::Body);
 }
+
+#[test]
+fn env_sample_reflect_matches_three() {
+    check("env_sample_reflect", Region::Body);
+}
+
+#[test]
+fn env_sample_brdf_matches_three() {
+    check("env_sample_brdf", Region::Body);
+}
+
+#[test]
+fn env_sample_mis_matches_three() {
+    check("env_sample_mis", Region::Body);
+}
+
+#[test]
+fn env_sample_mis_equirect_dir_pdf_matches_three() {
+    check("env_sample_mis", Region::Function("equirectDirPdf"));
+}
+
+#[test]
+fn env_sample_mis_power_heuristic_matches_three() {
+    check("env_sample_mis", Region::Function("misPowerHeuristic"));
+}

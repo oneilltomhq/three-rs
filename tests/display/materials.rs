@@ -14,8 +14,9 @@ use three_rs::nodes::display::{
     circle, color_bleeding, depth_aware_blend, dof, dot_screen, film, fxaa, gaussian_blur, godrays,
     hash_blur_with, lensflare, lut_3d, motion_blur, outline, parallax_barrier_pass,
     pixelation_pass, retro_pass, rgb_shift, rtt, scanlines, sepia, smaa, sobel, ssgi, ssr, sss,
-    traa, viewport_shared_texture_at, BoxBlurOptions, DepthAwareBlendOptions, GaussianBlurOptions,
-    HashBlurOptions, LensflareParams, OutlineParams, RetroPassOptions, SsrOptions,
+    traa, viewport_shared_texture_at, BoxBlurOptions, DepthAwareBlendOptions, EnvironmentLobe,
+    GaussianBlurOptions, HashBlurOptions, ImportanceSampledEnvironment, LensflareParams,
+    OutlineParams, RetroPassOptions, SsrOptions,
 };
 use three_rs::nodes::tsl::{
     bind_analytic_noise, d_gtr, distance, equirect_dir_pdf, equirect_uv_to_dir, f_schlick, float,
@@ -25,8 +26,8 @@ use three_rs::nodes::tsl::{
     texture_uv, time, uniform_value, uv, vec2, vec3, vec3_join, vec4_join,
 };
 use three_rs::nodes::Type;
-use three_rs::textures::{DepthTexture, Texture};
-use three_rs::{Color, PerspectiveCamera, PointLight, Scene, ToneMapping};
+use three_rs::textures::{DepthTexture, MinFilter, Texture, TextureFilter};
+use three_rs::{Color, Matrix4, PerspectiveCamera, PointLight, Scene, ToneMapping};
 
 /// One quad: the name the gate reports it by, the three.js dump file it is
 /// checked against, and the material.
@@ -857,5 +858,74 @@ fn specular_helpers_quads(quads: &mut Vec<DisplayQuad>) {
         "analytic_noise",
         "specular_helpers_m04_analytic_noise.wgsl",
         noise(uv(), int(3)),
+    ));
+
+    environment_quads(quads);
+}
+
+/// Quads D–F of `specular_helpers.html`: an 8×4 float equirect with a hot
+/// texel at ( 2, 2 ), looked up through `ImportanceSampledEnvironment`.
+fn environment_quads(quads: &mut Vec<DisplayQuad>) {
+    let (width, height) = (8, 4);
+    let mut pixels = Vec::with_capacity(width * height * 4);
+    for y in 0..height {
+        for x in 0..width {
+            let hot = if x == 2 && y == 2 { 20.0 } else { 0.0 };
+            pixels.extend([
+                0.2 + 0.05 * x as f32 + hot,
+                0.3 + 0.1 * y as f32 + hot * 0.8,
+                0.5 + hot * 0.4,
+                1.0,
+            ]);
+        }
+    }
+    let hdr = Texture::data_rgba32float(width as u32, height as u32, &pixels);
+    // `new DataTexture()`'s `NearestFilter` default (`data_rgba32float`
+    // picks linear), which the map's clone keeps: three reads it with
+    // `textureLoad`.
+    hdr.set_min_filter(MinFilter::Nearest);
+    hdr.set_mag_filter(TextureFilter::Nearest);
+    let camera_world_matrix = uniform_value(Type::Mat4, Matrix4::identity().elements.to_vec());
+    let view_reflect_dir = || vec3_join(vec![uv().sub(0.5), float(-1.0)]).normalize();
+    let lobe = || EnvironmentLobe {
+        camera_world_matrix: camera_world_matrix.clone(),
+        view_reflect_dir: view_reflect_dir(),
+        n: vec3_join(vec![uv().swizzle("yx").sub(0.5), float(1.0)]).normalize(),
+        v: vec3(0.0, 0.0, 1.0),
+        alpha: uv().x().mul(uv().x()),
+        f0: vec3(0.04, 0.04, 0.04),
+    };
+
+    // `m05` (D) and `m06` (E): `new ImportanceSampledEnvironment( false )`.
+    let mut environment = ImportanceSampledEnvironment::new(false);
+    environment.update_from(&hdr);
+    quads.push(quad(
+        "env_sample_reflect",
+        "specular_helpers_m05_env_sample_reflect.wgsl",
+        vec4_join(vec![
+            environment.sample_reflect(&camera_world_matrix, view_reflect_dir(), None),
+            float(1.0),
+        ]),
+    ));
+    quads.push(quad(
+        "env_sample_brdf",
+        "specular_helpers_m06_env_sample_brdf.wgsl",
+        vec4_join(vec![
+            environment.sample_environment_brdf(&lobe()),
+            float(1.0),
+        ]),
+    ));
+
+    // `m08` (F): `new ImportanceSampledEnvironment( true )`, the MIS path.
+    let mut importance = ImportanceSampledEnvironment::new(true);
+    importance.update_from(&hdr);
+    let xi2 = vec4_join(vec![uv(), uv().swizzle("yx")]);
+    quads.push(quad(
+        "env_sample_mis",
+        "specular_helpers_m08_env_sample_mis.wgsl",
+        vec4_join(vec![
+            importance.sample_environment_mis(&lobe(), xi2),
+            float(1.0),
+        ]),
     ));
 }
