@@ -3424,21 +3424,7 @@ pub fn triplanar_texture(
     map_z: Option<&Texture>,
     scale: NodeRef,
 ) -> NodeRef {
-    let map_y = map_y.unwrap_or(map_x);
-    let map_z = map_z.unwrap_or(map_x);
-
-    let bf = normal_local().abs().normalize();
-    let bf = bf.clone().div(bf.dot(vec3(1.0, 1.0, 1.0)));
-
-    let tx = position_local().yz().mul(scale.clone());
-    let ty = position_local().zx().mul(scale.clone());
-    let tz = position_local().xy().mul(scale);
-
-    let cx = texture_uv(map_x, tx).mul(bf.clone().x());
-    let cy = texture_uv(map_y, ty).mul(bf.clone().y());
-    let cz = texture_uv(map_z, tz).mul(bf.z());
-
-    cx.add(cy).add(cz)
+    triplanar_textures(map_x, map_y, map_z, scale, position_local(), normal_local())
 }
 
 /// Port of `BumpMapNode` — `bumpMap( texture( bumpMap ).r, materialBumpScale )`.
@@ -3616,6 +3602,241 @@ pub fn equirect_uv(direction: NodeRef) -> NodeRef {
         .mul(float(1.0 / std::f64::consts::PI))
         .add(float(0.5));
     vec2_join(vec![u, v])
+}
+
+/// `equirectDirection( uv )` — `nodes/utils/EquirectUV.js`, the inverse of
+/// [`equirect_uv`]: the unit direction an equirect coordinate in `[ 0, 1 ]²`
+/// looks along. Three's default argument is `uv()`; pass [`uv`] for it.
+pub fn equirect_direction(uv: impl Into<NodeRef>) -> NodeRef {
+    let uv = uv.into();
+    let theta = uv.x().sub(0.5).mul(std::f64::consts::PI * 2.0);
+    let phi = uv.y().sub(0.5).mul(std::f64::consts::PI);
+    let cos_phi = phi.cos();
+    let x = cos_phi.mul(theta.cos());
+    let y = phi.sin();
+    let z = cos_phi.mul(theta.sin());
+    vec3_join(vec![x, y, z])
+}
+
+/// `matcapUV` — `nodes/utils/MatcapUV.js`: the view-space normal projected
+/// onto a frame facing the eye, scaled by `0.495` (not `0.5`, to stay off the
+/// rim of an undersized matcap disk) into `[ 0, 1 ]²`, held in a
+/// `matcapUV` var.
+///
+/// Three's is a module-level node built once (`Fn().once()().toVar()`);
+/// this builds a fresh one per call, so bind it once per material when it is
+/// read in several places.
+pub fn matcap_uv() -> NodeRef {
+    let view = position_view_direction();
+    let x = vec3_join(vec![view.z(), float(0.0), view.x().negate()]).normalize();
+    let y = view.cross(x.clone());
+    to_var(
+        Some("matcapUV"),
+        vec2_join(vec![x.dot(normal_view()), y.dot(normal_view())])
+            .mul(0.495)
+            .add(0.5),
+    )
+}
+
+/// `maxMipLevel( texture( map ) )` — `MaxMipLevelNode`: an object-group
+/// `float` uniform holding `log2( max( width, height ) )` of the map, read
+/// each time the uniform buffer is written (three updates it per frame).
+///
+/// **Divergence, API shape** (`docs/nodes.md` §8): three takes the texture
+/// *node* and reads `.value` off it; a `NodeRef` has no way back to its
+/// `Texture`, so the port takes the map, as [`triplanar_texture`] does.
+pub fn max_mip_level(map: &Texture) -> NodeRef {
+    let map = map.clone();
+    uniform(
+        UniformSource::Live(crate::nodes::node::LiveValue::new(move || {
+            let (width, height) = map.size();
+            vec![f64::from(width.max(height)).log2()]
+        })),
+        Type::F32,
+        UniformGroup::Object,
+        None,
+    )
+}
+
+/// `spritesheetUV( count, uv, frame )` — `nodes/utils/SpriteSheetUV.js`: the
+/// uv of frame `frame` (wrapped to the sheet) in a sheet of `count.x` by
+/// `count.y` cells, numbered left to right from the top row. Three's
+/// defaults are `uv()` and `float( 0 )`.
+pub fn spritesheet_uv(
+    count: impl Into<NodeRef>,
+    uv: impl Into<NodeRef>,
+    frame: impl Into<NodeRef>,
+) -> NodeRef {
+    let count = count.into();
+    let width = count.x();
+    let height = count.y();
+    let frame_num = mod_float(frame, width.clone().mul(height.clone())).floor();
+    let column = mod_float(frame_num.clone(), width.clone());
+    let row = height.sub(ceil(frame_num.add(1.0).div(width)));
+    let scale = count.reciprocal();
+    uv.into().add(vec2_join(vec![column, row])).mul(scale)
+}
+
+/// `triplanarTextures( textureX, textureY, textureZ, scale, position, normal )`
+/// — `TriplanarTextures.js` with every argument explicit. Three's defaults
+/// are `float( 1 )`, `positionLocal` and `normalLocal`, which is
+/// [`triplanar_texture`].
+///
+/// **Divergence, API shape** (`docs/nodes.md` §8): the maps themselves rather
+/// than texture nodes, as for [`triplanar_texture`].
+pub fn triplanar_textures(
+    map_x: &Texture,
+    map_y: Option<&Texture>,
+    map_z: Option<&Texture>,
+    scale: NodeRef,
+    position: NodeRef,
+    normal: NodeRef,
+) -> NodeRef {
+    let map_y = map_y.unwrap_or(map_x);
+    let map_z = map_z.unwrap_or(map_x);
+
+    let bf = normal.abs().normalize();
+    let bf = bf.clone().div(bf.dot(vec3(1.0, 1.0, 1.0)));
+
+    let tx = position.yz().mul(scale.clone());
+    let ty = position.zx().mul(scale.clone());
+    let tz = position.xy().mul(scale);
+
+    let cx = texture_uv(map_x, tx).mul(bf.x());
+    let cy = texture_uv(map_y, ty).mul(bf.y());
+    let cz = texture_uv(map_z, tz).mul(bf.z());
+
+    cx.add(cy).add(cz)
+}
+
+/// `textureBicubic( texture( map, uv ), strength )` —
+/// `TextureBicubic.js`: [`texture_bicubic_level`] at
+/// `strength * maxMipLevel( map )`.
+///
+/// **Divergence, API shape** (`docs/nodes.md` §8): three reads the map and
+/// the uv back off the texture node; the port takes them separately.
+pub fn texture_bicubic(map: &Texture, uv: NodeRef, strength: impl Into<NodeRef>) -> NodeRef {
+    let lod = strength.into().mul(max_mip_level(map));
+    texture_bicubic_level(map, uv, lod)
+}
+
+/// `textureBicubicLevel( texture( map, uv ), lod )` — N8's mipped bicubic
+/// filter (`TextureBicubic.js`): four bilinear taps at the floor level and
+/// four at the ceiling level, weighted by the B-spline, then mixed by the
+/// fractional part of `lod`.
+pub fn texture_bicubic_level(map: &Texture, uv: NodeRef, lod: impl Into<NodeRef>) -> NodeRef {
+    let lod = lod.into();
+    let size = |level: NodeRef| {
+        texture_size(TextureSource::Texture2D(map.clone()), level.to_int()).to_vec2()
+    };
+    let lod_size = vec4_join(vec![size(lod.clone()), size(lod.add(1.0))]);
+    let lod_size_inv = float(1.0).div(lod_size.clone());
+    let uv_scaled = uv.swizzle("xyxy").mul(lod_size).add(0.5);
+    let iuv = uv_scaled.floor();
+    let fuv = uv_scaled.fract();
+
+    let (g0, g1, h0, h1) = bicubic_weights(&fuv);
+
+    let p0 = iuv.clone().add(h0).sub(0.5).mul(lod_size_inv.clone());
+    let p3 = iuv.add(h1).sub(0.5).mul(lod_size_inv);
+
+    let f_sample = bicubic(map, &p0.xy(), &p3.xy(), &g0.xy(), &g1.xy(), lod.floor());
+    let c_sample = bicubic(
+        map,
+        &p0.zw(),
+        &p3.zw(),
+        &g0.zw(),
+        &g1.zw(),
+        ceil(lod.clone()),
+    );
+
+    lod.fract().mix(f_sample, c_sample)
+}
+
+/// `bicubicWeights( a )` in `TextureBicubic.js`: the cubic B-spline's four
+/// weights folded into two bilinear taps — `g0`/`g1` the tap weights,
+/// `h0`/`h1` their offsets.
+fn bicubic_weights(a: &NodeRef) -> (NodeRef, NodeRef, NodeRef, NodeRef) {
+    let bc = 1.0 / 6.0;
+    let w0 = float(bc).mul(a.mul(a.mul(a.negate().add(3.0)).sub(3.0)).add(1.0));
+    let w1 = float(bc).mul(a.mul(a.mul(float(3.0).mul(a.clone()).sub(6.0))).add(4.0));
+    let w2 = float(bc).mul(
+        a.mul(a.mul(float(-3.0).mul(a.clone()).add(3.0)).add(3.0))
+            .add(1.0),
+    );
+    let w3 = float(bc).mul(a.pow(float(3.0)));
+
+    let g0 = w0.add(w1.clone());
+    let g1 = w2.add(w3.clone());
+    let h0 = float(-1.0).add(w1.div(g0.clone()));
+    let h1 = float(1.0).add(w3.div(g1.clone()));
+    (g0, g1, h0, h1)
+}
+
+/// `bicubic( textureNode, p0, p3, g0, g1, lod )` in `TextureBicubic.js`: the
+/// four taps at one level.
+fn bicubic(
+    map: &Texture,
+    p0: &NodeRef,
+    p3: &NodeRef,
+    g0: &NodeRef,
+    g1: &NodeRef,
+    lod: NodeRef,
+) -> NodeRef {
+    let p1 = vec2_join(vec![p3.x(), p0.y()]);
+    let p2 = vec2_join(vec![p0.x(), p3.y()]);
+    let tap = |p: NodeRef| texture_level(map, p, lod.clone());
+
+    let a = g0
+        .y()
+        .mul(g0.x().mul(tap(p0.clone())).add(g1.x().mul(tap(p1))));
+    let b = g1
+        .y()
+        .mul(g0.x().mul(tap(p2)).add(g1.x().mul(tap(p3.clone()))));
+    a.add(b)
+}
+
+/// The node type `getTextureType()` gives a volume: `float` for a one-channel
+/// format, `vec2` for two, `vec4` otherwise.
+fn texture_3d_type(volume: &crate::textures::Data3DTexture) -> Type {
+    match volume.format().components() {
+        1 => Type::F32,
+        2 => Type::Vec2,
+        _ => Type::Vec4,
+    }
+}
+
+/// `texture3DLoad( volume, coord )` — `Texture3DNode` with `setSampler(
+/// false )`: the texel at integer `coord` of mip 0, a `textureLoad`. The
+/// node is typed by the volume's format as three's is (a `RedFormat` volume
+/// is a `float` node, so its var holds `textureLoad( … ).x`).
+///
+/// The volume must still be filterable (`LinearFilter`): the binding of a
+/// `NearestFilter` volume, sampler-less in three, is not ported (see
+/// [`texture_3d`]).
+pub fn texture_3d_load(volume: &crate::textures::Data3DTexture, coord: NodeRef) -> NodeRef {
+    texture_node(
+        TextureSource::Texture3D(volume.clone()),
+        coord.to_ivec3(),
+        SampleMode::LoadTexel,
+        texture_3d_type(volume),
+    )
+}
+
+/// `texture3DLevel( volume, uv, level )` — a `textureSampleLevel` of the
+/// volume at `uv` in `[ 0, 1 ]³` and an explicit mip level, typed by the
+/// volume's format as [`texture_3d_load`] is.
+pub fn texture_3d_level(
+    volume: &crate::textures::Data3DTexture,
+    uv: NodeRef,
+    level: impl Into<NodeRef>,
+) -> NodeRef {
+    texture_node(
+        TextureSource::Texture3D(volume.clone()),
+        uv,
+        SampleMode::Level(level.into()),
+        texture_3d_type(volume),
+    )
 }
 
 /// `texture( map ).sample( uv )` — the same tap as [`texture_uv`], but through
