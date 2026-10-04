@@ -5988,3 +5988,102 @@ arithmetic, and `tests/traa_frames.rs` allows for it.
 - `useSubpixelCorrection = false`, `depthThreshold`, `edgeDepthDiff` and
   `maxVelocityLength` as settable properties. They are constants at three's
   defaults.
+
+## 69. `SSGINode` (`webgpu_postprocessing_ssgi`)
+
+### 69.1 What three does
+
+`ssgi( beauty, depth, normal, camera )` is a `TempNode` with
+`updateBeforeType = FRAME`. It is screen space global illumination with a
+visibility bitmask, after SSRT3. It owns one render target with two
+attachments and no depth buffer: `textures[ 0 ]` is the AO (`RedFormat`,
+`UnsignedByteType`) and `textures[ 1 ]` the GI (`RGBFormat`,
+`UnsignedInt101111Type`, which is `rg11b10ufloat`). `getAONode()` and
+`getGINode()` are `passTexture( this, … )` over them.
+
+- **The quad.** The material's `outputNode` is `outputStruct( ao, gi )`, so
+  the fragment stage returns a struct of an `f32` and a `vec3<f32>`. For each
+  pixel with depth below 1 (the rest is discarded) it unprojects the depth to
+  a view position. Then, for `sliceCount` directions around the view vector,
+  it marches `stepCount` steps along the screen to either side. Each sample's
+  front and back horizon angles set a run of bits in a 32-bit occlusion
+  mask. The bits a sample sets for the first time are the share of the
+  hemisphere it occludes. That share, the cosines at both ends, and the
+  sample's beauty colour give the light it bounces back. The set bits over
+  all slices are the AO.
+- **Options.** `sliceCount`, `stepCount`, `radius`, `expFactor`,
+  `thickness`, `useLinearThickness`, `backfaceLighting`, `aoIntensity`,
+  `giIntensity` and `useScreenSpaceSampling` are uniforms.
+  `useTemporalFiltering` is a plain property read in `updateBefore()`.
+- **`updateBefore()`.** It sizes the target to the drawing buffer and
+  writes `halfProjScale` from the camera's `fov`. With temporal filtering it
+  picks the slice rotation and step offset from `frameId % 6` and
+  `frameId % 4`; without it both are 1. It clears to white and renders the
+  quad.
+- **`setup()`.** It logs an error when the device lacks
+  `rg11b10ufloat-renderable`, and carries on.
+
+### 69.2 The port
+
+`nodes::display::ssgi` builds the same graph. `tests/nodes_display_wgsl.rs`
+gates it against three's dump of the page: the SSGI fragment body and its two
+helper functions, `spatialOffsets` and `GTAOFastAcos`. It also gates the
+page's composite (`convertToTexture`) and its TRAA resolve over that
+composite. The graph needed one new node:
+
+- **`output_struct( members )`.** This is `Node::OutputStruct`, three's
+  `outputStruct()`. As a material's `output_node` it emits one
+  `output.mN = …;` line per member, and the fragment stage's `OutputType`
+  struct takes each member's own type instead of the `vec4` every `mrt()`
+  member is widened to. `assemble_with_mrt` now takes the member types.
+
+Three's dump has some shapes that the fingerprint would catch if they were
+written the natural way:
+
+- `directionIsRight` is a `select` between two copies of the whole
+  front/back horizon expression. Three's `If` duplicates it, the
+  linear-thickness select inside it included.
+- The backface branch keeps its `dot` in a `let`, while the else branch
+  computes `clamp( dot( … ), 0, 1 )` in place.
+
+The port builds each from the same nodes three does, so the call and literal
+multisets match.
+
+`SsgiState` implements `NodeUpdate` and is registered as the updater of both
+textures, as `passTexture( this, … )` makes it one in three. As with TRAA
+(§63), the port asks for the scene pass explicitly, through
+`frame::texture_update( beauty )`, at the top of `update_before()`. The
+frame guard turns the pass's own later call into a no-op.
+
+**The options are `SettableValue`s.** Each of the ten uniforms is a public
+field on `SsgiNode`. The two booleans are `u32` uniforms read through
+`bool( … )`, as in three's dump. `set_use_temporal_filtering()` is the
+property, and it defaults to on. Writing any of them rebuilds nothing.
+
+**The camera's far plane is a uniform of the node's own.** Three reads it
+through `reference( 'far', 'float', camera )`, which its dump binds as an
+object-group uniform, so the port writes it each frame rather than using
+`cameraFar`.
+
+**The GI attachment's format.** The renderer now asks for
+`RG11B10UFLOAT_RENDERABLE` when the adapter has it. If it does not, the port
+logs three's error once, as three does, and then falls back to
+`Rgba16Float`. Three draws into an attachment the device cannot render.
+
+**The normal input.** The page passes `sample( uv => unpackRGBToNormal(
+scenePassNormal.sample( uv ) ) )`. `ssgi()` takes the packed normal texture
+and does that unpacking (`* 2 - 1`) itself.
+
+**The clear.** The quad clears to white, as three's does. Like three's
+backend, the renderer clears attachment 0 to the clear colour and every other
+attachment to opaque black, so the AO is white and the GI black where the
+quad discards.
+
+### 69.3 Not ported
+
+- `normalNode = null`, which rebuilds the normal from depth through
+  `getNormalFromDepth`.
+- A logarithmic depth buffer (`logarithmicDepthToViewZ`).
+- `resolutionScale`. r187's `SSGINode` has none: its target is always the
+  drawing buffer's size.
+- The page's GUI. Its settings (two slices, eight steps) are set in code.

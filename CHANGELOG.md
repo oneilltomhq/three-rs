@@ -8,6 +8,20 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Added
 
+- **`ssgi()` / `SsgiNode`** (`nodes::display`), a port of
+  `examples/jsm/tsl/display/SSGINode.js`. It is screen space global
+  illumination with a visibility bitmask, and writes an AO and a one-bounce
+  GI texture. Every option is a public `SettableValue`, and
+  `set_use_temporal_filtering()` is three's property. The SSGI shader, the
+  page's composite and its TRAA resolve are gated against three's dump in
+  `tests/nodes_display_wgsl.rs`, and `tests/ssgi_frames.rs` checks the
+  frames. `webgpu_postprocessing_ssgi` is ported, ungraded because three's
+  e2e harness skips it, and in the viewer. `normalNode = null` and a
+  logarithmic depth buffer are not ported.
+- **`tsl::output_struct()`**, three's `outputStruct()`. As a material's
+  `output_node` it writes each member to its own colour attachment as its
+  own type. See `docs/nodes.md` §69.
+- The renderer requests `RG11B10UFLOAT_RENDERABLE` when the adapter has it.
 - **`SkyMesh`** (`addons::objects`), a port of `examples/jsm/objects/SkyMesh.js`.
   It is the Preetham daylight model with a sun disc and an fbm cloud layer.
   Every uniform is a public `SettableValue`. `webgpu_sky` is graded green at 0

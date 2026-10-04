@@ -348,3 +348,28 @@ fn traa_clip_aabb_matches_three() {
 fn traa_flicker_reduction_matches_three() {
     check("traa", Region::Function("flickerReduction"));
 }
+
+#[test]
+fn ssgi_matches_three() {
+    check("ssgi", Region::Body);
+}
+
+#[test]
+fn ssgi_spatial_offsets_matches_three() {
+    check("ssgi", Region::Function("spatialOffsets"));
+}
+
+#[test]
+fn ssgi_gtao_fast_acos_matches_three() {
+    check("ssgi", Region::Function("GTAOFastAcos"));
+}
+
+#[test]
+fn ssgi_composite_matches_three() {
+    check("ssgi_composite", Region::Body);
+}
+
+#[test]
+fn ssgi_traa_resolve_matches_three() {
+    check("ssgi_traa", Region::Body);
+}

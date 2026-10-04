@@ -1020,6 +1020,7 @@ impl NodeBuilder {
             Node::VaryingProperty { .. } => vec![],
             Node::Return { value } => vec![value.clone()],
             Node::Not { node } | Node::BitNot { node, .. } => vec![node.clone()],
+            Node::OutputStruct { members } => members.clone(),
             Node::StructMember { .. } | Node::Workgroup(_) | Node::Barrier { .. } => vec![],
             // `Node.analyze()` over `nodeProperties`: what `setup` returned.
             Node::Custom(custom) => {
@@ -2710,6 +2711,15 @@ impl NodeBuilder {
                 let snippet = self.generate(&inner);
                 format!("( ~ {snippet} )")
             }
+            // `OutputStructNode.generate()`: one `output.mN = <member>` line
+            // per member, each built as its own type, pushed onto the flow.
+            Node::OutputStruct { members } => {
+                for (index, member) in members.clone().iter().enumerate() {
+                    let snippet = self.format(member, member.ty());
+                    self.emit(format!("output.m{index} = {snippet};"));
+                }
+                String::new()
+            }
         }
     }
 
@@ -3181,9 +3191,22 @@ impl NodeBuilder {
             let snippet = self.generate(&node);
             self.emit(format!("{output_prop} = {snippet};"));
         }
+        // An `outputStruct()` output node writes its members itself and
+        // leaves `output.color` unwritten, as an MRT does.
+        let output_struct = flow
+            .output_node
+            .as_ref()
+            .and_then(|node| match node.node() {
+                Node::OutputStruct { members } => Some(members.iter().map(NodeRef::ty).collect()),
+                _ => None,
+            });
         if let Some(node) = &flow.output_node {
             let node = node.clone();
-            color = self.format(&node, output_type);
+            if output_struct.is_some() {
+                self.generate(&node);
+            } else {
+                color = self.format(&node, output_type);
+            }
         }
         // `OutputStructNode.generate()`: one `output.mN = <member>` line per
         // member, pushed onto the *flow* — the entry point's result section is
@@ -3201,12 +3224,13 @@ impl NodeBuilder {
         }
         let position = self.generate(&flow.position);
 
-        let fragment_wgsl = self.assemble_with_mrt(
-            Stage::Fragment,
-            &color,
-            flow.mrt.as_ref().map(|members| members.len()),
-            flow.depth.is_some(),
-        );
+        let members = output_struct.or_else(|| {
+            flow.mrt
+                .as_ref()
+                .map(|members| vec![Type::Vec4; members.len()])
+        });
+        let fragment_wgsl =
+            self.assemble_with_mrt(Stage::Fragment, &color, members, flow.depth.is_some());
         let vertex_wgsl = self.assemble(Stage::Vertex, &position);
 
         let attributes = self.stages[Stage::Vertex.index()].attributes.clone();
@@ -3561,16 +3585,17 @@ impl NodeBuilder {
         self.assemble_with_mrt(stage, result, None, false)
     }
 
-    /// `mrt_members` is `Some(n)` for a fragment stage with an
-    /// `OutputStructNode` result: the struct is `OutputType` with `n`
-    /// `@location( i ) mi : vec4<f32>` members, and the entry point's result
-    /// section is empty because `generate()` already wrote the assignments into
-    /// the flow.
+    /// `mrt_members` is `Some(types)` for a fragment stage with an
+    /// `OutputStructNode` result: the struct is `OutputType` with one
+    /// `@location( i ) mi : <type>` member per entry (`vec4<f32>` for every
+    /// MRT member, the member's own type for an `outputStruct()`), and the
+    /// entry point's result section is empty because `generate()` already
+    /// wrote the assignments into the flow.
     fn assemble_with_mrt(
         &self,
         stage: Stage,
         result: &str,
-        mrt_members: Option<usize>,
+        mrt_members: Option<Vec<Type>>,
         depth: bool,
     ) -> String {
         let s = &self.stages[stage.index()];
@@ -3578,11 +3603,14 @@ impl NodeBuilder {
 
         if stage == Stage::Fragment {
             out.push_str("// global\ndiagnostic( off, derivative_uniformity );\n\n\n");
-            match mrt_members {
-                Some(count) => {
+            match &mrt_members {
+                Some(types) => {
                     out.push_str("// structs\n\nstruct OutputType {\n");
-                    for index in 0..count {
-                        out.push_str(&format!("\t@location( {index} ) m{index} : vec4<f32>,\n"));
+                    for (index, ty) in types.iter().enumerate() {
+                        out.push_str(&format!(
+                            "\t@location( {index} ) m{index} : {},\n",
+                            wgsl::type_name(*ty)
+                        ));
                     }
                     out.push_str("\t\n};\nvar<private> output : OutputType;\n\n");
                 }

@@ -863,7 +863,7 @@ These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) an
 | `SobelOperatorNode.js` | Present | sobel; webgpu_postprocessing_sobel |
 | `SSAAPassNode.js` | Present | SsaaPassNode (src/renderer/ssaa_pass.rs:130); webgpu_postprocessing_ssaa |
 | `SSAONode.js` | Absent | — |
-| `SSGINode.js` | Absent | — |
+| `SSGINode.js` | Present | ssgi/SsgiNode; tests/nodes_display_wgsl.rs (SSGI body, spatialOffsets, GTAOFastAcos, the page's composite and TRAA resolve gates), tests/ssgi_frames.rs; webgpu_postprocessing_ssgi (ported, ungraded: three's own e2e exception list). `normalNode = null` (getNormalFromDepth) and log depth absent |
 | `SSRNode.js` | Absent | — |
 | `SSSNode.js` | Absent | — |
 | `StereoCompositePassNode.js` | Absent | — |

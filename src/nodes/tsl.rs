@@ -522,6 +522,13 @@ pub fn property(name: &'static str, ty: Type) -> NodeRef {
     NodeRef::new(Node::Property { name, ty })
 }
 
+/// `outputStruct( ...members )` — `OutputStructNode`, for a material's
+/// `outputNode`: member `i` is written to colour attachment `i` as its own
+/// type. `SSGINode` writes a `float` AO and a `vec3` GI this way.
+pub fn output_struct(members: Vec<NodeRef>) -> NodeRef {
+    NodeRef::new(Node::OutputStruct { members })
+}
+
 // ---------------------------------------------------------------------------
 // operators
 // ---------------------------------------------------------------------------

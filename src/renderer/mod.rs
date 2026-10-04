@@ -1217,7 +1217,12 @@ impl Renderer {
         // device to pick a transcode target. Without them a Basis texture
         // falls back to uncompressed RGBA — correct, four to eight times the
         // memory, and not the texture three samples.
-        let wanted = wgpu::Features::FLOAT32_FILTERABLE | COMPRESSION_FEATURES;
+        //
+        // `RG11B10UFLOAT_RENDERABLE` is WebGPU's `rg11b10ufloat-renderable`,
+        // which `SSGINode` renders its GI attachment into (and checks for).
+        let wanted = wgpu::Features::FLOAT32_FILTERABLE
+            | wgpu::Features::RG11B10UFLOAT_RENDERABLE
+            | COMPRESSION_FEATURES;
         let required_features = adapter.features() & wanted;
 
         let (device, queue) = adapter

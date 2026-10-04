@@ -1663,6 +1663,16 @@ pub enum Node {
         /// The result's WGSL type.
         ty: Type,
     },
+    /// `outputStruct( ...members )` — `OutputStructNode` as a material's
+    /// `outputNode`: one colour attachment per member, each written as its
+    /// own type (`@location( i ) mi : f32`, `vec3<f32>`, …) rather than the
+    /// `vec4` every [`MrtNode`](crate::nodes::MrtNode) member is widened to.
+    /// Generating it emits `output.mi = …` for each member into the flow,
+    /// as three's `OutputStructNode.generate()` does; it has no value.
+    OutputStruct {
+        /// The members, by attachment index.
+        members: Vec<NodeRef>,
+    },
     /// `cond.select( a, b )` — lowered to an `if`/`else` writing a result var,
     /// exactly as Three does.
     Select {
@@ -1817,6 +1827,7 @@ impl NodeRef {
             | Node::Return { .. } => Type::Void,
             Node::Not { node } => Type::vector_of(Type::Bool, node.ty().components().max(1)),
             Node::BitNot { ty, .. } => *ty,
+            Node::OutputStruct { .. } => Type::Void,
             Node::StructMember { buffer, member } => match &buffer.source {
                 BufferSource::Struct { layout, .. } => layout.members[*member].ty,
                 _ => unreachable!("three-rs: a struct member is only built on a struct buffer"),
