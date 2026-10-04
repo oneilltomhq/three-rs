@@ -806,6 +806,17 @@ impl Default for NodeBuilder {
     }
 }
 
+/// The struct a value of no [`Type`] carries — a [`Node::StructNew`], seen
+/// through the blocks and vars that pass it on — for declaring a var of it.
+fn struct_layout_of(node: &NodeRef) -> Option<Rc<super::node::StructLayout>> {
+    match node.node() {
+        Node::StructNew { layout, .. } => Some(layout.clone()),
+        Node::Block { result, .. } => struct_layout_of(result),
+        Node::Var(v) => struct_layout_of(&v.value),
+        _ => None,
+    }
+}
+
 /// `WGSLNodeBuilder.getDirectives( shaderStage )`: one `enable X;` line per
 /// directive the stage enabled. `subgroups` is the only one the port has.
 fn directives(s: &StageState) -> &'static str {
@@ -2960,7 +2971,15 @@ impl NodeBuilder {
             Node::Var(v) => {
                 let v = v.clone();
                 let snippet = self.generate(&v.value);
-                let name = self.declare_var(v.name.as_deref(), v.ty);
+                // A struct value's var is declared as the struct:
+                // `ggxReflectionSample( … ).toVar()` is `nodeVar66 =
+                // nodeVar65;` with `var nodeVar66 : StructType0;`.
+                let name = match struct_layout_of(&v.value) {
+                    Some(layout) if v.ty == Type::Void => {
+                        self.declare_var_typed(v.name.as_deref(), layout.name.to_string())
+                    }
+                    _ => self.declare_var(v.name.as_deref(), v.ty),
+                };
                 self.emit(format!("{name} = {snippet};"));
                 self.cache_put(CacheKey::node(node), name.clone());
                 name
