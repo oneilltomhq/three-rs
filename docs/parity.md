@@ -704,7 +704,7 @@ Graded examples: 96 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `SMAAPass` | N.A. | — | — | WebGL composer; SMAAPass -> SMAANode smaa(): Present; smaa (src/nodes/display/smaa.rs:72); webgpu_postprocessing_ssr; webgpu_postprocessing_smaa (ported, ungraded) |
 | `SSAARenderPass` | N.A. | — | — | WebGL composer; SSAARenderPass -> SSAAPassNode ssaaPass(): Present; SsaaPassNode (src/renderer/ssaa_pass.rs:130); webgpu_postprocessing_ssaa |
 | `SSAOPass` | N.A. | — | — | WebGL composer; SSAOPass -> SSAONode ssao(): Absent |
-| `SSRPass` | N.A. | — | — | WebGL composer; SSRPass -> SSRNode ssr(): Present; ssr (src/nodes/display/ssr.rs:94); webgpu_postprocessing_ssr |
+| `SSRPass` | N.A. | — | — | WebGL composer; SSRPass -> SSRNode ssr(): Present; ssr (src/nodes/display/ssr.rs:175); webgpu_postprocessing_ssr |
 | `SavePass` | N.A. | — | — | WebGL composer; SavePass -> no TSL node (rtt()/convertToTexture()): Present; rtt (src/nodes/display/rtt.rs:73); webgpu_postprocessing_anamorphic |
 | `ShaderPass` | N.A. | — | — | WebGL composer; ShaderPass -> no TSL node (Fn on RenderPipeline.outputNode): Present; RenderPipeline (src/renderer/render_pipeline.rs:31); webgpu_postprocessing_radial_blur |
 | `TAARenderPass` | N.A. | — | — | WebGL composer; TRAANode traa() is the WebGPU counterpart (Present) |
@@ -822,7 +822,7 @@ Graded examples: 96 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ### Supplementary: `examples/jsm/tsl/display/*.js`
 
-These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 35 Present, 4 Partial, 9 Absent.
+These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 39 Present, 4 Partial, 5 Absent.
 
 | file | status | three-rs port and check |
 |---|---|---|
@@ -846,7 +846,7 @@ These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) an
 | `GodraysNode.js` | Partial | godrays/GodraysNode (src/nodes/display/godrays.rs:74); tests/nodes_display_wgsl.rs; webgpu_postprocessing_godrays (graded); point lights only: the DirectionalLight branch, log depth and dispose() are not ported |
 | `GTAONode.js` | Present | gtao/GtaoNode, ao() (src/nodes/display/gtao.rs:61,70); tests/nodes_display_wgsl.rs (body and getScreenPositionFromClip gates), tests/gtao_frames.rs; webgpu_postprocessing_ao (ported, ungraded: on three's e2e exception list) |
 | `hashBlur.js` | Present | hash_blur; tests/nodes_display_wgsl.rs (loop gated against three's webgpu_backdrop_area dump, taps through viewportSharedTexture) |
-| `ImportanceSampledEnvironment.js` | Absent | — |
+| `ImportanceSampledEnvironment.js` | Present | ImportanceSampledEnvironment/EnvMapCdfGenerator (src/nodes/display/importance_sampled_environment.rs:324,227); tests/nodes_display_wgsl.rs (`env_sample_reflect`, `env_sample_brdf`, `env_sample_mis` and its `equirectDirPdf`/`misPowerHeuristic` function gates, against three's dump of tools/dump-pages/specular_helpers.html m05, m06, m08); the CDF tables by the module's 4×2 unit test; webgpu_postprocessing_ssr_denoise (not yet ported, ungraded); a same-size `updateFrom()` rewrites the textures in place, a resized one allocates new textures only later graphs read (docs/nodes.md §85.2) |
 | `LensflareNode.js` | Present | lensflare/LensflareNode (src/nodes/display/lensflare.rs:84); tests/nodes_display_wgsl.rs; webgpu_postprocessing_lensflare (graded); takes a texture: the caller writes convertToTexture()'s rtt(); no dispose() |
 | `Lut3DNode.js` | Present | lut_3d; tests/nodes_display_wgsl.rs; webgpu_postprocessing_3dlut (graded); the table is fixed when the node is built (no `lutNode.value` swap) |
 | `MotionBlur.js` | Present | motion_blur; tests/nodes_display_wgsl.rs; webgpu_postprocessing_motion_blur (graded) |
@@ -855,23 +855,23 @@ These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) an
 | `ParallaxBarrierPassNode.js` | Present | parallax_barrier_pass/ParallaxBarrierPassNode; tests/nodes_display_wgsl.rs (quad gate), tests/stereo_frames.rs; webgpu_display_stereo's parallax-barrier effect (not the graded default) |
 | `PixelationPassNode.js` | Present | pixelation_pass/PixelationPassNode (src/nodes/display/pixelation_pass.rs:35,24); tests/nodes_display_wgsl.rs; webgpu_postprocessing_pixel (ported, ungraded: three.js fails its own reference on this machine) |
 | `radialBlur.js` | Present | radial_blur; webgpu_postprocessing_radial_blur |
-| `RecurrentDenoiseNode.js` | Absent | — |
+| `RecurrentDenoiseNode.js` | Present | recurrent_denoise/RecurrentDenoiseNode (src/nodes/display/recurrent_denoise.rs:177,188); tests/nodes_display_wgsl.rs (recurrent_denoise_diffuse and recurrent_denoise_specular gates, tools/dump-pages/recurrent_denoise.html m09 and m05, and function gates for getNeighborhoodStats, karisTemporalBlend, lobeNormalFalloff and four more), tests/recurrent_denoise_frames.rs; webgpu_postprocessing_ssr_denoise (pending: the page's other nodes are not ported yet); `raw = null` reads the input (three throws), contextNode is not ported, dispose() drops the node (docs/nodes.md §88.2) |
 | `RetroPassNode.js` | Partial | retro_pass/RetroPassNode (src/nodes/display/retro_pass.rs:104); tests/retro_frames.rs; webgpu_postprocessing_retro (ported, ungraded: three fails its own reference here). No MeshStandardMaterial + envMap reflection branch, no per-material cache; docs/nodes.md §79.3 |
 | `RGBShiftNode.js` | Present | rgb_shift; tests/nodes_display_wgsl.rs; webgpu_postprocessing (ported, ungraded) |
 | `Sepia.js` | Present | sepia (src/nodes/display/sepia.rs:13); tests/nodes_display_wgsl.rs (film_sepia_bleach dump, m05; no webgpu page uses it) |
 | `Shape.js` | Present | circle (src/nodes/display/shape.rs:18; not core shapeCircle); tests/nodes_display_wgsl.rs (webgpu_postprocessing_retro m08 and m10, inside vignette and the bleed amount) |
-| `SharpenNode.js` | Absent | — |
+| `SharpenNode.js` | Present | sharpen/SharpenNode (src/nodes/display/sharpen.rs:54,62); tests/nodes_display_wgsl.rs (sharpen_rcas and sharpen_rcas_denoise gates, tools/dump-pages/sharpen.html m03 and m06), tests/sharpen_frames.rs; webgpu_postprocessing_ssr_denoise (pending: the page's other nodes are not ported yet); contextNode and dispose() are not ported |
 | `SMAANode.js` | Present | smaa/SmaaNode (src/nodes/display/smaa.rs:72,77); tests/nodes_display_wgsl.rs (smaa_edges, smaa_weights and smaa_blend gates); webgpu_postprocessing_ssr (graded); webgpu_postprocessing_smaa (ported, ungraded: three.js fails its own reference on this machine) |
 | `SobelOperatorNode.js` | Present | sobel; webgpu_postprocessing_sobel |
 | `SSAAPassNode.js` | Present | SsaaPassNode (src/renderer/ssaa_pass.rs:130); webgpu_postprocessing_ssaa |
 | `SSAONode.js` | Absent | — |
 | `SSGINode.js` | Present | ssgi/SsgiNode (src/nodes/display/ssgi.rs:87,97); tests/nodes_display_wgsl.rs (SSGI body, spatialOffsets, GTAOFastAcos, the page's composite and TRAA resolve gates), tests/ssgi_frames.rs; webgpu_postprocessing_ssgi (ported, ungraded: three's own e2e exception list). An arbitrary `normalNode`, `normalNode = null` (getNormalFromDepth), log depth, the `SSGI.AO` name, `contextNode` and `dispose()` are not ported |
-| `SSRNode.js` | Present | ssr/SsrNode (src/nodes/display/ssr.rs:94,105); tests/nodes_display_wgsl.rs (ssr, ssr_copy, ssr_blur and ssr_resolve gates); webgpu_postprocessing_ssr (graded); stochastic, binaryRefine, reflectNonMetals, screenEdgeFadeBlack, setHistory(), resolutionScale ≠ 1, orthographic cameras and log depth are not ported |
+| `SSRNode.js` | Present | ssr/SsrNode (src/nodes/display/ssr.rs:175,186); both paths: stochastic = false (tests/nodes_display_wgsl.rs ssr, ssr_copy, ssr_blur and ssr_resolve gates; webgpu_postprocessing_ssr, graded) and stochastic = true with binaryRefine, reflectNonMetals, the environment fallback and setHistory() (ssr_stochastic, ssr_screen_border_factor, ssr_stochastic_refine and ssr_reflect_non_metals gates, tools/dump-pages/ssr_stochastic.html m10, m14 and m16; tests/ssr_stochastic_frames.rs; webgpu_postprocessing_ssr_denoise pending); resolutionScale ≠ 1, orthographic cameras and log depth are not ported |
 | `SSSNode.js` | Partial | sss/SssNode (src/nodes/display/sss.rs:102,111); tests/nodes_display_wgsl.rs (SSS quad and ground shadow-context gates), tests/sss_frames.rs; webgpu_postprocessing_sss (ported, ungraded: three's own e2e exception list). No orthographic camera, no logarithmic depth, no `RedFormat` target |
 | `StereoCompositePassNode.js` | Present | CompositeState (crate-private base of the two composite passes); tests/stereo_frames.rs; no `contextNode`, partial renderer-state save |
 | `StereoPassNode.js` | Present | stereo_pass/StereoPassNode; tests/stereo_frames.rs; webgpu_display_stereo (graded) |
 | `TAAUNode.js` | Absent | — |
-| `TemporalReprojectNode.js` | Absent | — |
+| `TemporalReprojectNode.js` | Present | temporal_reproject/TemporalReprojectNode (src/nodes/display/temporal_reproject.rs:131,143); tests/nodes_display_wgsl.rs (temporal_reproject seed, resolve, resolve_specular and layout-fn gates), tests/temporal_reproject_frames.rs; webgpu_postprocessing_ssr_denoise (pending); orthographic cameras and log depth are not ported |
 | `TRAANode.js` | Present | traa/TraaNode; tests/nodes_display_wgsl.rs (resolve, subpixel correction, clip AABB, flicker reduction gates), tests/traa_frames.rs; webgpu_postprocessing_traa (ported, ungraded: three's own e2e exception list) |
 | `TransitionNode.js` | Present | transition; webgpu_postprocessing_transition |
 
@@ -1677,7 +1677,7 @@ The first refresh of this matrix closed the previous top five. Velocity and TRAA
 1. **The screen-space effect nodes** (`DenoiseNode`; `denoise` 6 pages). `SSRNode` is Present (`webgpu_postprocessing_ssr`, graded). `GTAONode` and `builtinAOContext` are Present now (`webgpu_postprocessing_ao`, ungraded: it is on three's e2e exception list), and so are `DepthOfFieldNode` (`webgpu_postprocessing_dof`), `SSGINode` (`webgpu_postprocessing_ssgi`) and `SSSNode` with `builtinShadowContext` (`webgpu_postprocessing_sss`), all ungraded for the same reason. What is left needs a velocity target and a temporal resolve, and both now exist; these pages are the direct payoff of the velocity work. Porting them also gives the depth reads (`viewportDepthTexture`, `linearDepth`, `getViewPosition`) their first graded consumer.
 2. **EventDispatcher** (issues 153, 159). 8 pages subscribe to `change` or `finished` events. In ordinary use these are render-on-demand behind OrbitControls and chaining animation clips when one ends, and neither works in the port today. `AnimationMixer` and `AnimationAction` fire nothing.
 3. **The TransformControls pages** (`webgpu_modifier_curve`, `webgpu_shadowmap_progressive`, `webgpu_tsl_compute_attractors_particles`). `FirstPersonControls` (8 pages), `FlyControls` (1) and now `TransformControls` are ported and gated against three's classes (`docs/controls.md`). What is left is wiring the gizmo into the pages: `webgpu_modifier_curve`'s port still leaves it out, and the viewer's controls hook is typed for `OrbitControls`.
-4. The remaining display files (`DenoiseNode`, `depthAwareBlur`, `FSR1Node`, `ImportanceSampledEnvironment`, `RecurrentDenoiseNode`, `SharpenNode`, `SSAONode`, `TAAUNode`, `TemporalReprojectNode`, 0 to 2 pages each). Small and self-contained; most unlock one page.
+4. The remaining display files (`DenoiseNode`, `depthAwareBlur`, `FSR1Node`, `SSAONode`, `TAAUNode`, 0 to 2 pages each). Small and self-contained; most unlock one page.
 
 **Runners-up, and why they rank lower:**
 - RectAreaLight and LTC (3 pages).

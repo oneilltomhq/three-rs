@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three-rs dump page - SpecularHelpers, RNoise and ImportanceSampledEnvironment as six quads</title>
+		<meta charset="utf-8">
+	</head>
+	<body>
+		<!--
+			Not a three.js example: a minimal page for tools/dump-webgpu.mjs --html,
+			so the WGSL of examples/jsm/tsl/utils/SpecularHelpers.js,
+			examples/jsm/tsl/utils/RNoise.js and
+			examples/jsm/tsl/display/ImportanceSampledEnvironment.js can be dumped
+			and gated in tests/nodes_display_wgsl.rs. The only example that uses
+			them, webgpu_postprocessing_ssr_denoise.html, buries them inside the
+			SSR and denoise passes; this page isolates each group.
+
+			The environment is an 8x4 RGBA float DataTexture built here, so no
+			asset is needed. Every quad is a Fn() wrapped in convertToTexture(),
+			which renders it on an RTT quad of its own, so the dump has one module
+			per quad, in this order:
+
+			  A  ggxReflectionSample( N, V, roughness, metalness, albedo, Xi ),
+			     every member of the struct it returns folded into the colour
+			  B  equirectUvToDir, equirectDirPdf, misPowerHeuristic, D_GTR,
+			     SmithG, GeometryTerm, F_Schlick and getSpecularDominantFactor
+			  C  bindAnalyticNoise( resolution, 47 )( uv(), int( 3 ) )
+			  D  new ImportanceSampledEnvironment( false ), updateFrom( hdr ):
+			     sampleReflect( { cameraWorldMatrix, viewReflectDir } )
+			  E  the same environment's sampleEnvironmentBRDF( … )
+			  F  new ImportanceSampledEnvironment( true ), updateFrom( hdr ):
+			     sampleEnvironmentMIS( … ), which reads the CDF textures
+
+			The RenderPipeline's output adds the six textures together; that
+			module is not gated.
+		-->
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.webgpu.js",
+					"three/webgpu": "../build/three.webgpu.js",
+					"three/tsl": "../build/three.tsl.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			import * as THREE from 'three/webgpu';
+			import { Fn, uv, float, int, vec3, vec4, normalize, uniform, convertToTexture } from 'three/tsl';
+			import { D_GTR, F_Schlick, GeometryTerm, SmithG, equirectDirPdf, equirectUvToDir, getSpecularDominantFactor, ggxReflectionSample, misPowerHeuristic } from 'three/addons/tsl/utils/SpecularHelpers.js';
+			import { bindAnalyticNoise } from 'three/addons/tsl/utils/RNoise.js';
+			import ImportanceSampledEnvironment from 'three/addons/tsl/display/ImportanceSampledEnvironment.js';
+
+			const renderer = new THREE.WebGPURenderer();
+			renderer.setPixelRatio( window.devicePixelRatio );
+			renderer.setSize( window.innerWidth, window.innerHeight );
+			document.body.appendChild( renderer.domElement );
+
+			// 8x4 equirect HDR: a bright warm patch on a dim blue-grey sky.
+			const width = 8, height = 4;
+			const pixels = new Float32Array( width * height * 4 );
+			for ( let y = 0; y < height; y ++ ) {
+
+				for ( let x = 0; x < width; x ++ ) {
+
+					const i = 4 * ( y * width + x );
+					const hot = ( x === 2 && y === 2 ) ? 20 : 0;
+					pixels[ i + 0 ] = 0.2 + 0.05 * x + hot;
+					pixels[ i + 1 ] = 0.3 + 0.1 * y + hot * 0.8;
+					pixels[ i + 2 ] = 0.5 + hot * 0.4;
+					pixels[ i + 3 ] = 1;
+
+				}
+
+			}
+
+			const hdr = new THREE.DataTexture( pixels, width, height, THREE.RGBAFormat, THREE.FloatType );
+			hdr.mapping = THREE.EquirectangularReflectionMapping;
+			hdr.needsUpdate = true;
+
+			const cameraWorldMatrix = uniform( new THREE.Matrix4() );
+
+			// A: the GGX/VNDF reflection sample, every struct member used.
+			const ggx = Fn( () => {
+
+				const p = uv();
+				const N = normalize( vec3( p.sub( 0.5 ), 1 ) );
+				const V = normalize( vec3( p.yx.sub( 0.5 ), 1 ) );
+				const s = ggxReflectionSample( N, V, p.x, p.y, vec3( 0.9, 0.6, 0.3 ), vec4( p, p.yx ) ).toVar();
+
+				return vec4(
+					s.get( 'reflectDir' ).add( s.get( 'sampleWeight' ) ).add( s.get( 'f0' ) ),
+					s.get( 'pdf' ).add( s.get( 'NdotV' ) ).add( s.get( 'alpha' ) )
+				);
+
+			} );
+
+			// B: the scalar BRDF and equirect helpers.
+			const helpers = Fn( () => {
+
+				const p = uv();
+				const dir = equirectUvToDir( p );
+				const pdf = equirectDirPdf( dir );
+				const w = misPowerHeuristic( pdf, p.x );
+				const d = D_GTR( p.x, p.y, float( 2 ) );
+				const g1 = SmithG( p.y, p.x );
+				const g = GeometryTerm( p.x, p.y, float( 0.5 ) );
+				const f = F_Schlick( vec3( 0.04 ), p.y );
+				const sdf = getSpecularDominantFactor( p.y, p.x );
+
+				return vec4( dir.mul( w ).add( f ), d.add( g1 ).add( g ).add( sdf ) );
+
+			} );
+
+			// C: the analytic R2 noise.
+			const resolution = uniform( new THREE.Vector2( 800, 500 ) );
+			const noise = Fn( () => bindAnalyticNoise( resolution, 47 )( uv(), int( 3 ) ) );
+
+			// D, E: the environment without importance sampling.
+			const environment = new ImportanceSampledEnvironment( false );
+			environment.updateFrom( hdr );
+
+			// F: the environment with the CDF tables.
+			const importanceEnvironment = new ImportanceSampledEnvironment( true );
+			importanceEnvironment.updateFrom( hdr );
+
+			const viewReflectDir = () => normalize( vec3( uv().sub( 0.5 ), - 1 ) );
+			const lobe = () => ( {
+				cameraWorldMatrix,
+				viewReflectDir: viewReflectDir(),
+				N: normalize( vec3( uv().yx.sub( 0.5 ), 1 ) ),
+				V: vec3( 0, 0, 1 ),
+				alpha: uv().x.mul( uv().x ),
+				f0: vec3( 0.04 )
+			} );
+
+			const reflect = Fn( () => vec4( environment.sampleReflect( { cameraWorldMatrix, viewReflectDir: viewReflectDir() } ), 1 ) );
+			const brdf = Fn( () => vec4( environment.sampleEnvironmentBRDF( lobe() ), 1 ) );
+			const mis = Fn( () => vec4( importanceEnvironment.sampleEnvironmentMIS( { ...lobe(), Xi2: vec4( uv(), uv().yx ) } ), 1 ) );
+
+			const quadA = convertToTexture( ggx() );
+			const quadB = convertToTexture( helpers() );
+			const quadC = convertToTexture( noise() );
+			const quadD = convertToTexture( reflect() );
+			const quadE = convertToTexture( brdf() );
+			const quadF = convertToTexture( mis() );
+
+			const renderPipeline = new THREE.RenderPipeline( renderer );
+			renderPipeline.outputNode = quadA.add( quadB ).add( quadC ).add( quadD ).add( quadE ).add( quadF );
+
+			renderer.setAnimationLoop( () => renderPipeline.render() );
+
+		</script>
+	</body>
+</html>
