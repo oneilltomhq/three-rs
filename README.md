@@ -207,7 +207,7 @@ same screenshots at the same threshold (see
 | webgpu_loader_gltf_sheen | 28 | 3.1 | 6 | 41921 | yes |
 | webgpu_deferred | 0 | 2.8 | 25 | 26378 | yes |
 | webgpu_loader_gltf_anisotropy | 94 | 3.2 | 5 | 12188 | yes |
-| webgpu_loader_gltf_transmission | 6 | 2.9 | 6 | 26433 | not yet |
+| webgpu_loader_gltf_transmission | 6 | 2.9 | 6 | 26433 | yes |
 | webgpu_materials_texture_manualmipmap | 81 | 2.5 | 11 | 19 | yes |
 | webgpu_tsl_vfx_flames | 31 | 5.4 | 5 | 9 | yes |
 | webgpu_procedural_texture | 0 | 3.2 | 5 | 6 | yes |
