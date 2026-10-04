@@ -12,6 +12,7 @@
 //! [`SsaaPassNode`](crate::renderer::SsaaPassNode) does.
 
 mod after_image;
+mod anaglyph_pass;
 mod bloom;
 mod box_blur;
 mod chromatic_aberration;
@@ -20,17 +21,23 @@ mod fxaa;
 mod gaussian_blur;
 mod hash_blur;
 mod motion_blur;
+mod parallax_barrier_pass;
 mod pixelation_pass;
 mod radial_blur;
 mod rgb_shift;
 mod rtt;
 mod sobel;
+mod stereo_composite_pass;
+mod stereo_pass;
 mod toon_outline_pass;
 mod traa;
 mod transition;
 mod viewport_texture;
 
 pub use after_image::{after_image, AfterImageNode};
+pub use anaglyph_pass::{
+    anaglyph_matrices, anaglyph_pass, AnaglyphAlgorithm, AnaglyphColorMode, AnaglyphPassNode,
+};
 pub use bloom::{bloom, luminosity_high_pass, BloomNode, HighPassInput};
 pub use box_blur::{box_blur, BoxBlurOptions};
 pub use chromatic_aberration::chromatic_aberration;
@@ -39,11 +46,13 @@ pub use fxaa::{fxaa, FxaaNode};
 pub use gaussian_blur::{gaussian_blur, GaussianBlurNode, GaussianBlurOptions};
 pub use hash_blur::{hash_blur, hash_blur_with, HashBlurOptions};
 pub use motion_blur::motion_blur;
+pub use parallax_barrier_pass::{parallax_barrier_pass, ParallaxBarrierPassNode};
 pub use pixelation_pass::{pixelation_pass, PixelationPassNode};
 pub use radial_blur::{radial_blur, RadialBlurOptions};
 pub use rgb_shift::rgb_shift;
 pub use rtt::{convert_to_texture, rtt, RttNode};
 pub use sobel::{sobel, SobelOperatorNode};
+pub use stereo_pass::{stereo_pass, StereoPassNode};
 pub use toon_outline_pass::{toon_outline_pass, ToonOutlinePassNode};
 pub use traa::{traa, TraaNode};
 pub use transition::transition;

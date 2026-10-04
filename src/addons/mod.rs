@@ -16,6 +16,7 @@
 //! `three-rs-controls` workspace crate is a different addon — a map camera
 //! over a ground, not a port of anything in three.js — and stays where it is.
 
+pub mod camera_utils;
 pub mod controls;
 pub mod curve_modifier_gpu;
 pub mod geometry_utils;
