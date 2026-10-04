@@ -1128,8 +1128,8 @@ Partial: `textureLoad`.
 | `samplerComparison` | Absent | — | — | comment only: src/nodes/builder.rs |
 | `textureSize` | Present | texture_size (src/nodes/tsl.rs:4303) | indirect: used by src/nodes/display/box_blur.rs |  |
 | `texture3D` | Present | texture_3d (src/nodes/tsl.rs:3092) | tests/nodes_texture_wgsl.rs, webgpu_volume_perlin (graded) |  |
-| `texture3DLoad` | Present | texture_3d_load (src/nodes/tsl.rs:3811) | tests/nodes_tsl_batch.rs | filterable volumes only, as texture3D |
-| `texture3DLevel` | Present | texture_3d_level (src/nodes/tsl.rs:3823) | tests/nodes_tsl_batch.rs |  |
+| `texture3DLoad` | Present | texture_3d_load (src/nodes/tsl.rs:3817) | tests/nodes_tsl_batch.rs | filterable volumes only, as texture3D; mip 0 only, no level argument |
+| `texture3DLevel` | Present | texture_3d_level (src/nodes/tsl.rs:3829) | tests/nodes_tsl_batch.rs |  |
 | `pmremTexture` | Present | PmremEnvironment::new (src/nodes/pmrem_node.rs:64) | tests/nodes_compute_indirect_wgsl.rs, webgpu_clearcoat (graded) |  |
 
 ### lighting/material

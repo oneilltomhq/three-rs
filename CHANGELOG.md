@@ -8,8 +8,8 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Added
 
-- **TSL sweep 1**: the last absent `three/tsl` math names and eight texture
-  utilities, each gated against three's own WGSL dump in
+- **TSL sweep 1**: the last absent `three/tsl` math names and nine texture
+  utilities (`texture_bicubic_level` is now public), each gated against three's own WGSL dump in
   `tests/nodes_tsl_batch.rs`.
   - Packing: `pack_snorm_2x16`, `pack_unorm_2x16`, `pack_half_2x16`,
     `pack_snorm_4x8`, `pack_unorm_4x8` and the five matching `unpack_*`,
