@@ -666,11 +666,29 @@ fn renumber_uniforms(text: &str) -> String {
     out
 }
 
-/// The `var<uniform>` struct members of `wgsl`, as `member -> (buffer, type)`.
+/// The `var<uniform>` struct members of `wgsl`, as `member -> (buffer, type)`,
+/// and its bare `var name : type;` bindings (textures and samplers), with an
+/// empty buffer.
 fn uniform_declarations(wgsl: &str) -> std::collections::HashMap<String, (String, String)> {
     let mut members = std::collections::HashMap::new();
     for line in wgsl.lines() {
-        let Some(declaration) = line.trim().strip_prefix("var<uniform> ") else {
+        let line = line.trim();
+        let binding = if line.starts_with('@') {
+            line.find(" var ").map(|at| &line[at + 1..])
+        } else {
+            Some(line)
+        };
+        if let Some((name, ty)) = binding
+            .and_then(|binding| binding.strip_prefix("var "))
+            .and_then(|binding| binding.trim_end_matches(';').split_once(':'))
+        {
+            members.insert(
+                name.trim().to_string(),
+                (String::new(), ty.trim().to_string()),
+            );
+            continue;
+        }
+        let Some(declaration) = line.strip_prefix("var<uniform> ") else {
             continue;
         };
         let (buffer, ty) = declaration
@@ -755,6 +773,38 @@ fn assert_renumbered(name: &str, node: NodeRef, theirs: &str) {
             );
         }
     }
+}
+
+/// [`codes`] with the port's fn-local `var nodeVarN : T; nodeVarN = X;`
+/// rewritten as three's `let nodeConstN = X;`, and every later `nodeVarN`
+/// read as `nodeConstN` — the §8 let-vs-var divergence inside a `fn`.
+fn codes_as_lets(wgsl: &str) -> String {
+    let mut text = codes(wgsl);
+    while let Some(at) = text.find("var nodeVar") {
+        let name_end = text[at + 4..].find(' ').unwrap() + at + 4;
+        let name = text[at + 4..name_end].to_string();
+        let decl_end = text[at..].find("; ").unwrap() + at + 2;
+        text.replace_range(at..decl_end, "");
+        let k = &name["nodeVar".len()..];
+        let assign = format!("{name} = ");
+        let first = text[at..].find(&assign).unwrap() + at;
+        text.replace_range(first..first + assign.len(), &format!("let nodeConst{k} = "));
+        let mut out = String::with_capacity(text.len());
+        let mut rest = text.as_str();
+        while let Some(i) = rest.find(&name) {
+            let after = &rest[i + name.len()..];
+            out.push_str(&rest[..i]);
+            if after.starts_with(|c: char| c.is_ascii_digit()) {
+                out.push_str(&name);
+            } else {
+                out.push_str(&format!("nodeConst{k}"));
+            }
+            rest = after;
+        }
+        out.push_str(rest);
+        text = out;
+    }
+    text
 }
 
 fn filterable_map() -> three_rs::textures::Texture {
@@ -1025,6 +1075,504 @@ fn reflect_refract_match() {
 #[test]
 fn clip_space_matches() {
     assert_body("clip_space", clip_space().div(clip_space().w()));
+}
+
+// --- display: depth conversions, blend modes, colour grading ---
+
+#[test]
+fn depth_conversions_match() {
+    let view_z = || position_view().z();
+    assert_body(
+        "depth_conversions",
+        vec4_join(vec![
+            view_z_to_reversed_orthographic_depth(view_z(), camera_near(), camera_far()),
+            orthographic_depth_to_view_z(x(), camera_near(), camera_far()),
+            view_z_to_reversed_perspective_depth(view_z(), camera_near(), camera_far()),
+            float(1.0),
+        ]),
+    );
+}
+
+#[test]
+fn logarithmic_depth_matches() {
+    assert_canonical(
+        "logarithmic_depth",
+        vec4_join(vec![
+            view_z_to_logarithmic_depth(position_view().z(), camera_near(), camera_far()),
+            logarithmic_depth_to_view_z(x(), camera_near(), camera_far()),
+            float(0.0),
+            float(1.0),
+        ]),
+    );
+}
+
+#[test]
+fn blend_modes_match() {
+    let a = vec3_join(vec![uv(), float(0.5)]);
+    let b = vec3_join(vec![y(), float(0.25), x()]);
+    let ours = fragment(
+        vec4_join(vec![
+            blend_burn(a.clone(), b.clone())
+                .add(blend_dodge(a.clone(), b.clone()))
+                .add(blend_screen(a.clone(), b.clone())),
+            float(1.0),
+        ])
+        .add(blend_color(
+            vec4_join(vec![a, x()]),
+            vec4_join(vec![b, y()]),
+        )),
+    );
+    let theirs = fixture("blend_modes");
+    assert_eq!(canonical(&ours), canonical(&theirs), "--- port ---\n{ours}");
+    // `fn`-local `var` read back as three's `let`: `docs/nodes.md` §8.
+    assert_eq!(codes_as_lets(&ours), codes(&theirs), "--- port ---\n{ours}");
+}
+
+#[test]
+fn vibrance_matches() {
+    assert_canonical(
+        "vibrance",
+        vec4_join(vec![
+            vibrance(vec3_join(vec![uv(), float(0.5)]), x())
+                .add(vibrance(vec3_join(vec![y(), x(), float(0.25)]), float(0.0))),
+            float(1.0),
+        ]),
+    );
+}
+
+#[test]
+fn cdl_matches() {
+    let rec709 = || vec3(0.2126, 0.7152, 0.0722);
+    assert_canonical(
+        "cdl",
+        cdl(
+            vec4_join(vec![uv(), float(0.5), float(1.0)]),
+            vec3(1.1, 1.0, 0.9),
+            vec3(0.1, 0.1, 0.1),
+            vec3(1.2, 1.2, 1.2),
+            float(0.9),
+            rec709(),
+        )
+        .add(cdl(
+            vec4_join(vec![y(), x(), float(0.25), float(1.0)]),
+            vec3(1.0, 1.0, 1.0),
+            vec3(0.0, 0.0, 0.0),
+            vec3(1.0, 1.0, 1.0),
+            float(1.0),
+            rec709(),
+        )),
+    );
+}
+
+#[test]
+fn cineon_tone_mapping_matches() {
+    let ours = fragment(vec4_join(vec![
+        cineon_tone_mapping(vec3_join(vec![uv(), float(0.5)]), float(1.2)),
+        float(1.0),
+    ]));
+    let theirs = fixture("cineon_tone_mapping");
+    assert_eq!(body(&ours), body(&theirs), "--- port ---\n{ours}");
+    // `fn`-local `var` read back as three's `let`: `docs/nodes.md` §8.
+    assert_eq!(codes_as_lets(&ours), codes(&theirs), "--- port ---\n{ours}");
+}
+
+/// `ToneMappingNode` in `CineonToneMapping` mode: `vec4(
+/// cineonToneMapping( color.rgb, exposure ), color.a )`. The `fn` is the one
+/// three emits; the call's argument is `color.rgb` of a `vec4`, so only the
+/// call is pinned in `main`.
+#[test]
+fn cineon_tone_mapping_node_matches() {
+    let color = vec4_join(vec![uv(), float(0.5), float(1.0)]);
+    let ours = fragment(three_rs::materials::tone_mapping_node(
+        three_rs::materials::ToneMapping::Cineon,
+        float(1.2),
+        color,
+    ));
+    let theirs = fixture("cineon_tone_mapping");
+    // Only the call is pinned in `main`: `docs/nodes.md` §68.8.
+    assert!(
+        body(&ours).contains("cineonToneMapping( "),
+        "--- port ---\n{ours}"
+    );
+    // `fn`-local `var` read back as three's `let`: `docs/nodes.md` §8.
+    assert_eq!(codes_as_lets(&ours), codes(&theirs), "--- port ---\n{ours}");
+}
+
+// --- display: face direction, screen and viewport ---
+
+#[test]
+fn direction_to_face_direction_matches() {
+    use three_rs::materials::Side;
+    let mut material = MeshBasicNodeMaterial::new();
+    material.side = Side::Double;
+    material.fragment_node = Some(vec4_join(vec![
+        direction_to_face_direction(vec3_join(vec![uv(), float(1.0)]), Side::Double),
+        float(1.0),
+    ]));
+    let flow = setup(&material, &SetupContext::default(), None);
+    let ours = NodeBuilder::new().build(&flow).fragment_wgsl;
+    assert_eq!(
+        body(&ours),
+        body(&fixture("direction_to_face_direction")),
+        "--- port ---\n{ours}"
+    );
+}
+
+/// `directionToFaceDirection()` on a front- and a back-sided material: the
+/// vector as is, and the vector times `-1`. The side is passed, not read
+/// from the material (`docs/nodes.md` §68.3).
+#[test]
+fn direction_to_face_direction_single_sided_matches() {
+    use three_rs::materials::Side;
+    for (side, name) in [
+        (Side::Front, "direction_to_face_direction_front"),
+        (Side::Back, "direction_to_face_direction_back"),
+    ] {
+        let mut material = MeshBasicNodeMaterial::new();
+        material.side = side;
+        material.fragment_node = Some(vec4_join(vec![
+            direction_to_face_direction(vec3_join(vec![uv(), float(1.0)]), side),
+            float(1.0),
+        ]));
+        let flow = setup(&material, &SetupContext::default(), None);
+        let ours = NodeBuilder::new().build(&flow).fragment_wgsl;
+        assert_eq!(
+            body(&ours),
+            body(&fixture(name)),
+            "{name}\n--- port ---\n{ours}"
+        );
+    }
+}
+
+#[test]
+fn screen_position_matches() {
+    assert_canonical(
+        "screen_position",
+        vec4_join(vec![
+            get_screen_position(position_view(), camera_projection_matrix()),
+            float(0.0),
+            float(1.0),
+        ]),
+    );
+}
+
+#[test]
+fn normal_from_depth_matches() {
+    let depth = three_rs::DepthTexture::new();
+    // Unnamed uniforms renumbered in first-use order: `docs/nodes.md` §67.5.
+    assert_renumbered(
+        "normal_from_depth",
+        vec4_join(vec![
+            get_normal_from_depth(uv(), &depth, camera_projection_matrix_inverse()),
+            float(1.0),
+        ]),
+        &fixture("normal_from_depth"),
+    );
+}
+
+#[test]
+fn viewport_coords_match() {
+    // Unnamed uniforms renumbered in first-use order: `docs/nodes.md` §67.5.
+    assert_renumbered(
+        "viewport_coords",
+        vec4_join(vec![
+            viewport_uv(),
+            viewport_coordinate().div(screen_size()),
+        ]),
+        &fixture("viewport_coords"),
+    );
+}
+
+// --- lighting ---
+
+#[test]
+fn light_projection_uv_matches() {
+    // Unnamed uniforms renumbered in first-use order: `docs/nodes.md` §67.5.
+    assert_renumbered(
+        "light_projection_uv",
+        vec4_join(vec![
+            light_projection_uv(0, position_world()).add(light_projection_uv(
+                0,
+                vec4_join(vec![position_view(), float(1.0)]),
+            )),
+            float(1.0),
+        ]),
+        &fixture("light_projection_uv"),
+    );
+}
+
+#[test]
+fn direct_point_light_matches() {
+    let (light_direction, light_color) = direct_point_light(
+        vec3(1.0, 0.5, 0.25),
+        vec3_join(vec![uv(), float(1.0)]),
+        x(),
+        float(2.0),
+    );
+    assert_canonical(
+        "direct_point_light",
+        vec4_join(vec![light_direction.add(light_color), float(1.0)]),
+    );
+}
+
+#[test]
+fn parallax_correct_normal_matches() {
+    assert_canonical(
+        "parallax_correct_normal",
+        vec4_join(vec![
+            get_parallax_correct_normal(
+                normal_world(),
+                vec3(200.0, 100.0, 100.0),
+                vec3(0.0, -50.0, 0.0),
+            ),
+            float(1.0),
+        ]),
+    );
+}
+
+// --- material scopes ---
+
+/// [`fragment`] with `node` built from, and set on, a material `configure`
+/// has set up — the `MaterialNode` scopes read the material's maps.
+fn material_fragment(
+    configure: impl FnOnce(&mut MeshBasicNodeMaterial),
+    node: impl FnOnce(&MeshBasicNodeMaterial) -> NodeRef,
+) -> String {
+    let mut material = MeshBasicNodeMaterial::new();
+    configure(&mut material);
+    material.fragment_node = Some(node(&material));
+    let flow = setup(&material, &SetupContext::default(), None);
+    NodeBuilder::new().build(&flow).fragment_wgsl
+}
+
+/// [`assert_renumbered`] over [`material_fragment`], three's dump first
+/// passed through `fix`.
+fn assert_material(
+    name: &str,
+    configure: impl FnOnce(&mut MeshBasicNodeMaterial),
+    node: impl FnOnce(&MeshBasicNodeMaterial) -> NodeRef,
+    fix: impl FnOnce(String) -> String,
+) {
+    let ours = material_fragment(configure, node);
+    assert_eq!(
+        renumber_uniforms(&canonical(&ours)),
+        renumber_uniforms(&canonical(&fix(fixture(name)))),
+        "{name}: main differs\n--- port ---\n{ours}"
+    );
+}
+
+#[test]
+fn material_defaults_match() {
+    // Unnamed uniforms renumbered in first-use order: `docs/nodes.md` §67.5.
+    assert_material(
+        "material_defaults",
+        |_| {},
+        |m| {
+            vec4_join(vec![
+                material_normal(m)
+                    .add(material_clearcoat_normal(m))
+                    .add(material_light_map(m)),
+                material_ao(m).add(material_specular_strength(m)),
+            ])
+        },
+        |theirs| theirs,
+    );
+}
+
+#[test]
+fn material_maps_match() {
+    let map = filterable_map();
+    // Unnamed uniforms renumbered in first-use order: `docs/nodes.md` §67.5.
+    assert_material(
+        "material_maps",
+        |m| {
+            m.ao_map = Some(map.clone());
+            m.specular_map = Some(map.clone());
+            m.light_map = Some(map.clone());
+        },
+        |m| {
+            vec4_join(vec![
+                material_light_map(m),
+                material_ao(m).add(material_specular_strength(m)),
+            ])
+        },
+        // Three gives each `texture( map )` its own `uniform( map.matrix )`;
+        // the port shares one per map (`transformed_uv`). Same value.
+        // `docs/nodes.md` §41, "One uv-matrix uniform per texture".
+        |theirs| {
+            theirs
+                .replace("object.nodeUniform3 *", "object.nodeUniform1 *")
+                .replace("object.nodeUniform5 *", "object.nodeUniform1 *")
+        },
+    );
+}
+
+#[test]
+fn material_normal_maps_match() {
+    let map = filterable_map();
+    // Unnamed uniforms renumbered in first-use order: `docs/nodes.md` §67.5.
+    assert_material(
+        "material_normal_maps",
+        |m| {
+            m.normal_map = Some(map.clone());
+            m.clearcoat_normal_map = Some(map.clone());
+        },
+        |m| {
+            vec4_join(vec![
+                material_normal(m).add(material_clearcoat_normal(m)),
+                float(1.0),
+            ])
+        },
+        // The shared uv matrix, as in `material_maps_match` (`docs/nodes.md`
+        // §41, "One uv-matrix uniform per texture"), and the splat
+        // `parallax_matches` describes (`vec3 * f32` against `vec3 * vec3( f32 )`,
+        // `docs/nodes.md` §68.8).
+        |theirs| {
+            theirs
+                .replace("object.nodeUniform6 *", "object.nodeUniform4 *")
+                .replace(
+                    "bitangentViewFrame = ( nodeConst5 * nodeVar0 );",
+                    "bitangentViewFrame = ( nodeConst5 * vec3<f32>( nodeVar0 ) );",
+                )
+        },
+    );
+}
+
+/// `materialNormal`'s normal-map arm alone, `normalScale` read as the
+/// `normalScale` uniform.
+#[test]
+fn material_normal_map_matches() {
+    let map = filterable_map();
+    // Unnamed uniforms renumbered in first-use order: `docs/nodes.md` §67.5.
+    assert_material(
+        "material_normal_map",
+        |m| m.normal_map = Some(map.clone()),
+        |m| vec4_join(vec![material_normal(m), float(1.0)]),
+        // The splat `parallax_matches` describes (`vec3 * f32` against
+        // `vec3 * vec3( f32 )`, `docs/nodes.md` §68.8).
+        |theirs| {
+            theirs.replace(
+                "bitangentViewFrame = ( nodeConst5 * nodeVar0 );",
+                "bitangentViewFrame = ( nodeConst5 * vec3<f32>( nodeVar0 ) );",
+            )
+        },
+    );
+}
+
+/// `materialNormal`'s bump-map arm: `bumpMap( bump.r, bumpScale )`.
+#[test]
+fn material_normal_bump_matches() {
+    let map = filterable_map();
+    // Unnamed uniforms renumbered in first-use order: `docs/nodes.md` §67.5.
+    assert_material(
+        "material_normal_bump",
+        |m| {
+            m.bump_map = Some(map.clone());
+            m.bump_scale = 2.0;
+        },
+        |m| vec4_join(vec![material_normal(m), float(1.0)]),
+        // Three gives the twice-read `Hll = bump.r` a `let`; the builder does
+        // not promote a swizzle, so the port reads `.x` at each use
+        // (`docs/nodes.md` §8, "`toConst` on the shadow filter", and §68.8).
+        |theirs| {
+            theirs
+                .replace("\tlet nodeConst3 = nodeVar1.x;\n", "")
+                .replace("nodeConst3", "nodeVar1.x")
+        },
+    );
+}
+
+/// `materialNormal` and `materialClearcoatNormal` with no maps on a
+/// flat-shaded material: `normalView` is `normalFlat`.
+#[test]
+fn material_normal_flat_matches() {
+    // Unnamed uniforms renumbered in first-use order: `docs/nodes.md` §67.5.
+    assert_material(
+        "material_normal_flat",
+        |m| m.flat_shading = true,
+        |m| {
+            vec4_join(vec![
+                material_normal(m).add(material_clearcoat_normal(m)),
+                float(1.0),
+            ])
+        },
+        |theirs| theirs,
+    );
+}
+
+/// The two maps only an accessor reads are warned about, not failed on.
+#[test]
+fn accessor_only_maps_pass_check_supported() {
+    let map = filterable_map();
+    let mut material = MeshBasicNodeMaterial::new();
+    material.light_map = Some(map.clone());
+    material.specular_map = Some(map);
+    assert!(material.unsupported_fields().is_empty());
+    assert!(material.check_supported().is_ok());
+}
+
+#[test]
+fn material_point_size_matches() {
+    // Unnamed uniforms renumbered in first-use order: `docs/nodes.md` §67.5.
+    assert_material(
+        "material_point_size",
+        |m| m.size = 2.0,
+        |_| {
+            vec4_join(vec![
+                material_point_size(),
+                float(0.5),
+                float(0.25),
+                float(1.0),
+            ])
+        },
+        |theirs| theirs,
+    );
+}
+
+#[test]
+fn point_width_matches() {
+    let ours = fragment(vec4_join(vec![
+        point_width(),
+        float(0.0),
+        float(0.0),
+        float(1.0),
+    ]));
+    let theirs = fixture("point_width");
+    assert_eq!(body(&ours), body(&theirs), "--- port ---\n{ours}");
+    assert!(ours.contains("var<private> pointWidth : f32;"), "{ours}");
+}
+
+// --- passes ---
+
+#[test]
+fn depth_pass_matches() {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    let scene: three_rs::SceneRef = Rc::new(RefCell::new(three_rs::Scene::new()));
+    let camera: three_rs::CameraRef = Rc::new(RefCell::new(three_rs::PerspectiveCamera::new(
+        50.0, 1.0, 0.1, 100.0,
+    )));
+    let depth = three_rs::depth_pass(scene, camera);
+    // Unnamed uniforms renumbered in first-use order: `docs/nodes.md` §67.5.
+    assert_renumbered(
+        "depth_pass",
+        vec4_join(vec![
+            depth.node().to(three_rs::nodes::Type::Vec3),
+            float(1.0),
+        ]),
+        &fixture("depth_pass"),
+    );
+}
+
+#[test]
+fn get_texture_index_finds_attachments() {
+    // `getTextureIndex()` is a CPU helper: no shader to compare. Three's
+    // `textures` are `[ output, normal, emissive ]` named as below.
+    use three_rs::nodes::get_texture_index;
+    let names = ["output", "normal", "emissive"];
+    assert_eq!(get_texture_index(&names, "output"), Some(0));
+    assert_eq!(get_texture_index(&names, "emissive"), Some(2));
+    assert_eq!(get_texture_index(&names, "depth"), None);
 }
 
 /// The statements of a vertex `main`, from `// flow` to its `return`,

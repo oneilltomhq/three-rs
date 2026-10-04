@@ -26,6 +26,7 @@ use crate::core::Layers;
 use crate::nodes::node::SettableValue;
 use crate::nodes::tsl::{
     pass_depth_texture, perspective_depth_to_view_z, texture_uv, to_var, uniform_settable, uv,
+    view_z_to_orthographic_depth,
 };
 use crate::nodes::{MrtNode, NodeRef, NodeUpdate, NodeUpdateType, Type};
 use crate::objects::Scene;
@@ -86,6 +87,11 @@ pub struct PassState {
     /// `PassNode._viewZNodes` — memoised like the texture nodes, so two asks
     /// compose one graph.
     view_z_nodes: RefCell<HashMap<String, NodeRef>>,
+    /// `PassNode._linearDepthNodes`.
+    linear_depth_nodes: RefCell<HashMap<String, NodeRef>>,
+    /// `PassNode.scope === PassNode.DEPTH` — what [`depth_pass`] makes: the
+    /// pass used as a value is its linear depth, not its colour.
+    depth_scope: Cell<bool>,
     /// `PassNode._cameraNear` / `_cameraFar`: `uniform( 0 )` a piece, written
     /// from the pass's camera in `updateBefore()`. They are object-group
     /// uniforms of whatever material samples the pass, which is why the fog
@@ -117,6 +123,16 @@ pub struct PassState {
 pub fn pass(scene: SceneRef, camera: CameraRef) -> PassNode {
     let node = PassNode::new();
     node.set_scene(scene, camera);
+    node
+}
+
+/// `depthPass( scene, camera )` — `new PassNode( PassNode.DEPTH, scene,
+/// camera )`: a pass whose [`node`](PassNode::node) is the scene's depth as
+/// `[0,1]` linear depth between the camera's clip planes
+/// ([`linear_depth_node`](PassNode::linear_depth_node)).
+pub fn depth_pass(scene: SceneRef, camera: CameraRef) -> PassNode {
+    let node = pass(scene, camera);
+    node.depth_scope.set(true);
     node
 }
 
@@ -211,6 +227,8 @@ impl PassNode {
             mrt: RefCell::new(None),
             texture_nodes: RefCell::new(texture_nodes),
             view_z_nodes: RefCell::new(HashMap::new()),
+            linear_depth_nodes: RefCell::new(HashMap::new()),
+            depth_scope: Cell::new(false),
             camera_near,
             camera_far,
             auto_clear_depth: options.auto_clear_depth,
@@ -320,6 +338,24 @@ impl PassNode {
         node
     }
 
+    /// `passNode.getLinearDepthNode( name )` — [`view_z_node`](Self::view_z_node)
+    /// as `viewZToOrthographicDepth( viewZ, cameraNear, cameraFar )`: `0` at
+    /// the near plane, `1` at the far one, linear in between.
+    pub fn linear_depth_node(&self, name: &str) -> NodeRef {
+        if let Some(node) = self.linear_depth_nodes.borrow().get(name) {
+            return node.clone();
+        }
+        let node = view_z_to_orthographic_depth(
+            self.view_z_node(name),
+            self.camera_near.0.clone(),
+            self.camera_far.0.clone(),
+        );
+        self.linear_depth_nodes
+            .borrow_mut()
+            .insert(name.to_string(), node.clone());
+        node
+    }
+
     /// `passNode.setMRT( mrt )`.
     ///
     /// The names the MRT writes are *not* what creates the attachments —
@@ -412,14 +448,21 @@ impl PassNode {
         self.render_target.add_texture(name)
     }
 
-    /// `passNode.getTextureNode()` — the node to compose with.
+    /// The pass used as a value — `PassNode.setup()`: the colour texture
+    /// (`getTextureNode()`), or for a [`depth_pass`] the linear depth
+    /// (`getLinearDepthNode()`).
     pub fn node(&self) -> NodeRef {
-        self.node.clone()
+        if self.depth_scope.get() {
+            self.linear_depth_node(DEPTH_ATTACHMENT)
+        } else {
+            self.node.clone()
+        }
     }
 
-    /// `pass( … ).a`.
+    /// `pass( … ).a` — the `a` of [`node`](Self::node), so a [`depth_pass`]
+    /// swizzles its linear depth as three's `PassNode` in depth scope does.
     pub fn a(&self) -> NodeRef {
-        self.node.a()
+        self.node().a()
     }
 
     /// `renderTarget.texture`.

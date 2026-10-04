@@ -1098,6 +1098,10 @@ pub fn tone_mapping_node(mode: ToneMapping, exposure: NodeRef, color: NodeRef) -
             agx_tone_mapping(color.clone().rgb(), exposure),
             color.a(),
         ]),
+        ToneMapping::Cineon => vec4_join(vec![
+            cineon_tone_mapping(color.clone().rgb(), exposure),
+            color.a(),
+        ]),
     }
 }
 
@@ -1274,19 +1278,10 @@ fn material_lights(material: &MeshBasicNodeMaterial, ctx: &SetupContext) -> Vec<
 /// property is never declared and the lighting model's own `ambientOcclusion`
 /// var stays a bare `1`.
 fn setup_ambient_occlusion(material: &MeshBasicNodeMaterial, fragment: &mut Vec<NodeRef>) {
-    let Some(map) = &material.ao_map else {
+    if material.ao_map.is_none() {
         return;
-    };
-
-    fragment.push(
-        ambient_occlusion_property().assign(
-            texture(map)
-                .x()
-                .sub(float(1.0))
-                .mul(material_ao_map_intensity())
-                .add(float(1.0)),
-        ),
-    );
+    }
+    fragment.push(ambient_occlusion_property().assign(material_ao(material)));
 }
 
 /// `MaterialNode.EMISSIVE` — `emissive * emissiveIntensity`, times the
