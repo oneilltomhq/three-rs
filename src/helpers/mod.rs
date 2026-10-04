@@ -20,8 +20,8 @@
 //!
 //! # Divergences
 //!
-//! - **`updateMatrixWorld` overrides.** [`Box3Helper`] and [`PlaneHelper`]
-//!   recompute their transform in an
+//! - **`updateMatrixWorld` overrides.** [`Box3Helper`], [`PlaneHelper`] and
+//!   [`SkeletonHelper`] recompute their transform or vertices in an
 //!   `updateMatrixWorld()` override. The port's traversal has no per-type
 //!   hook, so each exposes `update_matrix_world(force)` instead: the
 //!   override's body, then [`Node::update_matrix_world`]. Call it after the
@@ -49,6 +49,7 @@ mod hemisphere_light_helper;
 mod plane_helper;
 mod point_light_helper;
 mod polar_grid_helper;
+mod skeleton_helper;
 mod spot_light_helper;
 
 pub use arrow_helper::ArrowHelper;
@@ -62,4 +63,5 @@ pub use hemisphere_light_helper::HemisphereLightHelper;
 pub use plane_helper::PlaneHelper;
 pub use point_light_helper::PointLightHelper;
 pub use polar_grid_helper::PolarGridHelper;
+pub use skeleton_helper::SkeletonHelper;
 pub use spot_light_helper::SpotLightHelper;
