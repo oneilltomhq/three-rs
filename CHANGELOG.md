@@ -26,7 +26,7 @@ have their own sections after the release they ship with. The format follows [Ke
     `texture_bicubic_level`, `texture_3d_load` and `texture_3d_level`. The
     functions that take a texture node in three take the `Texture` here,
     as `triplanar_texture` already did.
-- **TSL sweep 2**: thirty `three/tsl` accessors, each gated against three's
+- **TSL sweep 2**: thirty-one `three/tsl` accessors, each gated against three's
   own WGSL dump in `tests/nodes_tsl_batch.rs`. See `docs/nodes.md` §67.
   - Tangent frame: `bitangent_geometry`, `bitangent_local`, `bitangent_world`,
     `tangent_world`, and `tangent_geometry` and `tangent_local`, now public.
@@ -39,8 +39,17 @@ have their own sections after the release they ship with. The format follows [Ke
     `highp_model_view_matrix` and `highp_model_normal_view_matrix`.
   - `transform_normal` (function and method), `transform_normal_to_view`,
     `reflect_view`, `refract_view`, `refract_vector` and `clip_space`.
-  - `material_refraction_ratio`, with a new `Material::refraction_ratio`
-    (default 0.98).
+  - `material_refraction_ratio`, with a new
+    `MeshBasicNodeMaterial::refraction_ratio`: 0.98 from `new`, `lambert`
+    and `phong`, whose three.js materials have `refractionRatio`, and 0
+    from the other constructors.
+  - `reflect_vector` is now cached per normal, like `refract_vector`.
+  - `object_direction` refreshes the target's world matrix and negates a
+    camera's direction, as `getWorldDirection()` does.
+  - A geometry without a `tangent` attribute no longer fails to draw when
+    the material reads the tangent in the vertex stage. The attribute
+    becomes three's `vec4( 0, 0, 0, 1 )` constant, with three's warning.
+  - `clip_space` warns and yields `vec4()` outside the fragment stage.
   - `webgpu_tsl_raging_sea` uses the crate's `transform_normal_to_view` in
     place of its local helper.
 - **TSL sweep 3**: twenty-nine display, lighting and material `three/tsl` names.

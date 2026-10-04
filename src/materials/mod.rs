@@ -223,6 +223,15 @@ pub struct MeshBasicNodeMaterial {
     /// `MeshBasicMaterial.refractionRatio` — the index ratio
     /// [`refract_view`](crate::nodes::tsl::refract_view) bends the view ray by
     /// (`materialRefractionRatio`).
+    ///
+    /// 0.98 for the kinds whose three.js material has the property — Basic
+    /// ([`new`](Self::new)), [`lambert`](Self::lambert) and
+    /// [`phong`](Self::phong) — and 0 from every other constructor, whose
+    /// material has none. Three's `materialRefractionRatio` is one shared
+    /// `uniform( 0 )` that `onObjectUpdate` leaves alone when
+    /// `material.refractionRatio` is `undefined`, so such a material reads 0
+    /// until a Basic, Lambert or Phong draw writes it, and the last value
+    /// written after that; the port writes this field every draw instead.
     pub refraction_ratio: f64,
     /// `MeshBasicMaterial.envMap` — `setupEnvironment()` turns it into
     /// `BasicEnvironmentNode( cubeTexture( envMap ) )`.
@@ -875,6 +884,7 @@ impl MeshBasicNodeMaterial {
         Self {
             kind: MaterialKind::Sprite,
             transparent: true,
+            refraction_ratio: 0.0,
             ..Self::default()
         }
     }
@@ -892,6 +902,7 @@ impl MeshBasicNodeMaterial {
         Self {
             kind: MaterialKind::Points,
             transparent: true,
+            refraction_ratio: 0.0,
             ..Self::default()
         }
     }
@@ -918,6 +929,7 @@ impl MeshBasicNodeMaterial {
     pub fn line(color: Color) -> Self {
         Self {
             color,
+            refraction_ratio: 0.0,
             ..Self::default()
         }
     }
@@ -940,6 +952,7 @@ impl MeshBasicNodeMaterial {
             color,
             blending: Blending::No,
             alpha_to_coverage: true,
+            refraction_ratio: 0.0,
             ..Self::default()
         }
     }
@@ -954,6 +967,7 @@ impl MeshBasicNodeMaterial {
     pub fn normal() -> Self {
         Self {
             kind: MaterialKind::Normal,
+            refraction_ratio: 0.0,
             ..Self::default()
         }
     }
@@ -997,6 +1011,7 @@ impl MeshBasicNodeMaterial {
             color,
             gradient_map,
             lights: true,
+            refraction_ratio: 0.0,
             ..Self::default()
         }
     }
@@ -1009,6 +1024,7 @@ impl MeshBasicNodeMaterial {
             roughness,
             metalness,
             lights: true,
+            refraction_ratio: 0.0,
             ..Self::default()
         }
     }

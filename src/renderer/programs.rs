@@ -720,6 +720,25 @@ impl UniformContext<'_> {
         object: Option<&crate::nodes::node::LiveValue>,
     ) -> Vec<f32> {
         use crate::nodes::Object3DScope;
+        let vector = |v: Vector3| vec![v.x as f32, v.y as f32, v.z as f32];
+        if scope == Object3DScope::Direction {
+            // `Object3D.getWorldDirection()`: the normalised third column,
+            // negated by `Camera.getWorldDirection()`. An explicit object's
+            // read already did both (and refreshed its world matrix); the
+            // drawn object's `matrixWorld` is current for the draw.
+            return match object {
+                Some(read) => read.get()[..3].iter().map(|&c| c as f32).collect(),
+                None => {
+                    let e = &self.model_world.elements;
+                    let mut v = Vector3::new(e[8], e[9], e[10]);
+                    v.normalize();
+                    if self.object.is_some_and(|object| object.is_camera) {
+                        v.negate();
+                    }
+                    vector(v)
+                }
+            };
+        }
         let world = match object {
             Some(read) => {
                 let mut world = Matrix4::identity();
@@ -728,7 +747,6 @@ impl UniformContext<'_> {
             }
             None => self.model_world,
         };
-        let vector = |v: Vector3| vec![v.x as f32, v.y as f32, v.z as f32];
         match scope {
             Object3DScope::Position => {
                 let mut v = Vector3::new(0.0, 0.0, 0.0);
@@ -740,13 +758,7 @@ impl UniformContext<'_> {
                 v.set_from_matrix_scale(&world);
                 vector(v)
             }
-            // `Object3D.getWorldDirection()`: the normalised third column.
-            Object3DScope::Direction => {
-                let e = &world.elements;
-                let mut v = Vector3::new(e[8], e[9], e[10]);
-                v.normalize();
-                vector(v)
-            }
+            Object3DScope::Direction => unreachable!("handled above"),
             Object3DScope::ViewPosition => {
                 let mut v = Vector3::new(0.0, 0.0, 0.0);
                 v.set_from_matrix_position(&world);

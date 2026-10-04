@@ -5991,7 +5991,7 @@ arithmetic, and `tests/traa_frames.rs` allows for it.
 
 ## 67. TSL sweep 2: the accessors batch
 
-Thirty `three/tsl` accessors, each gated against three's dump in
+Thirty-one `three/tsl` accessors, each gated against three's dump in
 `tests/nodes_tsl_batch.rs`: the bitangents, `tangentWorld`, the parallax
 pair, `cameraNormalMatrix`, the `model*` and `object*` scopes, the precision
 variants of `modelViewMatrix`, `transformNormal`, `transformNormalToView`,
@@ -6001,13 +6001,30 @@ section covers the parts that touch the builder or the uniforms.
 
 ### 67.1 Singletons are built outside any layer
 
-An `accessor!` body now runs with `sub_build` cleared. Three's module-level
-constants are created at import, outside every `subBuild`, so a `toVar` or
-`toVarying` inside one never takes a `NORMAL_` or `VERTEX_` prefix. The port
-creates a singleton the first time it is asked for. Before this change, a
-singleton first asked for inside `in_sub_build( "VERTEX", … )` kept that
-prefix for the rest of the thread. `tangentWorld` is the first accessor whose
-varying is built inside the vertex layer and reads a singleton there.
+An `accessor!` body now runs with `sub_build` cleared. So do the singleton
+cells that cannot be `accessor!`s (`position_view_direction`, which
+`overrideNodes` can replace, and the shared `v_tangentView` varying in the
+tangent frame), and `normal_flat` is now an `accessor!`. `clip_space` holds
+nothing that can take a prefix.
+
+Three decides a layer prefix at build time, not when the node is made. A
+`Fn` declared `.once( [ layers ] )` (`positionView` is `.once( [ 'POSITION',
+'VERTEX' ] )`, the normal accessors `.once( [ 'NORMAL', 'VERTEX' ] )`) adds
+its layers to the node data of every node on `builder.chaining`, the
+ancestors being built at that moment. A module-level constant is therefore
+prefixed in a build when its own graph reaches such a `Fn` inside an open
+layer, and unprefixed when it does not, whichever build asked for it first.
+
+The port fixes a var's name when the node is constructed, from the layer
+open at that moment, and a singleton is constructed once per thread. Before
+this change, a singleton first asked for inside `in_sub_build( "VERTEX", … )`
+kept that prefix for the rest of the thread, in every later build. Building
+singletons outside any layer gives the unprefixed name, which is what three
+prints for every singleton the gates reach. A singleton whose graph reaches a
+layered `Fn` and is itself asked for inside that layer would be prefixed in
+three and is not here; none of the current gates has one. `tangentWorld` is
+the first accessor whose varying is built inside the vertex layer and reads
+a singleton there.
 
 The keyed accessors (`tangent_world`, the bitangents, `parallax_direction`,
 `reflect_view`, `refract_view`, `refract_vector`) are cached on
@@ -6019,8 +6036,32 @@ normal and tangent.
 `getTangentFrame` takes the attribute branch when `builder.subBuildFn ===
 'VERTEX'` as well as when the geometry has a tangent. A varying's value is
 built in the vertex layer, so `tangentWorld`'s varying always reads the
-`tangent` attribute, and on a geometry without one that attribute is zero.
-`tangent_frame()` now checks the layer as well as `has_tangent`.
+`tangent` attribute. `tangent_frame()` now checks the layer as well as
+`has_tangent`.
+
+On a geometry without a `tangent` attribute, three's `AttributeNode` warns
+and generates a constant of the attribute's type in place of the vertex
+input: `vec4<f32>( 0.0, 0.0, 0.0, 1.0 )`, a default `Vector4`. The port does
+the same. `MaterialFlow::geometry_has_tangent` carries the geometry's answer
+into the build (from `SetupContext::has_tangent_attribute`), and the builder
+replaces the `tangent` attribute with `wgsl::default_constant` and prints the
+warning. It declares no `@location` the geometry cannot feed, so the draw
+does not fail on a missing vertex buffer. The decision has to wait for the
+build because `tangent_geometry()` is one node shared by every material.
+
+**Limitation.** Three builds *every* varying's value with `subBuildFn` set
+to `'VERTEX'`, so any layered accessor reached inside any `toVarying()`
+takes the vertex layer: its vars get the `VERTEX_` prefix and
+`getTangentFrame` takes the attribute branch. The port opens the layer only
+where a node asks for it at construction (`tangent_world`, through
+`in_sub_build( "VERTEX", … )`). The builder cannot open it when it generates
+a varying, because the nodes under the varying were made, and named, before
+the build. A user varying over a layered accessor therefore builds that
+accessor in the main layer. Its WGSL computes the same values, with
+unprefixed names, unless the accessor is the tangent frame on a geometry
+without tangents, where three's vertex-layer branch reads the attribute
+fallback and the port's takes the derivative branch, which needs fragment
+derivatives.
 
 `getBitangent` is `.once( [ 'NORMAL' ] )` in three, so within one layer every
 bitangent shares the first result, whatever normal and tangent it was given.
@@ -6034,7 +6075,10 @@ each is gated in a probe of its own.
   unnamed uniform in the object group. `scope` is direction, position,
   scale, view position or radius. `object: None` is the drawn mesh (the
   `model*` accessors). `Some(live)` reads the target's `matrixWorld` (the
-  `object*` functions, which take `&Node`). `Radius` multiplies the bounding
+  `object*` functions, which take `&Node`). For `Direction` the live value is
+  the direction itself, from `getWorldDirection()`: the read refreshes the
+  target's world matrix first, and a camera's direction is negated, as
+  `Camera.getWorldDirection()` does. `Radius` multiplies the bounding
   sphere of the *drawn* object's geometry by the target's largest scale,
   as `frame.object.geometry` does in three.
 - **`CameraNormalMatrix`** writes the identity. `WebGPURenderer` never sets
@@ -6042,8 +6086,14 @@ each is gated in a probe of its own.
 - **`HighpModelViewMatrix`** and **`HighpModelNormalViewMatrix`** are
   `cameraViewMatrix × matrixWorld`, and its normal matrix, multiplied on the
   CPU per object.
-- **`MaterialRefractionRatio`** reads `Material::refraction_ratio`, which
-  defaults to 0.98, as three's does.
+- **`MaterialRefractionRatio`** reads
+  `MeshBasicNodeMaterial::refraction_ratio`. It is 0.98 on the Basic,
+  Lambert and Phong constructors, whose three.js materials have
+  `refractionRatio`, and 0 on every other constructor. Three's uniform is one
+  shared `uniform( 0 )` whose update skips `undefined`, so a material without
+  the property reads 0 until a Basic, Lambert or Phong draw writes it, and
+  the last value written after that. The port writes the field on every
+  draw, so a Standard material always reads 0.
 
 None of these has an ArrayCamera element, which matches
 `camera_world_matrix`.
@@ -6054,7 +6104,15 @@ Three's `clipSpace` reads `builder.context.clipSpace`, which `NodeMaterial`
 sets to the vertex position node (`vertexNode || mvp`). `NodeBuilder::build`
 pushes the flow's position under the `"clipSpace"` context key. `clip_space()`
 is a `CustomNode` that reads the key at build time, inside a `v_clipSpace`
-varying. Like three's, it is meant for the fragment stage.
+varying.
+
+Like three's `Fn`, it is fragment-only. Set up outside the fragment stage
+it warns once (`` `clipSpace` is only available in fragment stage. ``) and
+yields `vec4()`, where reading the varying would feed the vertex output into
+itself. The test needs the stage during setup, and setup runs in the
+analyze pass, so `NodeBuilder::build` now analyzes the vertex flows with the
+stage set to vertex. Before, every flow was analyzed as fragment, and
+nothing read the stage there.
 
 ### 67.5 Smaller differences
 
@@ -6197,6 +6255,11 @@ comment naming the section it relies on:
 - **Let against var** (§8): `inline_let` and `codes_as_lets` read a
   conversion or `fn`-local value three writes as `let nodeConstN` against the
   port's `var nodeVarN`.
+- **A swizzle read twice** (§8, "`toConst` on the shadow filter"): three
+  gives the bump map's `Hll = bump.r` a `let`, and the port's builder does
+  not promote a swizzle on its use count. `material_normal_bump_matches`
+  inlines three's `let` at both reads. The material flow's `bumpMap` arm
+  builds the same graph.
 - **`ToneMapping::Cineon`**: the node's `main` passes `color.rgb` of a
   `vec4` where the standalone probe passes a `vec3`. The gate checks that the
   call is present and compares the emitted `fn` with three's.
