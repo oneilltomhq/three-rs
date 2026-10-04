@@ -400,6 +400,7 @@ impl BufferGeometry {
     /// through a shared borrow, as can the shared array of an interleaved
     /// view — so no `&mut` geometry path sees every change a cache would
     /// have to drop.
+    #[doc(hidden)]
     pub fn attribute_descs(&self) -> Vec<AttributeDesc> {
         let mut groups: Vec<(usize, usize)> = Vec::new();
         self.attributes

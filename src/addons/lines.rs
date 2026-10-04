@@ -169,6 +169,7 @@ fn segment_positions(geometry: &BufferGeometry) -> Option<Ref<'_, Vec<f32>>> {
 /// `LineSegments2`'s own state beyond `Mesh`'s, which in three.js are
 /// properties on the object.
 #[derive(Clone, Debug, Default)]
+#[doc(hidden)]
 pub struct LineSegments2State {
     /// `LineSegments2._resolution` — the renderer's viewport size in logical
     /// pixels, written by `onBeforeRender()` every draw and read only by the

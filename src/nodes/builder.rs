@@ -197,6 +197,7 @@ pub struct AttributeSlot {
 /// `createShaderVertexBuffers()`'s per-attribute layout, from the
 /// [`AttributeDesc`] the renderer handed over.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[doc(hidden)]
 pub struct GeometrySlot {
     /// The attribute's name on the geometry.
     pub name: &'static str,

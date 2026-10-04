@@ -498,7 +498,7 @@ macro_rules! each_array {
 
 impl TypedArray {
     /// `new ArrayType( len )` — `len` zeros of `kind`.
-    pub fn zeros(kind: ArrayKind, len: usize) -> Self {
+    pub(crate) fn zeros(kind: ArrayKind, len: usize) -> Self {
         match kind {
             ArrayKind::F32 => TypedArray::F32(vec![0.0; len]),
             ArrayKind::F16 => TypedArray::F16(vec![0; len]),
@@ -514,7 +514,7 @@ impl TypedArray {
 
     /// `new ArrayType( values )` — each value converted the way a JavaScript
     /// typed-array store converts a number (see [`set`](Self::set)).
-    pub fn from_f64(kind: ArrayKind, values: &[f64]) -> Self {
+    pub(crate) fn from_f64(kind: ArrayKind, values: &[f64]) -> Self {
         let mut array = Self::zeros(kind, values.len());
         for (i, v) in values.iter().enumerate() {
             array.set(i, *v);
@@ -530,7 +530,7 @@ impl TypedArray {
     ///
     /// If `bytes.len()` is not a multiple of the element size, where
     /// JavaScript throws a `RangeError`.
-    pub fn from_le_bytes(kind: ArrayKind, bytes: &[u8]) -> Self {
+    pub(crate) fn from_le_bytes(kind: ArrayKind, bytes: &[u8]) -> Self {
         let bpe = kind.bytes_per_element();
         assert!(
             bytes.len().is_multiple_of(bpe),
@@ -1249,7 +1249,7 @@ impl BufferAttribute {
     }
 
     /// The [`StorageBufferAttribute`] this attribute reads, if it is one.
-    pub fn storage_buffer(&self) -> Option<&StorageBufferAttribute> {
+    pub(crate) fn storage_buffer(&self) -> Option<&StorageBufferAttribute> {
         match &self.storage {
             Backing::Storage(storage) => Some(storage),
             _ => None,
@@ -1733,6 +1733,7 @@ pub(crate) enum BufferKey {
 
 /// How a [`AttributeDesc`]'s elements are laid out in its vertex buffer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[doc(hidden)]
 pub enum AttributeLayout {
     /// Its own buffer, packed, padded per item to a 4-byte stride.
     Own,
@@ -1760,6 +1761,7 @@ pub enum AttributeLayout {
 /// geometry_attributes`, decision 4 in the module docs: enough to declare the
 /// vertex input in the attribute's own type and to lay out its vertex buffer.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[doc(hidden)]
 pub struct AttributeDesc {
     /// The attribute's name on the geometry.
     pub name: String,
