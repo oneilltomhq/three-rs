@@ -402,11 +402,14 @@ fn readme_grid(rows: &[&Entry]) -> String {
 /// Decode an 8-bit PNG to tightly packed RGB.
 fn read_png_rgb(path: &Path) -> Result<(u32, u32, Vec<u8>), String> {
     let file = fs::File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    let mut reader = png::Decoder::new(file)
+    let mut reader = png::Decoder::new(std::io::BufReader::new(file))
         .read_info()
         .map_err(|e| format!("{}: {e}", path.display()))?;
 
-    let mut buf = vec![0u8; reader.output_buffer_size()];
+    let size = reader
+        .output_buffer_size()
+        .ok_or_else(|| format!("{}: PNG dimensions overflow", path.display()))?;
+    let mut buf = vec![0u8; size];
     let info = reader
         .next_frame(&mut buf)
         .map_err(|e| format!("{}: {e}", path.display()))?;

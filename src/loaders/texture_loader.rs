@@ -107,7 +107,11 @@ pub(crate) fn decode_png(path: &Path, bytes: &[u8]) -> Result<crate::textures::I
     let mut reader = decoder
         .read_info()
         .map_err(|e| Error::image(path, e.to_string()))?;
-    let mut buffer = vec![0; reader.output_buffer_size()];
+    // `output_buffer_size()` is `None` when the dimensions overflow `usize`.
+    let size = reader
+        .output_buffer_size()
+        .ok_or_else(|| Error::image(path, "PNG dimensions overflow".to_string()))?;
+    let mut buffer = vec![0; size];
     let info = reader
         .next_frame(&mut buffer)
         .map_err(|e| Error::image(path, e.to_string()))?;
