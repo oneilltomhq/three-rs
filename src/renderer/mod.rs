@@ -5337,9 +5337,9 @@ impl Renderer {
                 (_, Some(c)) => c.union.as_slice(),
                 (_, None) => &[],
             };
-            let mut data = vec![0f32; count * 4];
-            for (out, plane) in data.chunks_exact_mut(4).zip(planes) {
-                out.copy_from_slice(plane);
+            let mut data = vec![[0f32; 4]; count];
+            for (out, plane) in data.iter_mut().zip(planes) {
+                *out = *plane;
             }
             return self.slot_buffer(
                 slot,
