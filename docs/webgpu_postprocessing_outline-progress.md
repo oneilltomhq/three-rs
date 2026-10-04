@@ -27,15 +27,19 @@ checks:
 What the outline draws once something is selected is checked in two other
 ways:
 
-- `tests/nodes_display_wgsl.rs` gates every one of its shaders against
-  three's own: the depth and mask materials, copy, edge detection, both
-  blurs and the composite, plus the page's output. Three's page never
+- `tests/nodes_display_wgsl.rs` gates its shaders against three's own:
+  the depth and mask materials, copy, edge detection, the X draw of each
+  blur and the composite, plus the page's output. Not gated: the sprite
+  depth and mask materials (no sprites on the page, so none in the dump)
+  and the Y blurs (one module with the X blur in three). Three's page never
   builds the pass shaders unprompted, so they come from
   `tools/dump-pages/outline_selected.html`, the page with
   `selectedObjects.push( torus )` added.
 - `tests/outline_frames.rs` renders a selection on the GPU:
   - a box in the open gets a red ring just outside its silhouette;
   - behind a blocker, the ring is green;
+  - `edgeGlow = 1`, written to its uniform, adds outline but none inside;
+  - a plain render afterwards is unchanged, so the selection hook is reset;
   - an orthographic camera also gets a ring;
   - deselecting clears the composite, which stays clear.
 
@@ -66,6 +70,14 @@ These are listed in full in `docs/nodes.md` §72:
 
 ## Left out
 
+- Pointer input in the native viewer and the browser shell. Neither routes
+  pointer moves to the page's `pointer_move()`, so nothing is ever selected
+  there and neither shows an outline. `webgpu_lines_fat_raycasting` has the
+  same gap. The graded frame has no selection either;
+  `tests/outline_frames.rs` sets one directly.
+- The page's GUI: `edgeStrength`, `edgeGlow`, `edgeThickness`,
+  `pulsePeriod` and the visible and hidden edge colours. The uniforms are
+  there, in `App::uniforms`, but nothing on screen sets them.
 - `dispose()`.
 - Changing the parameters after construction.
 - The inspector names for the two scene renders.

@@ -9,6 +9,9 @@
 //!   centres, so the trilinear blend is the linear map itself;
 //! * the identity gives back the input, and intensity 0 gives back the input
 //!   whatever the table;
+//! * intensity as a `uniform()` written between frames, as the page's GUI
+//!   writes `intensityNode.value`, takes effect on the next frame under the
+//!   same node: 1 inverts, 0 is the input, 0.5 is grey (`mix( c, 1 - c, 0.5 )`);
 //! * handing the pipeline a new node built from another table — how the
 //!   port's page swaps tables, where three assigns `lutNode.value` — switches
 //!   the output on the next frame, and switching back restores the first.
@@ -18,8 +21,8 @@
 
 use three_rs::loaders::LutCubeLoader;
 use three_rs::nodes::display::lut_3d;
-use three_rs::nodes::tsl::{float, texture_3d_sampled, uv, vec4_join};
-use three_rs::nodes::NodeRef;
+use three_rs::nodes::tsl::{float, texture_3d_sampled, uniform_settable, uv, vec4_join};
+use three_rs::nodes::{NodeRef, Type};
 use three_rs::textures::Data3DTexture;
 use three_rs::{RenderPipeline, Renderer, RendererParameters};
 
@@ -114,4 +117,24 @@ fn lut_3d_maps_swaps_and_blends() {
     // `mix( base, lut, 0 )` is the base.
     let off = frame(&mut pipeline, &mut renderer, through(&inversion, 0.0));
     assert_close(&off, &plain, "intensity 0");
+
+    // The intensity as a uniform, written between frames of one node: the
+    // uniform upload, not a rebuild, has to carry each value.
+    let (intensity_node, intensity) = uniform_settable(Type::F32, vec![1.0]);
+    let live = lut_3d(
+        gradient(false),
+        &texture_3d_sampled(&inversion),
+        2.0,
+        intensity_node,
+    )
+    .node();
+    let full = frame(&mut pipeline, &mut renderer, live.clone());
+    assert_close(&full, &plain_inverted, "uniform intensity 1");
+    intensity.set(vec![0.0]);
+    let none = frame(&mut pipeline, &mut renderer, live.clone());
+    assert_close(&none, &plain, "uniform intensity 0");
+    intensity.set(vec![0.5]);
+    let half = frame(&mut pipeline, &mut renderer, live);
+    let grey: Vec<u8> = half.chunks(4).flat_map(|_| [128, 128, 128, 255]).collect();
+    assert_close(&half, &grey, "uniform intensity 0.5");
 }

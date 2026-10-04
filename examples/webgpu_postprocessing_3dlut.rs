@@ -134,8 +134,9 @@ fn load_luts() -> Vec<Lut> {
 }
 
 /// The smoke's `MeshBasicNodeMaterial`: a twisting, wind-bent plane whose
-/// alpha is perlin noise faded at the edges.
-fn smoke_material() -> MeshBasicNodeMaterial {
+/// alpha is perlin noise faded at the edges. Public for the vertex gate in
+/// `tests/nodes_display_wgsl.rs`.
+pub fn smoke_material() -> MeshBasicNodeMaterial {
     // texture
 
     let noise_texture = TextureLoader::new()

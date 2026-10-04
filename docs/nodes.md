@@ -6090,13 +6090,20 @@ lazy creation at bind time, so `update_before()` calls
 - The e2e rung grades the page at 15 of 100000 pixels. It has an empty
   selection, so this frame tests that the node costs nothing and adds
   nothing.
-- The WGSL gates (`tests/nodes_display_wgsl.rs`, eight of them) cover every
-  shader.
+- The WGSL gates (`tests/nodes_display_wgsl.rs`, eight of them) cover the
+  depth and mask scene materials, the copy, edge-detection, X-blur and
+  composite quads, and the page's output. Not gated: the sprite depth and
+  mask materials (the page has no sprites, so three's dump has none) and the
+  two Y-blur materials (three draws X and Y with one module; the port's Y
+  materials differ from the gated X ones only in the texture and the baked
+  direction).
 - `tests/outline_frames.rs` draws a selection on the GPU. It checks that a
   selected box gets a red ring outside its silhouette and no green, that a
-  blocker in front turns the ring green, that deselecting clears the
-  composite and it stays clear, and that an orthographic camera also gets a
-  ring.
+  blocker in front turns the ring green, that `edgeGlow = 1` adds outline
+  without reaching inside the selection, that a plain render after the
+  outline frame is unchanged (the selection hook is put back), that
+  deselecting clears the composite and it stays clear, and that an
+  orthographic camera also gets a ring.
 
 **The example.** `tree.obj` is loaded synchronously by the new `ObjLoader`.
 The page's `onPointerMove()` and `checkIntersection()` are `pointer_move(
@@ -6149,7 +6156,9 @@ sample built outside the fragment stage now emits `textureSampleLevel( …,
 0 )`, as three's `_generateTextureSample()` does. The page's smoke samples
 its noise texture in `positionNode`, and WGSL has no implicit derivatives in
 a vertex shader. Before this change the builder emitted a `textureSample`
-there, which no graded page had hit.
+there, which no graded page had hit. `tests/nodes_display_wgsl.rs` gates
+the smoke's vertex `main()` against three's dump (`m03`), the one
+vertex-stage gate there.
 
 **The loaders** are in `three_rs::loaders`. Each is synchronous: `load(
 path )` returns the table, and `parse()` takes the bytes or text. All three
@@ -6178,10 +6187,15 @@ are byte-checked against three's own loaders by `tests/loaders_lut.rs`.
   this. The graded frame never changes table, so `tests/lut_3d_frames.rs`
   checks the swap.
 - `setType()` with anything but `UnsignedByteType` or `FloatType`. Three
-  treats any other type as `FloatType`; the port returns an error.
-- An image whose size is not `size` slices of `size²` texels. Three builds a
-  mismatched `Data3DTexture` and leaves the failure to the upload; the port
-  returns `Error::Lut` from `load()`.
+  fills a `Float32Array` for any other type but sets `texture3D.type` to the
+  type it was given, so the texture is mislabelled; the port returns an
+  error.
+- An image that does not hold exactly `size` slices of `size²` texels. Three
+  builds a mismatched `Data3DTexture`; its upload writes each layer from its
+  own offset, so a longer buffer still works (the texels past `size³` are
+  never read) and only a shorter one fails, at the upload. The port keeps the
+  first `size³` texels of a longer one and returns `Error::Lut` from `load()`
+  for a shorter one.
 - From `Loader`: `manager`, `path`, `crossOrigin`, and the callback form of
   `load()`.
 - `LUT_1D_SIZE` tables, which three does not read either.

@@ -65,8 +65,10 @@ impl Lut3dlLoader {
     }
 
     /// `loader.setType( type )`: `UnsignedByteType` or `FloatType`, anything
-    /// else refused here (upstream treats it as `FloatType`). A `FloatType`
-    /// table is `rgba32float`, filterable only with `float32-filterable`.
+    /// else refused here. Upstream fills a `Float32Array` for any other type
+    /// but sets `texture3D.type` to the type it was given, so the texture is
+    /// mislabelled. A `FloatType` table is `rgba32float`, filterable only
+    /// with `float32-filterable`.
     pub fn set_type(&mut self, texture_type: TextureType) -> Result<&mut Self, Error> {
         if !matches!(texture_type, TextureType::UnsignedByte | TextureType::Float) {
             return Err(Error::UnsupportedTextureType {
@@ -83,10 +85,13 @@ impl Lut3dlLoader {
         self.texture_type
     }
 
-    /// `loader.load( url )`: the file as text, then [`parse`](Self::parse).
+    /// `loader.load( url )`: the file as text (UTF-8, malformed sequences
+    /// replaced and a leading byte-order mark dropped, as `FileLoader`'s
+    /// `response.text()` / `TextDecoder` do), then [`parse`](Self::parse).
     pub fn load<P: AsRef<Path>>(&self, path: P) -> Result<Lut3dl, Error> {
         let bytes = crate::io::read(path.as_ref())?;
-        self.parse(&String::from_utf8_lossy(&bytes))
+        let text = String::from_utf8_lossy(&bytes);
+        self.parse(text.strip_prefix('\u{feff}').unwrap_or(&text))
     }
 
     /// `loader.parse( input )`.

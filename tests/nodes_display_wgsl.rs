@@ -1,7 +1,8 @@
 //! #144's dump gate: the fragment WGSL each ported display node generates,
 //! against three.js r187dev's own dump of the page that uses it
 //! (`tests/fixtures/nodes_display/`, copied verbatim from
-//! `tools/dump-webgpu.mjs` output).
+//! `tools/dump-webgpu.mjs` output). One gate, the 3dlut page's smoke, is
+//! over a vertex `main()` instead.
 //!
 //! The comparison is structural, not byte-for-byte. r187dev spells a
 //! single-use value `let nodeConstN = …;` where the port declares a
@@ -20,6 +21,9 @@
 
 #[path = "display/materials.rs"]
 mod materials;
+#[path = "../examples/webgpu_postprocessing_3dlut.rs"]
+#[allow(dead_code)]
+mod webgpu_postprocessing_3dlut;
 #[path = "../examples/webgpu_refraction.rs"]
 #[allow(dead_code)]
 mod webgpu_refraction;
@@ -41,6 +45,8 @@ enum Region {
     /// The body of the named WGSL `fn`, through its `return` — for a node
     /// that is one `Fn()` with a layout, where `main()` is only the call.
     Function(&'static str),
+    /// `// code` to `return varyings;` in the vertex `main()`.
+    Vertex,
 }
 
 fn region(wgsl: &str, which: Region) -> String {
@@ -65,12 +71,17 @@ fn region(wgsl: &str, which: Region) -> String {
         }
         panic!("fn {name} is not closed");
     }
+    if let Region::Vertex = which {
+        let main = &wgsl[wgsl.find("@vertex").expect("a vertex entry point")..];
+        let body = &main[main.find("// code").expect("a code section")..];
+        return body[..body.find("return varyings;").expect("a return")].to_string();
+    }
     let main = &wgsl[wgsl.find("@fragment").expect("a fragment entry point")..];
     let body = &main[main.find("// code").expect("a code section")..];
     let body = &body[..body.find("return output;").expect("a return")];
     match which {
         Region::Body => body.to_string(),
-        Region::Function(_) => unreachable!(),
+        Region::Function(_) | Region::Vertex => unreachable!(),
         Region::Loop => {
             let start = body.find("for (").expect("a loop");
             let mut depth = 0i32;
@@ -392,4 +403,26 @@ fn outline_composite_matches_three() {
 #[test]
 fn outline_output_matches_three() {
     check("outline_output", Region::Body);
+}
+
+/// The one vertex-stage gate: webgpu_postprocessing_3dlut's smoke
+/// (`m03`), whose `positionNode` twists and bends the plane by three plain
+/// texture samples. Outside the fragment stage three's builder emits them as
+/// `textureSampleLevel( …, 0 )`, and so must the port.
+#[test]
+fn lut_3d_smoke_vertex_matches_three() {
+    let material = webgpu_postprocessing_3dlut::smoke_material();
+    let program = NodeBuilder::new().build(&setup(&material, &SetupContext::default(), None));
+    let ours = fingerprint(&program.vertex_wgsl, Region::Vertex);
+    let three = fingerprint(
+        &fixture("webgpu_postprocessing_3dlut_m03_smoke_vertex.wgsl"),
+        Region::Vertex,
+    );
+    assert_eq!(
+        ours.calls.get("textureSampleLevel"),
+        Some(&3),
+        "\n{}",
+        program.vertex_wgsl
+    );
+    assert_eq!(ours, three, "\n{}", program.vertex_wgsl);
 }

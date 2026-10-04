@@ -44,7 +44,7 @@ TSL by family:
 | materialx | 49 | 48 | 0 | 1 | 0 |
 | utils | 77 | 29 | 5 | 39 | 4 |
 
-Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compressed`, which has a live `rung!` but a hyphen in its name). 10 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
+Graded examples: 87 (the README gallery plus `webgpu_textures_2d-array_compressed`, which has a live `rung!` but a hyphen in its name). 10 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
 
 ## math
 
@@ -624,7 +624,7 @@ Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `LDrawLoader` | Absent | — | — |  |
 | `LUT3dlLoader` | Present | Lut3dlLoader (src/loaders/lut_3dl_loader.rs:49) | tests/loaders_lut.rs (byte oracle against three's parse under node); webgpu_postprocessing_3dlut | synchronous load(); setType() refuses types other than UnsignedByte/Float |
 | `LUTCubeLoader` | Present | LutCubeLoader (src/loaders/lut_cube_loader.rs:58) | tests/loaders_lut.rs (byte oracle against three's parse under node); webgpu_postprocessing_3dlut (graded) | synchronous load(); setType() refuses types other than UnsignedByte/Float |
-| `LUTImageLoader` | Present | LutImageLoader (src/loaders/lut_image_loader.rs:52) | tests/loaders_lut.rs (byte oracle against three's loader in Chrome, flip off and on); webgpu_postprocessing_3dlut | an image that is not size slices of size² texels is refused in load() rather than left to the upload |
+| `LUTImageLoader` | Present | LutImageLoader (src/loaders/lut_image_loader.rs:52) | tests/loaders_lut.rs (byte oracle against three's loader in Chrome, flip off and on); webgpu_postprocessing_3dlut | an image with fewer than size slices of size² texels is refused in load() rather than left to fail at the upload; a longer one is cut to the size³ texels three's upload reads |
 | `LWOLoader` | Absent | — | — |  |
 | `MD2Loader` | Absent | — | — |  |
 | `MDDLoader` | Absent | — | — |  |

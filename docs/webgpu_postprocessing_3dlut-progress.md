@@ -18,7 +18,8 @@ would show on every pixel, so the score checks these things:
 
 The smoke's noise sample in `positionNode` is also in the frame. That sample
 needed the builder to emit `textureSampleLevel( …, 0 )` outside the
-fragment stage, as three does.
+fragment stage, as three does. `tests/nodes_display_wgsl.rs` gates the
+smoke's vertex shader against three's dump of it.
 
 The page loads all nine tables in `init()`, so the rung also runs
 `Lut3dlLoader` and `LutImageLoader` on the vendor files. Nothing grades their
@@ -32,6 +33,7 @@ The rung grades one table at one intensity. `tests/lut_3d_frames.rs` covers
 the rest on the GPU, with identity and inversion tables:
 
 - intensity 0 returns the input;
+- intensity as a uniform written between frames of one node: 1, 0 and 0.5;
 - the inversion maps `c` to `1 - c`;
 - swapping tables changes the next frame.
 
@@ -51,9 +53,11 @@ the rest on the GPU, with identity and inversion tables:
 - The page swaps tables by assigning `lutPass.lutNode.value`. The port builds
   a new `Lut3DNode` and hands it to the pipeline (`docs/nodes.md` §73).
 - The loaders' `setType()` refuses a type other than `UnsignedByteType` or
-  `FloatType`. Three falls back to float.
-- `LutImageLoader` refuses an image that is not `size` slices of `size²`
-  texels. Three would fail later, at upload.
+  `FloatType`. Three fills a `Float32Array` for any other type but labels
+  the texture with the type it was given, so the texture is mislabelled.
+- `LutImageLoader` refuses an image with fewer than `size` slices of `size²`
+  texels, which three would fail on later, at upload. A longer one is cut to
+  its first `size³` texels, which is all three's upload reads of it.
 
 ## Left out
 

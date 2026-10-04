@@ -13,7 +13,12 @@
 //!   ring instead, with no red;
 //! * an orthographic camera takes `prepareMask`'s other branch and gives the
 //!   same visible ring;
-//! * clearing the selection clears the composite on the next frame.
+//! * clearing the selection clears the composite on the next frame;
+//! * `edgeGlow` above 0, written to its uniform between frames, adds the
+//!   quarter-resolution blur: more outline, still none inside the selection;
+//! * the renderer's selection hook is gone once the outline node has run: a
+//!   plain `render()` afterwards draws the background and the unselected
+//!   blocker with their own materials, exactly as before the outline frame.
 //!
 //! One `#[test]`: each `Renderer::new` builds its own device, and cargo runs
 //! test functions inside a binary concurrently.
@@ -24,6 +29,8 @@ use std::rc::Rc;
 use three_rs::cameras::OrthographicCamera;
 use three_rs::geometries::box_geometry;
 use three_rs::nodes::display::{outline, OutlineNode, OutlineParams};
+use three_rs::nodes::tsl::uniform_settable;
+use three_rs::nodes::Type;
 use three_rs::{
     Color, Mesh, MeshBasicNodeMaterial, PerspectiveCamera, RenderPipeline, Renderer,
     RendererParameters, Scene,
@@ -55,6 +62,16 @@ fn silhouette(
     renderer.render(&mut scene.borrow_mut(), camera);
     let (_, _, pixels) = renderer.read_canvas_pixels().unwrap();
     pixels.chunks(4).map(|p| p[0] > 128).collect()
+}
+
+/// A plain `render()` of the scene, every channel of every pixel.
+fn plain(
+    renderer: &mut Renderer,
+    scene: &Rc<RefCell<Scene>>,
+    camera: &mut dyn three_rs::RenderCamera,
+) -> Vec<u8> {
+    renderer.render(&mut scene.borrow_mut(), camera);
+    renderer.read_canvas_pixels().unwrap().2
 }
 
 /// Distance in pixels (Chebyshev) from `(x, y)` to the nearest pixel of
@@ -126,7 +143,15 @@ fn outline_draws_visible_and_hidden_edges() {
     let inside = silhouette(&mut renderer, &scene, &mut *camera.borrow_mut());
     assert!(inside.iter().filter(|&&p| p).count() > 100);
 
-    let outline_pass = outline(scene.clone(), camera.clone(), OutlineParams::default());
+    let (edge_glow_node, edge_glow) = uniform_settable(Type::F32, vec![0.0]);
+    let outline_pass = outline(
+        scene.clone(),
+        camera.clone(),
+        OutlineParams {
+            edge_glow: edge_glow_node,
+            ..OutlineParams::default()
+        },
+    );
     let mut pipeline = pipeline_for(&outline_pass);
 
     // Nothing selected: the composite was never drawn.
@@ -146,10 +171,34 @@ fn outline_draws_visible_and_hidden_edges() {
         "the visible edge is faint"
     );
 
+    // `edgeGlow = 1`: the quarter-resolution blur on top, so more red, and
+    // still none inside the selection (`mask.r` is 0 there).
+    edge_glow.set(vec![1.0]);
+    let glowing = frame(&mut pipeline, &mut renderer);
+    edge_glow.set(vec![0.0]);
+    let red = |pixels: &[(u8, u8)]| pixels.iter().map(|&(r, _)| u64::from(r)).sum::<u64>();
+    assert!(
+        red(&glowing) > red(&visible),
+        "edgeGlow 1 added nothing: {} vs {}",
+        red(&glowing),
+        red(&visible)
+    );
+    for (i, &(r, g)) in glowing.iter().enumerate() {
+        assert!(
+            !inside[i] || (r == 0 && g == 0),
+            "glow: pixel {i} = ({r}, {g}) is inside the selection"
+        );
+    }
+    assert!(
+        glowing.iter().all(|&(_, g)| g == 0),
+        "a visible glow has no green"
+    );
+
     // Behind a larger unselected box: a hidden (green) ring.
     let blocker = white_box(1.6);
     blocker.borrow_mut().position.z = 1.5;
     scene.borrow().add(&blocker);
+    let before = plain(&mut renderer, &scene, &mut *camera.borrow_mut());
     let hidden = frame(&mut pipeline, &mut renderer);
     let ring = assert_ring(&hidden, &inside, "hidden");
     assert!(
@@ -159,6 +208,14 @@ fn outline_draws_visible_and_hidden_edges() {
     assert!(
         ring.iter().any(|&(_, g)| g > 40),
         "the hidden edge is faint"
+    );
+    // The outline node's two scene renders set the selection hook and must
+    // put it back: left set, this render would skip the background and the
+    // unselected blocker, and draw the selection with an override material.
+    let after = plain(&mut renderer, &scene, &mut *camera.borrow_mut());
+    assert!(
+        after == before,
+        "a plain render after the outline frame differs from one before it"
     );
     scene.borrow().remove(&blocker);
 

@@ -75,9 +75,12 @@ have their own sections after the release they ship with. The format follows [Ke
 - **`outline`** (`nodes::display`), `OutlineNode.js`: selection outlines,
   with visible and hidden edges, `edgeThickness`, `edgeGlow` and
   `downSampleRatio`. Its two scene renders go through a crate-private
-  renderer hook that stands in for `setRenderObjectFunction()`. Every
-  shader is gated against three's dump. `tests/outline_frames.rs` checks
-  what a selection draws.
+  renderer hook that stands in for `setRenderObjectFunction()`. The depth
+  and mask scene materials, the copy, edge-detection, X-blur and composite
+  quads, and the page's output are gated against three's dump; the sprite
+  depth and mask materials (the page has no sprites, so the dump has none)
+  and the Y blurs (one module with the X blur in three) are not.
+  `tests/outline_frames.rs` checks what a selection draws.
 - **`webgpu_postprocessing_outline`** is graded: 15 of 100000 pixels, the
   same as three's own frame. Nothing is selected in the graded frame.
 - **`lut_3d`** (`nodes::display`), `Lut3DNode.js`, and
@@ -97,6 +100,7 @@ have their own sections after the release they ship with. The format follows [Ke
 - A plain texture sample built outside the fragment stage emits
   `textureSampleLevel( …, 0 )`, as three's `_generateTextureSample()` does.
   It used to emit `textureSample`, which WGSL rejects in a vertex shader.
+  The 3dlut page's smoke vertex shader is gated against three's dump.
 - **`InstancedBufferAttribute.array` is private**, read through `array()` and
   written through `array_mut()`, which bumps the new `version()`;
   `set_needs_update()` and `id()` join them. `set_matrix_at` / `set_color_at`

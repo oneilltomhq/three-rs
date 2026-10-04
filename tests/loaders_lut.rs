@@ -261,6 +261,12 @@ fn cube_quirks_match_three() {
     }
 }
 
+/// The float cases compare NaNs by bit pattern, and the oracle's were made on
+/// x86-64: the all-zero 3dl table divides 0 by 0 at run time, which x86's SSE
+/// answers with the default NaN `0xffc00000` (sign set), in node and in Rust
+/// alike. AArch64 and most other targets answer `0x7fc00000`, so on those
+/// this test and the oracle disagree until `gen.mjs` is rerun there. The NaN
+/// a malformed token parses to is `0x7fc00000` everywhere.
 #[test]
 fn three_dl_quirks_match_three() {
     let oracle = oracle();
@@ -336,4 +342,134 @@ fn set_type_refuses_what_three_does_not_document() {
     assert!(Lut3dlLoader::new()
         .set_type(TextureType::UnsignedInt)
         .is_err());
+}
+
+/// Synthetic strips, not from three's oracle: `gen.mjs` only runs the vendor
+/// PNGs, which hold exactly `size` slices. Three hands a longer buffer to
+/// `parse()` whole, and its WebGPU upload writes layer `z` from byte
+/// `z · size² · 4`, so only the first `size³` texels ever reach the GPU; a
+/// shorter buffer fails at that upload. The port keeps the first `size³`
+/// texels and refuses the shorter one in `load()`.
+#[test]
+fn image_strips_longer_than_size_cubed_keep_the_first_size_cubed_texels() {
+    const SIZE: u32 = 4;
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("loaders_lut");
+    // Opaque, each texel a function of its (x, y) alone, so a wider or taller
+    // strip only adds texels, and every texel distinct, so a misplaced slice
+    // shows.
+    let strip = |width: u32, height: u32, name: &str| -> std::path::PathBuf {
+        let pixels: Vec<u8> = (0..height)
+            .flat_map(|y| (0..width).map(move |x| (x, y)))
+            .flat_map(|(x, y)| [x as u8, y as u8, (x * 3 + y * 5) as u8, 255])
+            .collect();
+        let path = dir.join(name);
+        three_rs::testing::write_png(path.to_str().unwrap(), width, height, &pixels);
+        path
+    };
+    let size_cubed = (SIZE as usize).pow(3) * 4;
+
+    // Horizontal: one slice more than `size`. `_horz2Vert` only draws `size`
+    // slices, so the extra one is never read, with or without `flip`.
+    let exact = strip(SIZE * SIZE, SIZE, "horizontal_exact.png");
+    let long = strip(SIZE * SIZE + SIZE, SIZE, "horizontal_long.png");
+    for flip in [false, true] {
+        let loader = LutImageLoader { flip };
+        let want = data(&loader.load(&exact).expect("an exact strip").texture_3d);
+        let got = loader.load(&long).expect("a longer strip loads");
+        assert_eq!(got.size, SIZE, "flip={flip}: size");
+        assert_eq!(data(&got.texture_3d), want, "flip={flip}: table");
+    }
+
+    // Vertical: taller than `size²`. `_getImageData` returns the whole image;
+    // the table is its first `size³` texels.
+    let tall = strip(SIZE, SIZE * SIZE + 3, "vertical_long.png");
+    let lut = LutImageLoader::new()
+        .load(&tall)
+        .expect("a taller strip loads");
+    assert_eq!(lut.size, SIZE);
+    let decoded = {
+        let decoder = png::Decoder::new(std::fs::File::open(&tall).unwrap());
+        let mut reader = decoder.read_info().unwrap();
+        let mut buf = vec![0; reader.output_buffer_size()];
+        let info = reader.next_frame(&mut buf).unwrap();
+        buf.truncate(info.buffer_size());
+        buf
+    };
+    assert_eq!(data(&lut.texture_3d), decoded[..size_cubed]);
+
+    // Shorter: one slice fewer than `size`, which three's upload rejects.
+    let short = strip(SIZE * SIZE - SIZE, SIZE, "horizontal_short.png");
+    let error = LutImageLoader::new()
+        .load(&short)
+        .expect_err("a shorter strip is refused");
+    assert_eq!(
+        error.to_string(),
+        "THREE.LUTImageLoader: a 12x4 image holds fewer than 4 slices of 4x4"
+    );
+}
+
+/// Writes `text` to a scratch file behind a UTF-8 byte-order mark.
+fn with_bom(name: &str, text: &str) -> std::path::PathBuf {
+    let path = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join("loaders_lut")
+        .join(name);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, format!("\u{feff}{text}")).unwrap();
+    path
+}
+
+/// `FileLoader` reads text through `response.text()` or a `TextDecoder`,
+/// both of which drop a leading UTF-8 byte-order mark, so `parse()` never
+/// sees one. Each input starts with a line the mark would spoil, and the
+/// `parse()` of the marked text is checked to differ, so the test has teeth.
+#[test]
+fn load_drops_a_byte_order_mark() {
+    let oracle = oracle();
+
+    // 3dl: the oracle's `nan` case opens on its grid line, which
+    // `/^[\d ]+$/m` misses behind a mark.
+    let case = &oracle["threeDlSynthetic"]["nan"];
+    let input = case["input"].as_str().expect("input");
+    let lut = Lut3dlLoader::new()
+        .load(with_bom("nan.3dl", input))
+        .expect("parses");
+    assert_eq!(
+        u64::from(lut.size),
+        case["u8"]["size"].as_u64().unwrap(),
+        "3dl: size"
+    );
+    assert_eq!(
+        data(&lut.texture_3d),
+        bytes(&case["u8"]["data"]),
+        "3dl: data"
+    );
+    let marked = Lut3dlLoader::new().parse(&format!("\u{feff}{input}"));
+    assert!(
+        marked.map_or(true, |m| data(&m.texture_3d) != bytes(&case["u8"]["data"])),
+        "3dl: a mark should spoil this input's grid line"
+    );
+
+    // cube: the oracle's `short` case with its `LUT_3D_SIZE` line moved last,
+    // so the file opens on a data line, which `/^([\d.e+-]+) +…$/` misses
+    // behind a mark. The keyword patterns are unanchored, so the move alone
+    // changes nothing; the expected table is the unmarked text's.
+    let input = oracle["cubeSynthetic"]["short"]["input"]
+        .as_str()
+        .expect("input");
+    let (size_line, points) = input.split_once('\n').expect("two lines");
+    assert!(size_line.starts_with("LUT_3D_SIZE"));
+    let input = format!("{points}{size_line}\n");
+    let expected = data(&LutCubeLoader::new().parse(&input).unwrap().texture_3d);
+    let lut = LutCubeLoader::new()
+        .load(with_bom("short.cube", &input))
+        .expect("parses");
+    assert_eq!(data(&lut.texture_3d), expected, "cube: data");
+    let marked = LutCubeLoader::new()
+        .parse(&format!("\u{feff}{input}"))
+        .unwrap();
+    assert_ne!(
+        data(&marked.texture_3d),
+        expected,
+        "cube: a mark should spoil this input's first data line"
+    );
 }

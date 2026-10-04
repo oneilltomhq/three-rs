@@ -23,10 +23,15 @@
 //! three's own loader run in Chrome by `tests/lut/gen.mjs`.
 //!
 //! Not ported: `Loader`'s `manager`, `path` and `crossOrigin`, and the
-//! callback-style `load()`. Where the image is not `size` slices of `size²`
-//! texels, upstream builds a `Data3DTexture` whose data does not match its
-//! dimensions and leaves the failure to the GPU upload; this port refuses it
-//! in `load()` with an [`Error::Lut`].
+//! callback-style `load()`. Where the image does not hold exactly `size`
+//! slices of `size²` texels, upstream hands all of it to `parse()` and builds
+//! a `Data3DTexture` whose data does not match its dimensions. The WebGPU
+//! upload writes layer `z` from byte `z · size² · 4`, so a longer buffer (a
+//! strip with more than `size` slices, or a vertical one taller than `size²`)
+//! still uploads its first `size³` texels and the rest is never read; a
+//! shorter one fails at the upload. The port keeps the first `size³` texels
+//! of a longer buffer and refuses a shorter one in `load()` with an
+//! [`Error::Lut`].
 
 use std::path::Path;
 
@@ -62,27 +67,31 @@ impl LutImageLoader {
     }
 
     /// `loader.load( url )`: decode the image, stack its slices vertically,
-    /// [`parse`](Self::parse) with `Math.min( width, height )`.
+    /// [`parse`](Self::parse) with `Math.min( width, height )`. Texels past
+    /// the first `size³` are dropped, as three's upload never reads them; an
+    /// image with fewer is an [`Error::Lut`].
     pub fn load<P: AsRef<Path>>(&self, path: P) -> Result<LutImage, Error> {
         let path = path.as_ref();
         let bytes = crate::io::read(path)?;
         let image = decode_image(path, &bytes)?;
-        let data = if image.width < image.height {
+        let mut data = if image.width < image.height {
             self.image_data(image.width, image.height, &image.data)
         } else {
             self.horz_to_vert(image.width, image.height, &image.data)
         };
         let size = image.width.min(image.height);
         let expected = (size as usize).pow(3) * 4;
-        if data.len() != expected {
+        if data.len() < expected {
             return Err(Error::Lut {
                 loader: LOADER,
                 reason: format!(
-                    "a {}x{} image is not {size} slices of {size}x{size}",
+                    "a {}x{} image holds fewer than {size} slices of {size}x{size}",
                     image.width, image.height
                 ),
             });
         }
+        // Three's upload reads only the first `size³` texels (module doc).
+        data.truncate(expected);
         Ok(self.parse(data, size))
     }
 

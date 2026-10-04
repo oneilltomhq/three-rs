@@ -74,8 +74,9 @@ impl LutCubeLoader {
     }
 
     /// `loader.setType( type )`. Upstream documents `UnsignedByteType` and
-    /// `FloatType` and treats anything else as `FloatType`; here anything
-    /// else is refused where the mistake is made.
+    /// `FloatType`; given anything else it fills a `Float32Array` but sets
+    /// `texture3D.type` to the type it was given, so the texture is
+    /// mislabelled. Here anything else is refused where the mistake is made.
     ///
     /// A `FloatType` table is `rgba32float`, which WebGPU only filters with
     /// the `float32-filterable` feature, as in a browser.
@@ -96,11 +97,12 @@ impl LutCubeLoader {
     }
 
     /// `loader.load( url )`: the file as text (UTF-8, malformed sequences
-    /// replaced, as `FileLoader`'s `TextDecoder` does), then
-    /// [`parse`](Self::parse).
+    /// replaced and a leading byte-order mark dropped, as `FileLoader`'s
+    /// `response.text()` / `TextDecoder` do), then [`parse`](Self::parse).
     pub fn load<P: AsRef<Path>>(&self, path: P) -> Result<LutCube, Error> {
         let bytes = crate::io::read(path.as_ref())?;
-        self.parse(&String::from_utf8_lossy(&bytes))
+        let text = String::from_utf8_lossy(&bytes);
+        self.parse(text.strip_prefix('\u{feff}').unwrap_or(&text))
     }
 
     /// `loader.parse( input )`.
