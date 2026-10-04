@@ -353,6 +353,17 @@ pub enum UniformSource {
     MaterialSheenRoughness,
     /// `MeshPhysicalMaterial.diffuseRoughness`.
     MaterialDiffuseRoughness,
+    /// `MeshPhysicalMaterial.iridescence` — `KHR_materials_iridescence`.
+    MaterialIridescence,
+    /// `MeshPhysicalMaterial.iridescenceIOR`.
+    MaterialIridescenceIor,
+    /// `iridescenceThicknessRange[ 1 ]` — three reaches the range through
+    /// `reference( '1', 'float', material.iridescenceThicknessRange )` and
+    /// `reference( '0', … )`, two separate float uniforms, the maximum built
+    /// first.
+    MaterialIridescenceThicknessMax,
+    /// `iridescenceThicknessRange[ 0 ]`.
+    MaterialIridescenceThicknessMin,
     /// `MeshStandardMaterial.normalScale`.
     MaterialNormalScale,
     /// `MeshStandardMaterial.aoMapIntensity` — the scale in `materialAO`'s
@@ -649,6 +660,10 @@ impl UniformSource {
             | UniformSource::MaterialSheenColor
             | UniformSource::MaterialSheenRoughness
             | UniformSource::MaterialDiffuseRoughness
+            | UniformSource::MaterialIridescence
+            | UniformSource::MaterialIridescenceIor
+            | UniformSource::MaterialIridescenceThicknessMax
+            | UniformSource::MaterialIridescenceThicknessMin
             | UniformSource::MaterialNormalScale
             | UniformSource::MaterialAoMapIntensity
             | UniformSource::MaterialLightMapIntensity

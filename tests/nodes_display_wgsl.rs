@@ -1604,3 +1604,56 @@ fn recurrent_denoise_specular_dominant_direction_matches_three() {
         Region::Function("getSpecularDominantDirection"),
     );
 }
+
+/// `webgpu_loader_gltf_iridescence`'s `lamp_iridescence`: a glTF physical
+/// material with `KHR_materials_iridescence` (factor 1, IOR 1.8, thickness
+/// `[ 485, 515 ]` through the green channel of a map), lit only by the PMREM
+/// environment. Compares `evalIridescence` (the `Fn` with a layout whose
+/// `Loop` runs `m` from 1 to 2 inclusive), the three `Iridescence*` assigns
+/// and the metallic F0's `mix`. It does not compare the whole body: the
+/// port's separate indirect-diffuse scattering pair (docs/nodes.md §8) gives
+/// the dielectric F0 a second reader, so its `mix` is rebuilt around a temp
+/// where three has one shared `mix` (§95.2).
+#[test]
+fn gltf_iridescence_lamp_matches_three() {
+    use three_rs::materials::environment::Environment;
+    use three_rs::nodes::pmrem_node::PmremEnvironment;
+
+    let map = three_rs::Texture::new(2, 2, Some(vec![0; 16]));
+    let orm = three_rs::Texture::new(2, 2, Some(vec![0; 16]));
+    let thickness = three_rs::Texture::new(2, 2, Some(vec![0; 16]));
+    let mut material =
+        three_rs::MeshBasicNodeMaterial::physical(three_rs::Color::from_hex(0xffffff), 1.0, 1.0);
+    material.map = Some(map);
+    material.ao_map = Some(orm.clone());
+    material.metalness_map = Some(orm.clone());
+    material.roughness_map = Some(orm);
+    material.ior = 1.5;
+    material.iridescence = 1.0;
+    material.iridescence_ior = 1.8;
+    material.iridescence_thickness_range = [485.0, 515.0];
+    material.iridescence_thickness_map = Some(thickness);
+
+    let environment =
+        PmremEnvironment::from_equirectangular(&three_rs::Texture::new(2, 1, Some(vec![0; 8])));
+    let ctx = SetupContext {
+        environment: Some(Environment::Pmrem(environment.handle())),
+        ..SetupContext::default()
+    };
+    let program = NodeBuilder::new().build(&setup(&material, &ctx, None));
+    let three = fixture("webgpu_loader_gltf_iridescence_m14_lamp_iridescence.wgsl");
+    for which in [
+        Region::Function("evalIridescence"),
+        Region::Statement("Iridescence = "),
+        Region::Statement("IridescenceIOR = "),
+        Region::Statement("IridescenceThickness = "),
+        Region::Statement("mix( DiffuseColor.xyz, Schlick_to_F0("),
+    ] {
+        assert_eq!(
+            fingerprint(&program.fragment_wgsl, which),
+            fingerprint(&three, which),
+            "\n{}",
+            program.fragment_wgsl
+        );
+    }
+}

@@ -612,3 +612,58 @@ fn base64_encode(bytes: &[u8]) -> String {
     }
     out
 }
+
+/// `IridescenceLamp.glb`, the asset `webgpu_loader_gltf_iridescence` draws:
+/// `GLTFMaterialsIridescenceExtension` makes the two iridescent materials
+/// physical and copies the factor, the IOR and both ends of the thickness
+/// range, with the thickness texture as a linear `iridescenceThicknessMap`.
+/// The plain `lamp` material carries no extension and stays a standard
+/// material at the non-iridescent defaults.
+#[test]
+fn iridescence_lamp_materials() {
+    use three_rs::materials::MaterialKind;
+    use three_rs::math::ColorSpace;
+
+    let gltf = GltfLoader::load(models().join("IridescenceLamp.glb")).unwrap();
+
+    let mut found = Vec::new();
+    gltf.scene.traverse(&mut |node| {
+        let node = node.borrow();
+        if let Some(material) = node.mesh().and_then(|mesh| mesh.material.as_ref()) {
+            found.push((
+                material.kind,
+                material.iridescence,
+                material.iridescence_ior,
+                material.iridescence_thickness_range,
+                material
+                    .iridescence_thickness_map
+                    .as_ref()
+                    .map(|map| map.color_space()),
+            ));
+        }
+    });
+    // `lamp`, `lamp_transmission`, `lamp_iridescence`, by IOR.
+    found.sort_by(|a, b| a.2.total_cmp(&b.2));
+    assert_eq!(found.len(), 3);
+
+    let lamp = found[0];
+    assert_eq!(lamp.0, MaterialKind::Standard);
+    assert_eq!(
+        (lamp.1, lamp.2, lamp.3, lamp.4),
+        (0.0, 1.3, [100.0, 400.0], None)
+    );
+
+    let transmission = found[1];
+    assert_eq!(transmission.0, MaterialKind::Physical);
+    assert_eq!(transmission.1, 1.0);
+    assert!((transmission.2 - 1.67).abs() < 1e-6);
+    assert_eq!(transmission.3, [395.0, 405.0]);
+    assert_eq!(transmission.4, Some(ColorSpace::NoColorSpace));
+
+    let iridescent = found[2];
+    assert_eq!(iridescent.0, MaterialKind::Physical);
+    assert_eq!(iridescent.1, 1.0);
+    assert!((iridescent.2 - 1.8).abs() < 1e-6);
+    assert_eq!(iridescent.3, [485.0, 515.0]);
+    assert_eq!(iridescent.4, Some(ColorSpace::NoColorSpace));
+}

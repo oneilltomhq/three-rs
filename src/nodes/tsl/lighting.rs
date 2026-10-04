@@ -182,8 +182,9 @@ pub fn v_ggx_smith_correlated_anisotropic(
 
 /// `Schlick_to_F0( { f, f90, dotVH } )` — inverts Schlick's Fresnel: the `f0`
 /// that would give reflectance `f` at `dotVH`, with `x⁵` clamped below 1 so
-/// grazing angles stay finite. Three's iridescence calls it; here it is
-/// standalone, since iridescence is not ported (issue 229). A layout function,
+/// grazing angles stay finite. `PhysicalLightingModel.start()`'s iridescence
+/// branch calls it twice, for the dielectric and metallic thin-film F0s
+/// (`crate::materials::physical`, `docs/nodes.md` §95). A layout function,
 /// emitted as `fn Schlick_to_F0`.
 pub fn schlick_to_f0(
     f: impl Into<NodeRef>,
