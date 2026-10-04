@@ -1716,6 +1716,51 @@ pub fn material_sheen_roughness() -> NodeRef {
     )
 }
 
+/// `materialIridescence` — `MaterialNode.IRIDESCENCE`, the bare uniform:
+/// three gives it no map branch (glTF's `iridescenceTexture` reaches
+/// `material.iridescenceMap` and is then never read).
+pub fn material_iridescence() -> NodeRef {
+    uniform(
+        UniformSource::MaterialIridescence,
+        Type::F32,
+        UniformGroup::Object,
+        None,
+    )
+}
+
+/// `materialIridescenceIOR` — `MaterialNode.IRIDESCENCE_IOR`.
+pub fn material_iridescence_ior() -> NodeRef {
+    uniform(
+        UniformSource::MaterialIridescenceIor,
+        Type::F32,
+        UniformGroup::Object,
+        None,
+    )
+}
+
+/// `reference( '1', 'float', material.iridescenceThicknessRange )` — the
+/// maximum film thickness, which `MaterialNode.IRIDESCENCE_THICKNESS` builds
+/// first and, with no thickness map, reads alone.
+pub fn material_iridescence_thickness_max() -> NodeRef {
+    uniform(
+        UniformSource::MaterialIridescenceThicknessMax,
+        Type::F32,
+        UniformGroup::Object,
+        None,
+    )
+}
+
+/// `reference( '0', 'float', material.iridescenceThicknessRange )` — the
+/// minimum film thickness, read only with a thickness map.
+pub fn material_iridescence_thickness_min() -> NodeRef {
+    uniform(
+        UniformSource::MaterialIridescenceThicknessMin,
+        Type::F32,
+        UniformGroup::Object,
+        None,
+    )
+}
+
 /// `materialDiffuseRoughness` — `MaterialNode.DIFFUSE_ROUGHNESS` without a
 /// map, the raw uniform. `setupVariants()` clamps it into `DiffuseRoughness`.
 pub fn material_diffuse_roughness() -> NodeRef {
@@ -3977,6 +4022,17 @@ prop!(pub(crate) sheen_specular_indirect, "sheenSpecularIndirect", Type::Vec3);
 prop!(
     /// `diffuseRoughness`.
     diffuse_roughness, "DiffuseRoughness", Type::F32);
+// `MeshPhysicalNodeMaterial.setupVariants()`' iridescence properties.
+prop!(
+    /// `iridescence` — the `Iridescence` property.
+    iridescence, "Iridescence", Type::F32);
+prop!(
+    /// `iridescenceIOR` — the `IridescenceIOR` property.
+    iridescence_ior, "IridescenceIOR", Type::F32);
+prop!(
+    /// `iridescenceThickness` — the `IridescenceThickness` property, in
+    /// nanometres.
+    iridescence_thickness, "IridescenceThickness", Type::F32);
 prop!(
     pub(crate) single_scattering_dielectric,
     "singleScatteringDielectric",

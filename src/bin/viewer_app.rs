@@ -306,6 +306,7 @@ PostprocessingSsrDenoise, webgpu_postprocessing_ssr_denoise, "../../examples/web
 UpscalingFsr1, webgpu_upscaling_fsr1, "../../examples/webgpu_upscaling_fsr1.rs";
 Clipping, webgpu_clipping, "../../examples/webgpu_clipping.rs";
 ClippingStencil, webgpu_clipping_stencil, "../../examples/webgpu_clipping_stencil.rs";
+LoaderGltfIridescence, webgpu_loader_gltf_iridescence, "../../examples/webgpu_loader_gltf_iridescence.rs";
 UpscalingTaau, webgpu_upscaling_taau, "../../examples/webgpu_upscaling_taau.rs";}
 
 impl Which {

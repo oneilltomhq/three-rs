@@ -1614,8 +1614,8 @@ fn setup_standard(
         .push(diffuse_contribution().assign(diffuse_color().rgb().mul(metalness_node.one_minus())));
 
     // `MeshPhysicalNodeMaterial.setupVariants()`, after
-    // `MeshStandardNodeMaterial`'s: diffuse roughness, clearcoat, sheen, then
-    // anisotropy.
+    // `MeshStandardNodeMaterial`'s: diffuse roughness, clearcoat, sheen,
+    // iridescence, then anisotropy.
     //
     // DIFFUSE ROUGHNESS — `useDiffuseRoughness` is `diffuseRoughness > 0`, and
     // `DiffuseRoughness` is `materialDiffuseRoughness.clamp()`.
@@ -1655,6 +1655,29 @@ fn setup_standard(
     if use_sheen {
         fragment.push(sheen().assign(material_sheen_color().mul(material_sheen())));
         fragment.push(sheen_roughness().assign(material_sheen_roughness().clamp(0.0001, 1.0)));
+    }
+
+    // IRIDESCENCE, gated on `useIridescence` — `this.iridescence > 0`.
+    // `MaterialNode.IRIDESCENCE_THICKNESS` is the odd one: with no thickness
+    // map it is the *maximum* of `iridescenceThicknessRange` alone (the
+    // minimum is not even referenced), and with a map it interpolates between
+    // the two by the map's green channel.
+    let use_iridescence = material.kind == MaterialKind::Physical && material.iridescence > 0.0;
+    if use_iridescence {
+        fragment.push(iridescence().assign(material_iridescence()));
+        fragment.push(iridescence_ior().assign(material_iridescence_ior()));
+        let thickness_value = match &material.iridescence_thickness_map {
+            // One `iridescenceThicknessMinimum` uniform, read twice.
+            Some(map) => {
+                let minimum = material_iridescence_thickness_min();
+                material_iridescence_thickness_max()
+                    .sub(minimum.clone())
+                    .mul(texture(map).y())
+                    .add(minimum)
+            }
+            None => material_iridescence_thickness_max(),
+        };
+        fragment.push(iridescence_thickness().assign(thickness_value));
     }
 
     if use_anisotropy {
@@ -1753,6 +1776,7 @@ fn setup_standard(
             use_sheen,
             use_clearcoat,
             use_diffuse_roughness,
+            use_iridescence,
             opaque_frame,
             fragment,
         );
