@@ -247,20 +247,25 @@ Each file is deleted in the commit that replaces it, and rungs 1–3 are re-run
 after each deletion: a regression there is the signal that the builder, not the
 new material, is wrong.
 
-## 6. Explicitly deferred
+## 6. Deferred at rung 4, and where each piece landed
 
-| deferred | where it plugs in |
-|---|---|
-| Phong / Standard / Physical lighting models (rungs 5, 8) | `setup_lighting_model` returns a `LightingModel` with `direct`/`indirect`/`ambient_occlusion`/`finish` hooks; rung 4 ships only `BasicLightingModel`. `LightsNode` (the per-light loop) is the one new builder concept. |
-| lights themselves | a `LightsNode` variant plus a render-group uniform array; the render group already exists. |
-| shadow maps (rung 7) | a `ShadowNode` inside the lighting model, plus a depth-only render pass the renderer already has the machinery for (`RenderTarget` + depth texture). |
-| morph targets (rung 6), skinning (rung 10), batching (rung 11) | `setup_position`, which already has the `instanced_mesh()` hook in exactly the place Three calls `morphReference()` / `skinning()` / `batch()`. |
-| tone mapping (rung 7) | `RenderOutputNode` already branches on tone mapping; rung 4 passes `NoToneMapping`. |
-| post-processing `pass()` (rung 9, done — see `docs/postprocessing.md`) | `PassNode` is a `Texture` whose source is a `RenderTarget` the renderer renders first; `TextureSource` already has that variant shape. |
-| ~~compute (rung 12)~~ | Done — see §11. `Stage::Compute` is reachable, `BufferSource::Storage` declares `var<storage>` and `build_compute()` emits the `@compute` entry point. |
-| ~~`SpriteNodeMaterial` (rung 13)~~ | Done — see §10. `position_view()` is context-driven the way `normal_view()` is, and `MaterialKind::Sprite` supplies the billboarded `vec4`. |
-| ~~clipping planes~~ | Done (#295) — `src/nodes/clipping.rs`. A `ClippingGroup`'s planes reach each draw as a `ClippingContext` (the `SetupContext`'s `clipping`), and `NodeMaterial.setupClipping()` / `setupHardwareClipping()` push `clipping()`, `clippingAlpha()` (alpha-to-coverage with MSAA) or `hardwareClipping()` (`clip_distances`, when the adapter has `wgpu::Features::CLIP_DISTANCES`; otherwise the fragment discards). Gated against three's WGSL by `tests/nodes_clipping_wgsl.rs`; the plane buffers' binding numbers are the one divergence, in §8. `material.clippingPlanes` is `WebGLRenderer`-only in three and is not ported. |
-| MRT, vertex colours, fog, alpha test | all are single branches in `NodeMaterial`'s setup flow, omitted because no rung 1–4 material sets them. |
+Rung 4 shipped only `BasicLightingModel`, and this section listed what it left
+out and where each piece would plug in. All of it has since landed and is
+graded by the e2e ladder; the table now says which pages grade each piece and
+which sections describe it.
+
+| deferred at rung 4 | graded by | described in |
+|---|---|---|
+| Phong / Standard / Physical lighting models | `webgpu_lights_phong` (rung 5), `webgpu_lights_physical` (rung 8), and the physical lobes on the glTF pages | §7 (normal maps, from rung 5), §8 (the divergences); the lobes in §25 (sheen), §26 (anisotropy, transmission), §34 (clearcoat), §54 (diffuse roughness) and §95 (iridescence); a user `LightingModel` in §40 |
+| lights themselves | the same pages, `webgpu_lights_selective`, `webgpu_lightprobe` | `lights_node()` in §40, `lights( [ … ] )` in §78, `LightProbeNode` in §60 |
+| shadow maps | `webgpu_shadowmap` (rung 7), `webgpu_shadowmap_vsm`, `webgpu_shadowmap_pointlight`, `webgpu_shadowmap_opacity` | §32 (the filters, `filterNode` / `shadowNode`, VSM, `alphaMap` and `alphaTest` in the shadow pass), §43 (transmitted shadows), §71 (`builtinShadowContext`) |
+| morph targets, skinning, batching | `webgpu_morphtargets` (rung 6), `webgpu_skinning` (rung 10), `webgpu_mesh_batch` (rung 11) | `setup_position`, at the hook this table named; their divergences in §8; compute skinning in §44 (`webgpu_skinning_points`) |
+| tone mapping | `webgpu_shadowmap` (rung 7) and most lit pages after it | §24.4 (`.toneMapping()` on a node), §43 (AgX), §68 (Cineon); three's `CustomToneMapping` is not ported |
+| post-processing `pass()` | `webgpu_postprocessing_masking` (rung 9) and every `webgpu_postprocessing_*` page | `docs/postprocessing.md` |
+| compute | `webgpu_compute_points` (rung 12) | §11; indirect draws, struct storage and atomics in §33 |
+| `SpriteNodeMaterial` | `webgpu_tsl_galaxy` (rung 13), `webgpu_sprites` | §10, §41 |
+| clipping planes (#295) | `webgpu_clipping`, `webgpu_clipping_stencil` | `src/nodes/clipping.rs`. A `ClippingGroup`'s planes reach each draw as a `ClippingContext` (the `SetupContext`'s `clipping`), and `NodeMaterial.setupClipping()` / `setupHardwareClipping()` push `clipping()`, `clippingAlpha()` (alpha-to-coverage with MSAA) or `hardwareClipping()` (`clip_distances`, when the adapter has `wgpu::Features::CLIP_DISTANCES`; otherwise the fragment discards). Gated against three's WGSL by `tests/nodes_clipping_wgsl.rs`; the plane buffers' binding numbers are the one divergence, in §8. `material.clippingPlanes` is `WebGLRenderer`-only in three and is not ported. |
+| MRT, vertex colours, fog, alpha test | `webgpu_mrt`, `webgpu_deferred`, `webgpu_multiple_rendertargets`; `webgpu_lines_fat`; `webgpu_fog_height`; `webgpu_shadowmap_pointlight` | MRT in §23 and §52; `vertexColor()` in §8; fog in §28 and §43; alpha test in §32.4 |
 
 ## 7. Sub-builds, and `normalMap` as the value of `normalView`
 
