@@ -327,6 +327,19 @@ pub fn const_array(values: Vec<f64>) -> NodeRef {
     })
 }
 
+/// `array( [ vec2( … ), … ] )` — a literal array of vectors, `values` holding
+/// each element's components in turn. `depthAwareBlend`'s Poisson disk is the
+/// one user: `array< vec2<f32>, 8 >( vec2<f32>( 0.493393, 0.394269 ), … )`,
+/// indexed by a loop's `i` through [`NodeRef::element_node`].
+pub fn const_array_of(element_ty: Type, values: Vec<f64>) -> NodeRef {
+    assert_eq!(
+        values.len() % element_ty.components().max(1),
+        0,
+        "three-rs: const_array_of takes whole elements"
+    );
+    NodeRef::new(Node::ConstArray { element_ty, values })
+}
+
 /// `array( [ … ] )` held in a `var<private> nodeVarN : array< f32, N >`.
 ///
 /// Three emits the same literal as [`const_array`] does, but a `TempNode` the
@@ -4444,6 +4457,16 @@ impl UniformArray {
         NodeRef::new(Node::BufferElement {
             buffer: self.0.clone(),
             index: constant(Type::U32, vec![index as f64]),
+        })
+        .xyz()
+    }
+
+    /// `.element( i )` on a `Vector3` array with a node index (a loop's `i`)
+    /// — `NodeBuffer_N.value[ i ].xyz`.
+    pub fn element_xyz(&self, index: NodeRef) -> NodeRef {
+        NodeRef::new(Node::BufferElement {
+            buffer: self.0.clone(),
+            index,
         })
         .xyz()
     }

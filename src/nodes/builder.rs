@@ -833,6 +833,20 @@ impl NodeBuilder {
             _ => {}
         }
         if self.increase_usage(node) > 1 {
+            // A block is an inline `Fn()` call. In three's analyze stage
+            // `StackNode.build()` runs at every reach and builds every
+            // statement and then the `outputNode` each time, so all of them
+            // are counted again. The port re-counts only `result`: a block
+            // read twice counts its result twice, and a computed result
+            // becomes a var instead of being spelled out at each read
+            // (`depthAwareBlend()` under `renderOutput()`, which reads its
+            // colour's `.xyz` and `.w`). Re-counting the statements as well
+            // would change no WGSL: they are void statements and vars, whose
+            // promotion does not depend on a second count.
+            if let Node::Block { result, .. } = node.node() {
+                let result = result.clone();
+                self.analyze(&result);
+            }
             return;
         }
         // `ContextNode.analyze()`: counted like any node, and its node built
@@ -1496,7 +1510,12 @@ impl NodeBuilder {
             // `UniformNode.generate()`: a `bool` uniform is a `u32` in the
             // buffer, converted once into a var — "cache to variable".
             Node::Uniform(u) => u.ty == Type::Bool,
-            Node::Op { .. } | Node::Math { .. } | Node::Join { .. } => self.usage_of(node) > 1,
+            // `negate()` is `MathNode.NEGATE`, so it is shared like any
+            // other math node (`GodraysNode`'s ray-plane `t`, read three
+            // times).
+            Node::Op { .. } | Node::Math { .. } | Node::Neg { .. } | Node::Join { .. } => {
+                self.usage_of(node) > 1
+            }
             // A call to an `Fn()` with a layout is a real function call, and
             // `FunctionCallNode` is a `TempNode`: cached once when shared.
             Node::Call { def, .. } if def.layout => self.usage_of(node) > 1,
@@ -1600,11 +1619,22 @@ impl NodeBuilder {
             Node::Const { ty, values } => wgsl::constant(*ty, values),
 
             Node::ConstArray { element_ty, values } => {
-                let parts: Vec<String> = values.iter().map(|v| wgsl::number(*v)).collect();
+                // A vector element is one `vec2<f32>( x, y )` per
+                // `components()` entries: `depthAwareBlend`'s Poisson disk,
+                // `array< vec2<f32>, 8 >( vec2<f32>( 0.493393, … ), … )`.
+                let width = element_ty.components().max(1);
+                let parts: Vec<String> = if width == 1 {
+                    values.iter().map(|v| wgsl::number(*v)).collect()
+                } else {
+                    values
+                        .chunks(width)
+                        .map(|chunk| wgsl::constant(*element_ty, chunk))
+                        .collect()
+                };
                 format!(
                     "array< {}, {} >( {} )",
                     wgsl::type_name(*element_ty),
-                    values.len(),
+                    parts.len(),
                     parts.join(", ")
                 )
             }
