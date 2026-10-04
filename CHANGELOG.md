@@ -14,7 +14,21 @@ have their own sections after the release they ship with. The format follows [Ke
   into the water colour. Every uniform is a public `SettableValue`.
   `webgpu_ocean` is graded green at 0 of 100000 pixels, and the material's
   WGSL is gated against three's dump in `tests/nodes_water_wgsl.rs`.
-  `Water2Mesh` is not ported.
+- **`Water2Mesh`** (`addons::objects`), a port of
+  `examples/jsm/objects/Water2Mesh.js`: two normal maps scrolled along a
+  flow direction or a flow map and cross-faded on a half cycle, with a
+  Fresnel mix of a refraction (`viewportSharedTexture( viewportSafeUV() )`)
+  and a planar `reflector()`. `flowConfig` advances by the frame's delta
+  time in the node's `updateBefore`. Every uniform is a public
+  `SettableValue`. Both flow branches' WGSL is gated against three's dumps
+  in `tests/nodes_water_wgsl.rs`, and `tests/water2_frames.rs` checks the
+  flow, the refraction and the tint on the GPU. `examples/webgpu_water.rs`
+  ports the page. Three's e2e skips the page, so it has no rung; scored
+  informally, its first frame is 0.006% off three's screenshot. See
+  `docs/nodes.md` §83.
+- **`transmission_map`** on materials, three's `transmissionMap`: its red
+  channel multiplies `transmission`. The glTF loader reads
+  `KHR_materials_transmission.transmissionTexture` into it.
 - **`ReflectorNode::add_target_on_setup()`**: adds the mirror's `target` to
   an object just before the reflector's first update, which is when three
   runs an `add()` written inside a material's `Fn()`. See `docs/nodes.md`
@@ -102,6 +116,9 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Fixed
 
+- The glTF loader applies `occlusionTexture.strength` as `ao_map_intensity`,
+  as three's `GLTFLoader` does. It was ignored, so `pool.glb`'s
+  `SPWallsFloorStairs`, which sets it to 0, was darkened by its AO map.
 - A `HemisphereLight` with no `AmbientLight` beside it no longer has its
   irradiance overwritten with zero before the Phong, Lambert and Toon models
   read it.

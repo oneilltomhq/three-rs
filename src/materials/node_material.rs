@@ -1518,7 +1518,12 @@ fn setup_standard(
         None
     };
     if opaque_frame.is_some() {
-        fragment.push(transmission().assign(material_transmission()));
+        // `MaterialNode.TRANSMISSION`: the factor times the map's red channel.
+        let transmission_value = match &material.transmission_map {
+            Some(map) => material_transmission().mul(texture(map).x()),
+            None => material_transmission(),
+        };
+        fragment.push(transmission().assign(transmission_value));
         // `MaterialNode.THICKNESS`: the factor times the map's green channel.
         let thickness_value = match &material.thickness_map {
             Some(map) => material_thickness().mul(texture(map).y()),

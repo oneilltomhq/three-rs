@@ -441,6 +441,9 @@ pub struct MeshBasicNodeMaterial {
     /// `KHR_materials_transmission` and `KHR_materials_volume`. A non-zero
     /// `transmission` moves the object into the renderer's transmission pass.
     pub transmission: f64,
+    /// `MeshPhysicalMaterial.transmissionMap` — `MaterialNode.TRANSMISSION`
+    /// multiplies `transmission` by the texel's red channel.
+    pub transmission_map: Option<Texture>,
     /// `MeshPhysicalMaterial.thickness` — `KHR_materials_volume`; the modelled
     /// thickness of the transmissive medium.
     pub thickness: f64,
@@ -655,6 +658,7 @@ impl Default for MeshBasicNodeMaterial {
             transmission: 0.0,
             // three's `MeshPhysicalMaterial` defaults: no volume at all.
             thickness: 0.0,
+            transmission_map: None,
             thickness_map: None,
             attenuation_distance: f64::INFINITY,
             attenuation_color: Color::new(1.0, 1.0, 1.0),

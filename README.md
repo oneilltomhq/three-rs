@@ -61,7 +61,9 @@ that verifies each present row.
   (`TextGeometry`), `curve_modifier_gpu` (`Flow`), `lights`
   (`LightProbeGenerator`), `helpers` (`LightProbeHelper`), `objects::SkyMesh`
   (the Preetham sky with sun disc and clouds), `objects::WaterMesh` (a
-  reflective water surface over `reflector()`), and `controls::OrbitControls`,
+  reflective water surface over `reflector()`), `objects::Water2Mesh` (water
+  that mixes a mirror with a refracting screen read, scrolled along a flow
+  direction or flow map), and `controls::OrbitControls`,
   a port of the JS class graded against the JS class itself. An addon that
   needs nothing from core would be a workspace crate instead — `addons/controls`
   is one — and that stays the preferred shape; these live in the root crate
@@ -258,6 +260,7 @@ browser shell:
 | example | why it has no grade |
 |---|---|
 | [`webgpu_postprocessing_traa`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_traa.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_traa-progress.md) | in three's e2e exception list (`test/e2e/puppeteer.js`, "Black screen"). It is gated instead on its resolve shader against three's dump and on `tests/traa_frames.rs` |
+| [`webgpu_water`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_water.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_water-progress.md) | in three's e2e exception list (`test/e2e/puppeteer.js`, "1 min"). It is gated instead on the water's shaders against three's dumps (`tests/nodes_water_wgsl.rs`) and on `tests/water2_frames.rs` |
 
 Measured on Intel Iris Xe, Mesa 25.3.6, Fedora 43, against three.js 5f610f5
 (past r186, for the cube PMREM of 2f80402; the pin becomes the r187 tag once
@@ -323,7 +326,7 @@ cargo run --release --bin viewer -- shadowmap --headless --frames 40
 ```
 
 Opens the named example in a window (winit, tested on Wayland). All 85 graded
-examples are there, and so is the ungraded `webgpu_postprocessing_traa`. Each one animates, orbits, dollies and pans through
+examples are there, and so are the ungraded `webgpu_postprocessing_traa` and `webgpu_water`. Each one animates, orbits, dollies and pans through
 its *own* `animate()`, `resize()` and `OrbitControls` — the viewer drives the
 example, it does not restate it. `--list` prints the examples with their keys,
 and a key stands in for the name on the command line; in the window, `[` and
