@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three-rs dump page - recurrentDenoise() in its diffuse and specular modes as two quads</title>
+		<meta charset="utf-8">
+	</head>
+	<body>
+		<!--
+			Not a three.js example: a minimal page for tools/dump-webgpu.mjs --html,
+			so the WGSL of RecurrentDenoiseNode.js can be dumped and gated in
+			tests/nodes_display_wgsl.rs. The only webgpu_* example that calls
+			recurrentDenoise() is webgpu_postprocessing_ssr_denoise.html, which
+			uses it once, in specular mode, behind stochastic SSR and a temporal
+			reprojection; this page isolates both kernels over a plain scene pass
+			with that page's MRT layout (albedo + metalness, packed view normal +
+			roughness).
+
+			recurrentDenoise() renders its own quad into a half-float target and
+			hands the graph passTexture( this, target.texture ), so chaining two
+			gives one module per configuration, the second reading the first's
+			texture (and scheduling its updateBefore, as the page's denoiser does
+			for the temporal reprojection it reads), plus the RenderPipeline's
+			copy of the second:
+
+			  recurrentDenoise( scenePassColor, camera, { depth, normal, raw } ),
+			    alphaSource = 'ao'                          -> diffuse quad
+			  recurrentDenoise( diffuse, camera, { depth, normal, raw,
+			    metalRoughness, diffuse, mode: 'specular', accumulate: true } ),
+			    alphaSource = 'raylength'                   -> specular quad
+			  RenderPipeline output                         -> copy quad
+
+			The diffuse quad needs `raw` too: setup() builds getNeighborhoodStats
+			for the adaptiveTrust branch whatever the alpha source, and that reads
+			texture( rawNode ), which throws when rawNode is null.
+
+			In the first frame the specular denoiser draws the diffuse one before
+			anything has built the diffuse one's material, so that draw is an
+			empty NodeMaterial; the page renders one frame ahead so the dump's
+			frame has the real diffuse module.
+		-->
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.webgpu.js",
+					"three/webgpu": "../build/three.webgpu.js",
+					"three/tsl": "../build/three.tsl.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			import * as THREE from 'three/webgpu';
+			import { pass, mrt, output, normalView, materialMetalness, materialRoughness, diffuseColor, packNormalToRGB, sample, vec2, vec4 } from 'three/tsl';
+			import { recurrentDenoise } from 'three/addons/tsl/display/RecurrentDenoiseNode.js';
+
+			const camera = new THREE.PerspectiveCamera( 50, window.innerWidth / window.innerHeight, 0.1, 100 );
+			camera.position.set( 0, 1.5, 4 );
+			camera.lookAt( 0, 0, 0 );
+
+			const scene = new THREE.Scene();
+			scene.background = new THREE.Color( 0x335577 );
+
+			scene.add( new THREE.HemisphereLight( 0xffffff, 0x444444, 2 ) );
+
+			const box = new THREE.Mesh( new THREE.BoxGeometry( 1.5, 1.5, 1.5 ), new THREE.MeshStandardNodeMaterial( { color: 0xff8844, metalness: 0.8, roughness: 0.3 } ) );
+			box.rotation.set( 0.4, 0.6, 0 );
+			scene.add( box );
+
+			const floor = new THREE.Mesh( new THREE.PlaneGeometry( 8, 8 ), new THREE.MeshStandardNodeMaterial( { color: 0x888888, metalness: 0.2, roughness: 0.6 } ) );
+			floor.rotation.x = - Math.PI / 2;
+			floor.position.y = - 1;
+			scene.add( floor );
+
+			const renderer = new THREE.WebGPURenderer();
+			renderer.setPixelRatio( window.devicePixelRatio );
+			renderer.setSize( window.innerWidth, window.innerHeight );
+			document.body.appendChild( renderer.domElement );
+
+			const scenePass = pass( scene, camera );
+			scenePass.setMRT( mrt( {
+				output: output,
+				diffuseColor: vec4( diffuseColor.rgb, materialMetalness ),
+				normal: vec4( packNormalToRGB( normalView ).rgb, materialRoughness )
+			} ) );
+
+			const scenePassColor = scenePass.getTextureNode( 'output' );
+			const scenePassNormal = scenePass.getTextureNode( 'normal' );
+			const scenePassDepth = scenePass.getTextureNode( 'depth' );
+			const scenePassDiffuseColor = scenePass.getTextureNode( 'diffuseColor' );
+
+			scenePass.getTexture( 'normal' ).type = THREE.UnsignedByteType;
+			scenePass.getTexture( 'diffuseColor' ).type = THREE.UnsignedByteType;
+
+			const scenePassMetalRough = sample( ( uv ) => vec2(
+				scenePassDiffuseColor.sample( uv ).a,
+				scenePassNormal.sample( uv ).a
+			) );
+
+			const diffuseDenoise = recurrentDenoise( scenePassColor, camera, {
+				depth: scenePassDepth,
+				normal: scenePassNormal,
+				raw: scenePassColor
+			} );
+			diffuseDenoise.alphaSource = 'ao';
+
+			const specularDenoise = recurrentDenoise( diffuseDenoise, camera, {
+				depth: scenePassDepth,
+				normal: scenePassNormal,
+				raw: scenePassColor,
+				metalRoughness: scenePassMetalRough,
+				diffuse: scenePassDiffuseColor,
+				mode: 'specular',
+				accumulate: true
+			} );
+			specularDenoise.alphaSource = 'raylength';
+
+			const renderPipeline = new THREE.RenderPipeline( renderer );
+			renderPipeline.outputNode = specularDenoise;
+
+			// The diffuse denoiser is only set up when the specular one's quad
+			// material is built, which is after the specular one has already
+			// drawn it (with its still-empty material) in the first frame; three
+			// compiles its real module in the second frame, so render one frame
+			// before the dump's.
+			await renderer.init();
+			renderPipeline.render();
+
+			renderer.setAnimationLoop( () => renderPipeline.render() );
+
+		</script>
+	</body>
+</html>

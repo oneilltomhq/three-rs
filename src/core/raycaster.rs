@@ -320,7 +320,7 @@ impl Node {
         let matrix_world = object.matrix_world;
         let scale = object.scale;
         match &mut object.payload {
-            Payload::None | Payload::Light(_) => {}
+            Payload::None | Payload::Light(_) | Payload::ClippingGroup(_) => {}
             Payload::Mesh(mesh) => {
                 if mesh.line_segments.is_some() {
                     crate::addons::lines::raycast(mesh, &matrix_world, self, raycaster, intersects);

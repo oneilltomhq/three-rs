@@ -469,6 +469,23 @@ pub(crate) fn texture_load(texture: &str, wrap: &str, uv: &str, dims: &str) -> S
     )
 }
 
+/// [`texture_load`] at an explicit level: `generateTextureLod()` with the
+/// level node's snippet, which the `textureLoad` template wraps in `u32( … )`
+/// (`u32( 0.0 )` for `.level( 0 )`).
+pub(crate) fn texture_load_level(
+    texture: &str,
+    wrap: &str,
+    uv: &str,
+    dims: &str,
+    level: &str,
+) -> String {
+    format!(
+        "textureLoad( {texture}, vec2<u32>( clamp( floor( {wrap}( {uv} ) * \
+         vec2<f32>( {dims} ) ), vec2<f32>( 0 ), vec2<f32>( {dims} - vec2<u32>( 1, 1 ) ) ) ), \
+         u32( {level} ) )"
+    )
+}
+
 /// `WGSLNodeBuilder.generateTextureLoad()` with a `depthSnippet`: the array
 /// layer is a separate argument and the level defaults to the string `'0u'`,
 /// which the template then wraps in `u32( … )`.
@@ -484,6 +501,16 @@ pub(crate) fn texture_dimensions(texture: &str, kind: TextureKind) -> String {
         format!("textureDimensions( {texture} )")
     } else {
         format!("textureDimensions( {texture}, u32( 0 ) )")
+    }
+}
+
+/// [`texture_dimensions`] at an explicit level — `generateTextureDimension(
+/// texture, property, levelSnippet )`'s `u32( level )`.
+pub(crate) fn texture_dimensions_level(texture: &str, kind: TextureKind, level: &str) -> String {
+    if kind == TextureKind::DepthMultisampled2D {
+        format!("textureDimensions( {texture} )")
+    } else {
+        format!("textureDimensions( {texture}, u32( {level} ) )")
     }
 }
 

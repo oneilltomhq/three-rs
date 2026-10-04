@@ -7,20 +7,20 @@
 //! directly (`cargo test -p three-rs --lib`).
 
 use std::cmp::Ordering;
+use std::rc::Rc;
 
 use crate::cameras::RenderCamera;
 use crate::core::{Group, Layers, Node, Object3D};
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::{CoordinateSystem, Frustum, Matrix4};
+use crate::nodes::clipping::{ClippingContext, ClippingView};
 use crate::objects::Payload;
 
 /// One entry of `RenderList.opaque` / `RenderList.transparent`.
 ///
-/// three.js' render item also carries `geometry`, `material`, `group` and the
-/// clipping context; geometry and material are reachable through
-/// `node.borrow().mesh()` (for a multi-material mesh, through
-/// [`material`](Self::material) and [`group`](Self::group)), and the clipping
-/// context belongs to a feature this port has not reached.
+/// three.js' render item also carries `geometry` and `material`, which are
+/// reachable through `node.borrow().mesh()` (for a multi-material mesh,
+/// through [`material`](Self::material) and [`group`](Self::group)).
 #[derive(Clone)]
 pub(crate) struct RenderItem {
     /// `renderItem.object`.
@@ -43,6 +43,9 @@ pub(crate) struct RenderItem {
     /// its `start` / `count` clip the draw range
     /// (`RenderObject.getDrawParameters()`).
     pub group: Option<Group>,
+    /// `renderItem.clippingContext` — the planes of the `ClippingGroup`s
+    /// above the object, in view space. `None` when no group clips it.
+    pub clipping: Option<Rc<ClippingContext>>,
 }
 
 impl RenderItem {
@@ -150,6 +153,11 @@ pub(crate) struct ProjectCamera {
     /// an object is drawn when any sub-camera sees it. Empty for every other
     /// camera.
     pub sub_frustums: Vec<Frustum>,
+    /// `renderContext.clippingContext.updateGlobal( scene, camera )` — the
+    /// view matrix the `ClippingGroup` planes are projected with, whether
+    /// this is a shadow pass (where only `clipShadows` groups clip), and
+    /// whether the device has `clip-distances`.
+    pub clipping: ClippingView,
 }
 
 impl ProjectCamera {
@@ -161,12 +169,15 @@ impl ProjectCamera {
     /// `Renderer.render()` calls `camera.updateMatrixWorld()` just above this.
     /// The same thing for a camera the port models without an `Object3D`
     /// wrapper — the shadow cameras, whose projection and world-inverse
-    /// matrices `LightShadow.updateMatrices()` has just refreshed.
+    /// matrices `LightShadow.updateMatrices()` has just refreshed. The walk
+    /// is a shadow pass for the clipping context. `hardware_clipping` is
+    /// whether the device has the `clip-distances` feature.
     pub fn from_parts(
         layers: Layers,
         projection_matrix: &Matrix4,
         matrix_world_inverse: &Matrix4,
         coordinate_system: CoordinateSystem,
+        hardware_clipping: bool,
     ) -> Self {
         let mut proj_screen_matrix = Matrix4::identity();
         proj_screen_matrix.multiply_matrices(projection_matrix, matrix_world_inverse);
@@ -179,10 +190,15 @@ impl ProjectCamera {
             proj_screen_matrix,
             frustum,
             sub_frustums: Vec::new(),
+            // Every caller is a shadow pass, which three renders with a
+            // `ShadowPassMaterial` as the scene's `overrideMaterial`.
+            clipping: ClippingView::new(*matrix_world_inverse, true, hardware_clipping),
         }
     }
 
-    pub fn new(camera: &dyn RenderCamera) -> Self {
+    /// The walk for `camera`; `hardware_clipping` is whether the device has
+    /// the `clip-distances` feature.
+    pub fn new(camera: &dyn RenderCamera, hardware_clipping: bool) -> Self {
         let mut proj_screen_matrix = Matrix4::identity();
         proj_screen_matrix
             .multiply_matrices(&camera.projection_matrix(), &camera.matrix_world_inverse());
@@ -209,6 +225,7 @@ impl ProjectCamera {
             proj_screen_matrix,
             frustum,
             sub_frustums,
+            clipping: ClippingView::new(camera.matrix_world_inverse(), false, hardware_clipping),
         }
     }
 }
@@ -231,11 +248,25 @@ pub(crate) fn project_object(
     render_list: &mut RenderList,
     sort_objects: bool,
 ) {
+    project(object, camera, group_order, render_list, sort_objects, None);
+}
+
+/// [`project_object`] with the walk's `clippingContext` argument: the
+/// context of the nearest enabled `ClippingGroup` above `object`.
+fn project(
+    object: &Node,
+    camera: &ProjectCamera,
+    group_order: f64,
+    render_list: &mut RenderList,
+    sort_objects: bool,
+    clipping: Option<Rc<ClippingContext>>,
+) {
     if !object.borrow().visible {
         return;
     }
 
     let mut group_order = group_order;
+    let mut clipping = clipping;
 
     let visible = object.borrow().layers.test(&camera.layers);
 
@@ -250,16 +281,38 @@ pub(crate) fn project_object(
         };
 
         if is_group {
-            group_order = object.borrow().render_order;
+            let o = object.borrow();
+            group_order = o.render_order;
+            // `if ( object.isClippingGroup && object.enabled )
+            //      clippingContext = clippingContext.getGroupContext( object )`
+            if let Payload::ClippingGroup(group) = &o.payload {
+                if group.enabled {
+                    clipping = ClippingContext::group_context(&clipping, group, &camera.clipping);
+                }
+            }
         } else if is_light {
             render_list.push_light(object.clone());
         } else if is_drawable {
-            project_drawable(object, camera, group_order, render_list, sort_objects);
+            project_drawable(
+                object,
+                camera,
+                group_order,
+                render_list,
+                sort_objects,
+                &clipping,
+            );
         }
     }
 
     for child in object.children() {
-        project_object(&child, camera, group_order, render_list, sort_objects);
+        project(
+            &child,
+            camera,
+            group_order,
+            render_list,
+            sort_objects,
+            clipping.clone(),
+        );
     }
 }
 
@@ -284,6 +337,7 @@ fn project_drawable(
     group_order: f64,
     render_list: &mut RenderList,
     sort_objects: bool,
+    clipping: &Option<Rc<ClippingContext>>,
 ) {
     // `Frustum.intersectsObject( object )` fills `object.boundingSphere` in the
     // first time it is asked for it — `if ( object.boundingSphere === null )
@@ -372,6 +426,7 @@ fn project_drawable(
                             z,
                             matrix_world: o.matrix_world,
                             group: Some(*group),
+                            clipping: clipping.clone(),
                         },
                         material.in_transparent_list(),
                     )
@@ -411,6 +466,7 @@ fn project_drawable(
         z,
         matrix_world: o.matrix_world,
         group: None,
+        clipping: clipping.clone(),
     };
 
     drop(o);
@@ -470,7 +526,7 @@ mod tests {
         let mut list = RenderList::new();
         project_object(
             &scene.node,
-            &ProjectCamera::new(camera),
+            &ProjectCamera::new(camera, false),
             0.0,
             &mut list,
             true,
@@ -773,7 +829,7 @@ mod tests {
         let mut list = RenderList::new();
         project_object(
             &scene.node,
-            &ProjectCamera::new(&camera()),
+            &ProjectCamera::new(&camera(), false),
             0.0,
             &mut list,
             false,
@@ -785,5 +841,121 @@ mod tests {
             [far.borrow().id, near.borrow().id],
             "with sortObjects off, z stays 0 and the id tie-break holds add order"
         );
+    }
+
+    /// A `ClippingGroup`'s planes reach the meshes below it in view space,
+    /// stored as `( -normal, constant )`; a nested `clipIntersection` group
+    /// adds its planes to the intersection list on top of its parent's.
+    #[test]
+    fn clipping_groups_build_the_context_of_their_descendants() {
+        use crate::math::Plane;
+        use crate::objects::ClippingGroup;
+
+        let scene = Scene::new();
+        let outer = ClippingGroup::of(ClippingGroup {
+            clipping_planes: vec![Plane::new(Vector3::new(-1.0, 0.0, 0.0), 0.1)],
+            ..Default::default()
+        });
+        let inner = ClippingGroup::of(ClippingGroup {
+            clipping_planes: vec![
+                Plane::new(Vector3::new(0.0, -1.0, 0.0), 0.8),
+                Plane::new(Vector3::new(0.0, 0.0, -1.0), 0.1),
+            ],
+            clip_intersection: true,
+            ..Default::default()
+        });
+        let outside = mesh_at(0.0);
+        let union_only = mesh_at(0.0);
+        let both = mesh_at(0.0);
+        scene.add(&outside);
+        scene.add(&outer);
+        outer.add(&union_only);
+        outer.add(&inner);
+        inner.add(&both);
+
+        let list = project(&scene, &camera());
+        let context = |node: &Node| {
+            list.items()
+                .find(|item| item.node.borrow().id == node.borrow().id)
+                .unwrap()
+                .clipping
+                .clone()
+        };
+
+        assert!(context(&outside).is_none(), "no group, no context");
+
+        // The camera sits at z = 10 looking down -Z, so the view matrix is a
+        // translation by -10 in z: x and y planes keep their constant.
+        let union = context(&union_only).unwrap();
+        assert_eq!(union.union, vec![[1.0, 0.0, 0.0, 0.1]]);
+        assert!(union.intersection.is_empty());
+
+        let nested = context(&both).unwrap();
+        assert_eq!(nested.union, union.union, "the parent's planes are kept");
+        assert_eq!(nested.intersection.len(), 2);
+        assert_eq!(nested.intersection[0], [0.0, 1.0, 0.0, 0.8]);
+        // `z = 0.1` in the world is `z = -9.9` in view space.
+        let [x, y, z, w] = nested.intersection[1];
+        assert_eq!([x, y, z], [0.0, 0.0, 1.0]);
+        assert!((w + 9.9).abs() < 1e-5, "{w}");
+    }
+
+    /// `getGroupContext()` in a shadow pass: only a `clipShadows` group
+    /// clips, and a disabled group never does.
+    #[test]
+    fn shadow_passes_clip_only_with_clip_shadows() {
+        use crate::math::Plane;
+        use crate::objects::ClippingGroup;
+
+        let scene = Scene::new();
+        let plane = Plane::new(Vector3::new(1.0, 0.0, 0.0), 0.0);
+        let unshadowed = ClippingGroup::of(ClippingGroup {
+            clipping_planes: vec![plane],
+            ..Default::default()
+        });
+        let shadowed = ClippingGroup::of(ClippingGroup {
+            clipping_planes: vec![plane],
+            clip_shadows: true,
+            ..Default::default()
+        });
+        let disabled = ClippingGroup::of(ClippingGroup {
+            clipping_planes: vec![plane],
+            enabled: false,
+            ..Default::default()
+        });
+        let (a, b, c) = (mesh_at(0.0), mesh_at(0.0), mesh_at(0.0));
+        scene.add(&unshadowed);
+        scene.add(&shadowed);
+        scene.add(&disabled);
+        unshadowed.add(&a);
+        shadowed.add(&b);
+        disabled.add(&c);
+        scene.update_matrix_world();
+
+        let camera = camera();
+        let mut list = RenderList::new();
+        project_object(
+            &scene.node,
+            &ProjectCamera::from_parts(
+                camera.layers(),
+                &camera.projection_matrix(),
+                &camera.matrix_world_inverse(),
+                camera.coordinate_system(),
+                false,
+            ),
+            0.0,
+            &mut list,
+            true,
+        );
+        let clipped = |node: &Node| {
+            list.items()
+                .find(|item| item.node.borrow().id == node.borrow().id)
+                .unwrap()
+                .clipping
+                .is_some()
+        };
+        assert!(!clipped(&a));
+        assert!(clipped(&b));
+        assert!(!clipped(&c));
     }
 }

@@ -34,11 +34,16 @@ three-rs/renderer_sprites
 three-rs/renderer_textures
 three-rs/renderer_vertex_colors
 three-rs/renderer_viewport
+three-rs/renderer_viewport_depth
 three-rs/retro_frames
 three-rs/stereo_frames
+three-rs/recurrent_denoise_frames
 three-rs/ssgi_frames
+three-rs/ssr_stochastic_frames
 three-rs/sss_frames
+three-rs/sharpen_frames
 three-rs/traa_frames
+three-rs/temporal_reproject_frames
 three-rs/gtao_frames
 three-rs/velocity_frames
 three-rs/water2_frames
