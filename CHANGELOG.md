@@ -8,6 +8,25 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Added
 
+- **Clipping planes** through **`ClippingGroup`** (`objects`), a port of
+  `ClippingGroup.js` and `ClippingContext.js`: a group's `clipping_planes`
+  clip every descendant, as a union or, with `clip_intersection`, an
+  intersection, nested groups combine, and `clip_shadows` carries them into
+  the shadow passes. `NodeMaterial.setupClipping()` /
+  `setupHardwareClipping()` push three's `clipping()`, `clippingAlpha()`
+  (alpha-to-coverage edges under MSAA) or `hardwareClipping()` (WGSL
+  `clip_distances`, on an adapter with `CLIP_DISTANCES`). All three modes are
+  gated against three's WGSL in `tests/nodes_clipping_wgsl.rs`. See
+  `docs/nodes.md` §6.
+- **Stencil state on materials**: `stencil_write`, `stencil_func`,
+  `stencil_ref`, `stencil_func_mask`, `stencil_write_mask`, `stencil_fail`,
+  `stencil_z_fail` and `stencil_z_pass` (`StencilFunc`, `StencilOp`), and
+  `color_write`, as pipeline state per draw. They take effect on a renderer
+  created with `RendererParameters::stencil`, whose depth buffer is then
+  `depth24plus-stencil8`.
+- **`webgpu_clipping`** and **`webgpu_clipping_stencil`**, graded green at 17
+  and 0 of 100000 pixels, in the steady-frame strip, the native viewer and
+  the browser shell.
 - **`WaterMesh`** (`addons::objects`), a port of
   `examples/jsm/objects/WaterMesh.js`: a planar `reflector()` distorted by
   four scrolling taps of a normal map, with a sun highlight and a Fresnel mix
@@ -470,6 +489,10 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Fixed
 
+- A depth-stencil texture is sampled through a depth-only view. With
+  `RendererParameters::stencil` on, `viewportDepthTexture()`'s copy of the
+  `depth24plus-stencil8` canvas depth failed bind-group validation, because
+  the view had both aspects. `tests/renderer_viewport_depth.rs` covers it.
 - The glTF loader applies `occlusionTexture.strength` as `ao_map_intensity`,
   as three's `GLTFLoader` does. It was ignored, so `pool.glb`'s
   `SPWallsFloorStairs`, which sets it to 0, was darkened by its AO map.

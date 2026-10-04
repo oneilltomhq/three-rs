@@ -13,7 +13,7 @@ This matrix judges every exported name in three.js revision 5f610f5 (r187) — `
 | animation | 14 | 13 | 1 | 0 | 0 | 93% |
 | cameras | 6 | 6 | 0 | 0 | 0 | 100% |
 | scenes | 3 | 3 | 0 | 0 | 0 | 100% |
-| objects | 14 | 11 | 0 | 2 | 1 | 85% |
+| objects | 14 | 12 | 0 | 1 | 1 | 92% |
 | lights | 11 | 7 | 1 | 3 | 0 | 64% |
 | helpers | 13 | 1 | 1 | 11 | 0 | 8% |
 | audio | 5 | 0 | 0 | 0 | 5 | — |
@@ -21,13 +21,13 @@ This matrix judges every exported name in three.js revision 5f610f5 (r187) — `
 | textures | 18 | 8 | 4 | 1 | 5 | 62% |
 | loaders | 20 | 2 | 2 | 12 | 4 | 12% |
 | renderers | 39 | 10 | 8 | 3 | 18 | 48% |
-| nodes | 141 | 100 | 27 | 9 | 5 | 74% |
-| tsl | 683 | 556 | 52 | 50 | 25 | 84% |
+| nodes | 141 | 101 | 27 | 8 | 5 | 74% |
+| tsl | 683 | 559 | 52 | 47 | 25 | 85% |
 | addons/controls | 11 | 1 | 6 | 4 | 0 | 9% |
 | addons/loaders | 71 | 9 | 3 | 59 | 0 | 13% |
 | addons/postprocessing | 30 | 0 | 0 | 0 | 30 | — |
 | addons/other | 102 | 14 | 4 | 61 | 23 | 18% |
-| **total** | **1317** | **818** | **137** | **239** | **123** | **69%** |
+| **total** | **1317** | **823** | **137** | **234** | **123** | **69%** |
 
 TSL by family:
 
@@ -38,13 +38,13 @@ TSL by family:
 | conditionals/flow | 13 | 9 | 1 | 3 | 0 |
 | textures | 23 | 17 | 1 | 5 | 0 |
 | lighting/material | 121 | 92 | 10 | 19 | 0 |
-| accessors | 95 | 76 | 8 | 10 | 1 |
+| accessors | 95 | 79 | 8 | 7 | 1 |
 | display/postprocessing | 75 | 62 | 7 | 6 | 0 |
 | compute/storage | 53 | 46 | 7 | 0 | 0 |
 | materialx | 49 | 48 | 0 | 1 | 0 |
 | utils | 77 | 47 | 16 | 4 | 10 |
 
-Graded examples: 94 (the README gallery plus `webgpu_textures_2d-array_compressed`, which has a live `rung!` but a hyphen in its name). 13 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
+Graded examples: 96 (the README gallery plus `webgpu_textures_2d-array_compressed`, which has a live `rung!` but a hyphen in its name). 13 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
 
 ## math
 
@@ -220,7 +220,7 @@ Graded examples: 94 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ## objects
 
-14 rows: 11 Present, 0 Partial, 2 Absent, 1 N.A.
+14 rows: 12 Present, 0 Partial, 1 Absent, 1 N.A.
 
 | three.js name | verdict | three-rs symbol | verified by | note |
 |---|---|---|---|---|
@@ -237,7 +237,7 @@ Graded examples: 94 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `Line` | Present | Line (src/objects/line.rs:26) | tests/objects_line.rs |  |
 | `Points` | Present | Points (src/objects/points.rs:21) | tests/objects_points.rs; webgpu_particles |  |
 | `Group` | Present | Group (src/objects/group.rs:9) | tests/objects_group.rs | raw hit core::Group (geometry groups) is a different thing |
-| `ClippingGroup` | Absent | — | — | no clipping context; comment only: docs/scene-graph.md:456 |
+| `ClippingGroup` | Present | ClippingGroup (src/objects/clipping_group.rs:22) | tests/nodes_clipping_wgsl.rs; webgpu_clipping (graded) | `clippingPlanes`, `clipIntersection` and `clipShadows`; the planes reach each draw as a `ClippingContext` (src/nodes/clipping.rs:34) |
 
 ## lights
 
@@ -312,7 +312,7 @@ Graded examples: 94 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `MeshMatcapMaterial` | Absent | — | — | not ported |
 | `LineDashedMaterial` | Absent | — | — | not ported; comment only: src/objects/line.rs:13 |
 | `LineBasicMaterial` | Present | ::line (src/materials/mod.rs:838), LineBasicNodeMaterial alias (src/materials/mod.rs:981) | tests/renderer_lines.rs, tests/renderer_vertex_colors.rs; webgpu_modifier_curve | same impl as LineBasicNodeMaterial |
-| `Material` | Partial | MeshBasicNodeMaterial (src/materials/mod.rs:204) carries Material fields | all graded examples | no clippingPlanes, stencil*, polygonOffset, dithering, shadowSide, toJSON; no QUnit port |
+| `Material` | Partial | MeshBasicNodeMaterial (src/materials/mod.rs:204) carries Material fields | all graded examples; webgpu_clipping_stencil (stencil*, colorWrite) | no polygonOffset, dithering, shadowSide, toJSON; clippingPlanes is WebGLRenderer-only in three and not ported (docs/nodes.md §6); no QUnit port |
 | `NodeMaterialObserver` | Absent | — | — | no change detection; set_needs_update + per-frame uniform upload instead |
 | `NodeMaterial` | Partial | MeshBasicNodeMaterial node fields (src/materials/mod.rs:204), setup (src/materials/node_material.rs:413) | tests/nodes_*_wgsl.rs, webgpu_materials | no envNode, aoNode, backdropNode, geometryNode, receivedShadowNode |
 | `LineBasicNodeMaterial` | Present | LineBasicNodeMaterial alias (src/materials/mod.rs:981), ::line (src/materials/mod.rs:838) | tests/renderer_lines.rs; webgpu_modifier_curve |  |
@@ -404,7 +404,7 @@ Graded examples: 94 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `WebGPURenderer` | Partial | Renderer (src/renderer/mod.rs:649) | tests/e2e/main.rs (all graded examples) | native backend fixed to Vulkan, no backend/powerPreference choice (#48) |
 | `WebGPUBackend` | Present | folded into Renderer over wgpu (src/renderer/mod.rs:649) | tests/e2e/main.rs | no separate backend object; wgpu is the backend |
 | `WebGLBackend` | N.A. | — | — | WebGL-only; comment only: src/renderer/mod.rs |
-| `Renderer` | Partial | Renderer (src/renderer/mod.rs:649) | tests/e2e/main.rs, tests/renderer_*.rs | no clipping planes, copyFramebufferToTexture, compileAsync; caches never evict (#237) |
+| `Renderer` | Partial | Renderer (src/renderer/mod.rs:649) | tests/e2e/main.rs, tests/renderer_*.rs | no copyFramebufferToTexture, compileAsync; caches never evict (#237) |
 | `Backend` | N.A. | — | — | single backend |
 | `WebGLCapabilities` | N.A. | — | — | WebGL-only |
 | `Lighting` | Partial | Renderer.lighting_enabled (src/renderer/mod.rs:714) | webgpu_deferred, webgpu_lights_selective | flag only; no swappable Lighting object (TiledLighting) |
@@ -432,7 +432,7 @@ Graded examples: 94 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ## nodes
 
-141 rows: 100 Present, 27 Partial, 9 Absent, 5 N.A.
+141 rows: 101 Present, 27 Partial, 8 Absent, 5 N.A.
 
 | three.js name | verdict | three-rs symbol | verified by | note |
 |---|---|---|---|---|
@@ -480,7 +480,7 @@ Graded examples: 94 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `BufferAttributeNode` | Partial | instanced_buffer_attribute (src/nodes/tsl.rs:4395), to_attribute (3758) | tests/nodes_instanced_attributes.rs | no plain/dynamic bufferAttribute() |
 | `BufferNode` | Present | BufferNode (src/nodes/node.rs:869) | webgpu_skinning |  |
 | `BuiltinNode` | Partial | enum Builtin (src/nodes/node.rs:1156) | tests/nodes_compute_wgsl.rs | closed enum; no generic builtin(name) |
-| `ClippingNode` | Absent | — | — | no clippingPlanes; docs/nodes.md s6 deferred |
+| `ClippingNode` | Present | clipping, clipping_alpha, hardware_clipping (src/nodes/clipping.rs:175,216,262) | tests/nodes_clipping_wgsl.rs; webgpu_clipping (graded) | all three modes; the plane buffers' binding numbers differ (docs/nodes.md §8) |
 | `CubeTextureNode` | Present | cube_texture (src/nodes/tsl.rs:3581) | webgpu_materials_envmaps |  |
 | `MaterialNode` | Partial | material_color etc. (src/nodes/tsl.rs:2143) | webgpu_lights_physical | no iridescence/dash accessors |
 | `MaterialReferenceNode` | Partial | UniformSource::Material* (src/nodes/node.rs:172) | webgpu_lights_physical | fixed sources; no materialReference(name) |
@@ -1268,9 +1268,9 @@ Partial: `transmission`, `thickness`, `attenuationDistance`, `lights`, `pointSha
 
 ### accessors
 
-76 of 94 applicable present (8 Partial, 10 Absent, 1 N.A.).
+79 of 94 applicable present (8 Partial, 7 Absent, 1 N.A.).
 
-Missing (Absent): `bufferAttribute`, `dynamicBufferAttribute`, `instancedDynamicBufferAttribute`, `clipping`, `clippingAlpha`, `hardwareClipping`, `buffer`, `cameraIndex`, `rendererReference`, `reference`.
+Missing (Absent): `bufferAttribute`, `dynamicBufferAttribute`, `instancedDynamicBufferAttribute`, `buffer`, `cameraIndex`, `rendererReference`, `reference`.
 
 Partial: `tangentViewFrame`, `bitangentViewFrame`, `builtin`, `cameraViewport`, `instance`, `instancedMesh`, `batchIndirectIndex`, `referenceBuffer`.
 
@@ -1289,9 +1289,9 @@ Partial: `tangentViewFrame`, `bitangentViewFrame`, `builtin`, `cameraViewport`, 
 | `bitangentLocal` | Present | bitangent_local (src/nodes/tsl.rs:3518) | tests/nodes_tsl_batch.rs (bitangent_local_matches) | see bitangentGeometry |
 | `bitangentView` | Present | bitangent_view (src/nodes/tsl.rs:3424) | indirect: used by src/nodes/tsl.rs |  |
 | `bitangentWorld` | Present | bitangent_world (src/nodes/tsl.rs:3536) | tests/nodes_tsl_batch.rs (bitangent_world_matches) | see bitangentGeometry |
-| `clipping` | Absent | — | — | deferred (docs/nodes.md §6) |
-| `clippingAlpha` | Absent | — | — | deferred (docs/nodes.md §6) |
-| `hardwareClipping` | Absent | — | — | deferred (docs/nodes.md §6) |
+| `clipping` | Present | clipping (src/nodes/clipping.rs:175, pub(crate)) | tests/nodes_clipping_wgsl.rs; webgpu_clipping (graded) | built by NodeMaterial.setupClipping() from a `ClippingGroup`, as in three; not public |
+| `clippingAlpha` | Present | clipping_alpha (src/nodes/clipping.rs:216, pub(crate)) | tests/nodes_clipping_wgsl.rs; webgpu_clipping (graded) | built by NodeMaterial.setupClipping() from a `ClippingGroup`, as in three; not public |
+| `hardwareClipping` | Present | hardware_clipping (src/nodes/clipping.rs:262, pub(crate)) | tests/nodes_clipping_wgsl.rs; webgpu_clipping (graded) | built by NodeMaterial.setupHardwareClipping() from a `ClippingGroup`, as in three; not public |
 | `tangentViewFrame` | Partial | inline in tangent_attribute_frame (src/nodes/tsl.rs:2983, internal) | — | internal only |
 | `bitangentViewFrame` | Partial | inline in tangent_attribute_frame (src/nodes/tsl.rs:2983, internal) | — | internal only |
 | `buffer` | Absent | — | — |  |
@@ -1681,6 +1681,5 @@ The first refresh of this matrix closed the previous top five. Velocity and TRAA
 
 **Runners-up, and why they rank lower:**
 - RectAreaLight and LTC (3 pages).
-- Clipping planes (2 pages, but common in CAD-style viewers).
-- The TSL long tail: 50 absent `three/tsl` names, most of them unused by any r187 page. They port cheaply in batches against WGSL dump gates.
+- The TSL long tail: 47 absent `three/tsl` names, most of them unused by any r187 page. They port cheaply in batches against WGSL dump gates.
 - One Partial matters more than its page count suggests: `GLTFLoader` has no `KHR_lights_punctual` and no cameras. No r187 page needs them, but arbitrary glTF assets from users will.
