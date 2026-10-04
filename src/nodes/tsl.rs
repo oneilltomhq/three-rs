@@ -6635,6 +6635,11 @@ pub fn break_loop() -> NodeRef {
     NodeRef::new(Node::Break)
 }
 
+/// `Continue()` — on to the next iteration of the innermost `Loop`.
+pub fn continue_loop() -> NodeRef {
+    NodeRef::new(Node::Continue)
+}
+
 /// `If( cond, () => { … } )`.
 pub fn if_then(cond: NodeRef, body: Vec<NodeRef>) -> NodeRef {
     NodeRef::new(Node::If {

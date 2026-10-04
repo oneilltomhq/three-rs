@@ -507,3 +507,40 @@ fn dof_composite_builds_its_vec4() {
         assert_eq!(line.matches(".xyz").count(), 2, "`{line}`\n{wgsl}");
     }
 }
+
+#[test]
+fn ssr_matches_three() {
+    check("ssr", Region::Body);
+}
+
+#[test]
+fn ssr_copy_matches_three() {
+    check("ssr_copy", Region::Body);
+}
+
+#[test]
+fn ssr_blur_matches_three() {
+    check("ssr_blur", Region::Body);
+}
+
+/// The page's `RTT`: `scenePassColor.add( ssrPass.rgb )`, which reads the
+/// blur chain at the roughness-picked level.
+#[test]
+fn ssr_resolve_matches_three() {
+    check("ssr_resolve", Region::Body);
+}
+
+#[test]
+fn smaa_edges_matches_three() {
+    check("smaa_edges", Region::Body);
+}
+
+#[test]
+fn smaa_weights_matches_three() {
+    check("smaa_weights", Region::Body);
+}
+
+#[test]
+fn smaa_blend_matches_three() {
+    check("smaa_blend", Region::Body);
+}

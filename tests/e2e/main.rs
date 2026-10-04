@@ -239,6 +239,10 @@ mod webgpu_postprocessing_motion_blur;
 #[allow(dead_code)]
 mod webgpu_postprocessing_dof_basic;
 
+#[path = "../../examples/webgpu_postprocessing_ssr.rs"]
+#[allow(dead_code)]
+mod webgpu_postprocessing_ssr;
+
 #[path = "../../examples/webgpu_pmrem_cubemap.rs"]
 #[allow(dead_code)]
 mod webgpu_pmrem_cubemap;
@@ -2048,6 +2052,75 @@ fn webgpu_postprocessing_dof_basic() {
         webgpu_postprocessing_dof_basic::animate,
         |app| app.renderer.device(),
     );
+}
+
+#[test]
+fn webgpu_postprocessing_ssr() {
+    let name = "webgpu_postprocessing_ssr";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_postprocessing_ssr::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_postprocessing_ssr::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    // The draw calls and triangles the README's graded table records.
+    let info = app.renderer.info();
+    println!("{name}: info {info:?}");
+
+    // SSR must be visible in the graded frame, not merely harmless: the same
+    // frame at `intensity` 0 differs from it in 21527 of the 400000 pixels in
+    // some channel by more than 32 levels (17373 in the progress doc's hand
+    // count) — the reflections in the brass and red casing and on the disc.
+    // Require a safe fraction of that.
+    app.ssr_pass.intensity().set(vec![0.0]);
+    webgpu_postprocessing_ssr::animate(&mut app);
+    let (_, _, without_ssr) = app.renderer.read_canvas_pixels().unwrap();
+    app.ssr_pass.intensity().set(vec![1.0]);
+    let changed = pixels
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(without_ssr.as_chunks::<4>().0)
+        .filter(|(a, b)| a.iter().zip(*b).any(|(x, y)| x.abs_diff(*y) > 32))
+        .count();
+    println!("{name}: SSR changes {changed} pixels by more than 32 levels");
+    assert!(
+        changed > 5000,
+        "{name}: SSR at intensity 1 changes only {changed} pixels by more than 32 levels \
+         against intensity 0; it was 21527 when this check was written"
+    );
+
+    steady_frame(name, &mut app, webgpu_postprocessing_ssr::animate, |app| {
+        app.renderer.device()
+    });
 }
 
 #[test]
@@ -5831,6 +5904,10 @@ fn steady_frame_builds_nothing() {
     // The PMREM is built in `init()`; the steady frames are the scene pass,
     // the box-blurred mix and the FXAA quad.
     rung!(webgpu_postprocessing_dof_basic);
+    // SSR's blur mip chain and SMAA's three targets are sized on the first
+    // frame; the steady frames reuse them, and the two lookup textures are
+    // uploaded once.
+    rung!(webgpu_postprocessing_ssr);
     rung!(webgpu_lights_phong);
     rung!(webgpu_lights_selective);
     rung!(webgpu_morphtargets);

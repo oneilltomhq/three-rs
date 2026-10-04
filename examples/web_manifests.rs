@@ -324,6 +324,9 @@ mod webgpu_postprocessing_lensflare;
 #[path = "webgpu_postprocessing_motion_blur.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_postprocessing_motion_blur;
+#[path = "webgpu_postprocessing_ssr.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_postprocessing_ssr;
 #[path = "webgpu_sky.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_sky;
@@ -565,6 +568,9 @@ const GRADED: &[(&str, fn())] = &[
     }),
     ("webgpu_postprocessing_dof_basic", || {
         drop(webgpu_postprocessing_dof_basic::init())
+    }),
+    ("webgpu_postprocessing_ssr", || {
+        drop(webgpu_postprocessing_ssr::init())
     }),
 ];
 

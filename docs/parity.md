@@ -22,12 +22,12 @@ This matrix judges every exported name in three.js revision 5f610f5 (r187) — `
 | loaders | 20 | 2 | 2 | 12 | 4 | 12% |
 | renderers | 39 | 9 | 9 | 3 | 18 | 43% |
 | nodes | 141 | 100 | 27 | 9 | 5 | 74% |
-| tsl | 683 | 554 | 51 | 53 | 25 | 84% |
+| tsl | 683 | 555 | 51 | 52 | 25 | 84% |
 | addons/controls | 11 | 1 | 6 | 4 | 0 | 9% |
 | addons/loaders | 71 | 6 | 2 | 63 | 0 | 8% |
 | addons/postprocessing | 30 | 0 | 0 | 0 | 30 | — |
 | addons/other | 102 | 11 | 4 | 64 | 23 | 14% |
-| **total** | **1317** | **808** | **136** | **250** | **123** | **68%** |
+| **total** | **1317** | **809** | **136** | **249** | **123** | **68%** |
 
 TSL by family:
 
@@ -35,7 +35,7 @@ TSL by family:
 |---|---|---|---|---|---|
 | math | 109 | 108 | 1 | 0 | 0 |
 | operators | 68 | 51 | 1 | 2 | 14 |
-| conditionals/flow | 13 | 8 | 1 | 4 | 0 |
+| conditionals/flow | 13 | 9 | 1 | 3 | 0 |
 | textures | 23 | 17 | 1 | 5 | 0 |
 | lighting/material | 121 | 92 | 10 | 19 | 0 |
 | accessors | 95 | 76 | 8 | 10 | 1 |
@@ -44,7 +44,7 @@ TSL by family:
 | materialx | 49 | 48 | 0 | 1 | 0 |
 | utils | 77 | 46 | 15 | 6 | 10 |
 
-Graded examples: 88 (the README gallery plus `webgpu_textures_2d-array_compressed`, which has a live `rung!` but a hyphen in its name). 10 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
+Graded examples: 89 (the README gallery plus `webgpu_textures_2d-array_compressed`, which has a live `rung!` but a hyphen in its name). 10 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
 
 ## math
 
@@ -701,10 +701,10 @@ Graded examples: 88 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `RenderPixelatedPass` | N.A. | — | — | WebGL composer; RenderPixelatedPass -> PixelationPassNode pixelationPass(): Present (WGSL gate only, no graded rung); pixelation_pass (src/nodes/display/pixelation_pass.rs:35); tests/nodes_display_wgsl.rs |
 | `RenderTransitionPass` | N.A. | — | — | WebGL composer; RenderTransitionPass -> TransitionNode transition(): Present; transition (src/nodes/display/transition.rs:17); webgpu_postprocessing_transition |
 | `SAOPass` | N.A. | — | — | WebGL composer; SAOPass -> SSAONode: Absent; GTAONode ao(): Present |
-| `SMAAPass` | N.A. | — | — | WebGL composer; SMAAPass -> SMAANode smaa(): Absent |
+| `SMAAPass` | N.A. | — | — | WebGL composer; SMAAPass -> SMAANode smaa(): Present; smaa (src/nodes/display/smaa.rs:72); webgpu_postprocessing_ssr |
 | `SSAARenderPass` | N.A. | — | — | WebGL composer; SSAARenderPass -> SSAAPassNode ssaaPass(): Present; SsaaPassNode (src/renderer/ssaa_pass.rs:130); webgpu_postprocessing_ssaa |
 | `SSAOPass` | N.A. | — | — | WebGL composer; SSAOPass -> SSAONode ssao(): Absent |
-| `SSRPass` | N.A. | — | — | WebGL composer; SSRPass -> SSRNode ssr(): Absent |
+| `SSRPass` | N.A. | — | — | WebGL composer; SSRPass -> SSRNode ssr(): Present; ssr (src/nodes/display/ssr.rs:94); webgpu_postprocessing_ssr |
 | `SavePass` | N.A. | — | — | WebGL composer; SavePass -> no TSL node (rtt()/convertToTexture()): Present; rtt (src/nodes/display/rtt.rs:73); webgpu_postprocessing_anamorphic |
 | `ShaderPass` | N.A. | — | — | WebGL composer; ShaderPass -> no TSL node (Fn on RenderPipeline.outputNode): Present; RenderPipeline (src/renderer/render_pipeline.rs:31); webgpu_postprocessing_radial_blur |
 | `TAARenderPass` | N.A. | — | — | WebGL composer; TRAANode traa() is the WebGPU counterpart (Present) |
@@ -822,7 +822,7 @@ Graded examples: 88 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ### Supplementary: `examples/jsm/tsl/display/*.js`
 
-These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 21 Present, 1 Partial, 26 Absent.
+These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 23 Present, 1 Partial, 24 Absent.
 
 | file | status | three-rs port and check |
 |---|---|---|
@@ -861,12 +861,12 @@ These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) an
 | `Sepia.js` | Absent | — |
 | `Shape.js` | Absent | (circle(); core shapeCircle exists in src/nodes/tsl.rs:3813, a different function) |
 | `SharpenNode.js` | Absent | — |
-| `SMAANode.js` | Absent | — |
+| `SMAANode.js` | Present | smaa/SmaaNode (src/nodes/display/smaa.rs:72,77); tests/nodes_display_wgsl.rs (smaa_edges, smaa_weights and smaa_blend gates); webgpu_postprocessing_ssr (graded) |
 | `SobelOperatorNode.js` | Present | sobel; webgpu_postprocessing_sobel |
 | `SSAAPassNode.js` | Present | SsaaPassNode (src/renderer/ssaa_pass.rs:130); webgpu_postprocessing_ssaa |
 | `SSAONode.js` | Absent | — |
 | `SSGINode.js` | Absent | — |
-| `SSRNode.js` | Absent | — |
+| `SSRNode.js` | Present | ssr/SsrNode (src/nodes/display/ssr.rs:94,105); tests/nodes_display_wgsl.rs (ssr, ssr_copy, ssr_blur and ssr_resolve gates); webgpu_postprocessing_ssr (graded); stochastic, binaryRefine, reflectNonMetals, screenEdgeFadeBlack, setHistory(), resolutionScale ≠ 1, orthographic cameras and log depth are not ported |
 | `SSSNode.js` | Absent | — |
 | `StereoCompositePassNode.js` | Absent | — |
 | `StereoPassNode.js` | Absent | — |
@@ -1078,7 +1078,7 @@ Partial: `mat4`.
 
 ### conditionals/flow
 
-8 of 13 applicable present (1 Partial, 4 Absent, 0 N.A.).
+9 of 13 applicable present (1 Partial, 3 Absent, 0 N.A.).
 
 Missing (Absent): `parameter`, `stack`, `Continue`, `VarIntent`.
 
@@ -1090,7 +1090,7 @@ Partial: `overloadingFn`.
 | `stack` | Absent | — | — | bodies are Vec<NodeRef>; block() at src/nodes/tsl.rs:4725 |
 | `overloadingFn` | Partial | by_position (src/nodes/materialx/mx_noise.rs:834, internal) | — | internal dispatch in MaterialX only |
 | `Loop` | Present | loop_n (src/nodes/tsl.rs:4730) | webgpu_volume_perlin (graded) |  |
-| `Continue` | Absent | — | — | comment only: src/geometries/teapot.rs (false positive) |
+| `Continue` | Present | continue_loop (src/nodes/tsl.rs:6639) | webgpu_postprocessing_ssr (graded); tests/nodes_display_wgsl.rs (ssr_matches_three) |  |
 | `Break` | Present | break_loop (src/nodes/tsl.rs:4831) | webgpu_volume_perlin (graded) |  |
 | `call` | Present | call (src/nodes/tsl.rs:4511) | tests/nodes_custom.rs |  |
 | `select` | Present | wgsl_select (src/nodes/tsl.rs:4887) | webgpu_volume_perlin (graded) |  |
@@ -1674,10 +1674,10 @@ Every graded example passes, so graded examples cannot rank the gaps. The rankin
 
 The first refresh of this matrix closed the previous top five. Velocity and TRAA (`velocity`, `positionPrevious`, `VelocityNode`, `TRAANode`, `MotionBlur`), the screen reads (`viewportSharedTexture`, `viewportTexture`, `viewportDepthTexture`, `viewportLinearDepth`, `linearDepth`, `viewportSafeUV`), `SkyMesh`, `CubeCamera` with a layered `CubeRenderTarget`, and the light probes (`LightProbe`, `LightProbeGenerator`, `LightProbeNode`, `LightProbeHelperGPU`, `getShIrradianceAt`) are Present. So is `transformNormalToView` (6 pages), with the rest of the accessors batch; `webgpu_tsl_raging_sea` now calls it. Of the screen reads only the shared copy has a graded page behind it; `viewportTexture`, `viewportDepthTexture`, `viewportLinearDepth` and `linearDepth` are defined but no gate or graded example renders them yet, so they stay Partial until a depth-reading page is ported.
 
-1. **The screen-space effect nodes** (`SSRNode`, `SSGINode`, `SSSNode`, `DenoiseNode`; `ssr()` 2 pages, `ssgi()` 2, `sss()` 1, `denoise` 6). `GTAONode` and `builtinAOContext` are Present now (`webgpu_postprocessing_ao`, ungraded: it is on three's e2e exception list), and so is `DepthOfFieldNode` (`webgpu_postprocessing_dof`, ungraded for the same reason). Each of the rest needs a velocity target and a temporal resolve, and both now exist; these pages are the direct payoff of the velocity work. Porting them also gives the depth reads (`viewportDepthTexture`, `linearDepth`, `getViewPosition`) their first graded consumer.
+1. **The screen-space effect nodes** (`SSGINode`, `SSSNode`, `DenoiseNode`; `ssgi()` 2 pages, `sss()` 1, `denoise` 6). `SSRNode` is Present (`webgpu_postprocessing_ssr`, graded). `GTAONode` and `builtinAOContext` are Present now (`webgpu_postprocessing_ao`, ungraded: it is on three's e2e exception list), and so is `DepthOfFieldNode` (`webgpu_postprocessing_dof`, ungraded for the same reason). Each of the rest needs a velocity target and a temporal resolve, and both now exist; these pages are the direct payoff of the velocity work. Porting them also gives the depth reads (`viewportDepthTexture`, `linearDepth`, `getViewPosition`) their first graded consumer.
 2. **EventDispatcher** (issues 153, 159). 8 pages subscribe to `change` or `finished` events. In ordinary use these are render-on-demand behind OrbitControls and chaining animation clips when one ends, and neither works in the port today. `AnimationMixer` and `AnimationAction` fire nothing.
 3. **The TransformControls pages** (`webgpu_modifier_curve`, `webgpu_shadowmap_progressive`, `webgpu_tsl_compute_attractors_particles`). `FirstPersonControls` (8 pages), `FlyControls` (1) and now `TransformControls` are ported and gated against three's classes (`docs/controls.md`). What is left is wiring the gizmo into the pages: `webgpu_modifier_curve`'s port still leaves it out, and the viewer's controls hook is typed for `OrbitControls`.
-4. **`WaterMesh`** (2 pages) and the remaining display files (`OutlineNode`, `SMAANode`, `Lut3DNode`, `FilmNode`, 1 to 2 pages each). Small, self-contained, and each unlocks one page.
+4. **`WaterMesh`** (2 pages) and the remaining display files (`OutlineNode`, `Lut3DNode`, `FilmNode`, 1 to 2 pages each). Small, self-contained, and each unlocks one page.
 
 **Runners-up, and why they rank lower:**
 - RectAreaLight and LTC (3 pages).

@@ -7,8 +7,8 @@ use three_rs::materials::{quad_vertex_node, render_output, MeshBasicNodeMaterial
 use three_rs::nodes::display::{
     after_image, ao, bilateral_blur, box_blur, depth_aware_blend, dof, dot_screen, fxaa,
     gaussian_blur, godrays, hash_blur_with, lensflare, motion_blur, pixelation_pass, rgb_shift,
-    rtt, sobel, traa, viewport_shared_texture_at, BoxBlurOptions, DepthAwareBlendOptions,
-    GaussianBlurOptions, HashBlurOptions, LensflareParams,
+    rtt, smaa, sobel, ssr, traa, viewport_shared_texture_at, BoxBlurOptions,
+    DepthAwareBlendOptions, GaussianBlurOptions, HashBlurOptions, LensflareParams, SsrOptions,
 };
 use three_rs::nodes::tsl::{
     distance, float, pass_depth_texture, perspective_depth_to_view_z, screen_uv, texture_uv,
@@ -393,6 +393,90 @@ pub fn display_quads() -> Vec<DisplayQuad> {
     ];
     for (label, fixture, index) in dof_quads {
         let mut material = dof.quad_materials()[index].clone();
+        material.vertex_node = Some(quad_vertex_node());
+        quads.push(DisplayQuad {
+            label,
+            fixture,
+            material,
+        });
+    }
+
+    // webgpu_postprocessing_ssr `m21`, `m23`, `m24`: `ssr( scenePassColor,
+    // scenePassDepth, sceneNormal, { metalnessNode: metalRoughness.r,
+    // roughnessNode: metalRoughness.g } )`'s three passes, with `sceneNormal`
+    // the page's `sample( ( uv ) => unpackRGBToNormal( normal.sample( uv ) ) )`
+    // and `blurQuality = 1` as `updateParameters()` sets it.
+    let normal = input();
+    let metal_rough = input();
+    let scene_color = input();
+    let ssr_node = ssr(
+        &scene_color,
+        &DepthTexture::new(),
+        std::rc::Rc::new(move |coord| texture_uv(&normal, coord).mul(2.0).sub(1.0)),
+        SsrOptions::new(
+            texture_uv(&metal_rough, uv()).x(),
+            Some(texture_uv(&metal_rough, uv()).y()),
+        ),
+        std::rc::Rc::new(std::cell::RefCell::new(three_rs::PerspectiveCamera::new(
+            35.0, 1.6, 0.1, 50.0,
+        ))),
+    );
+    ssr_node.set_blur_quality(1);
+    for (label, fixture, mut material) in [
+        (
+            "ssr",
+            "webgpu_postprocessing_ssr_m21_ssr.wgsl",
+            ssr_node.quad_material().clone(),
+        ),
+        (
+            "ssr_copy",
+            "webgpu_postprocessing_ssr_m23_ssr_copy.wgsl",
+            ssr_node.copy_material().clone(),
+        ),
+        (
+            "ssr_blur",
+            "webgpu_postprocessing_ssr_m24_ssr_blur.wgsl",
+            ssr_node.blur_material(),
+        ),
+    ] {
+        material.vertex_node = Some(quad_vertex_node());
+        quads.push(DisplayQuad {
+            label,
+            fixture,
+            material,
+        });
+    }
+
+    // webgpu_postprocessing_ssr `m26`: the page's `RTT`, `scenePassColor.add(
+    // ssrPass.rgb )` — the blur chain at `clamp( roughness² · 4, 0, 4 )`, its
+    // `rgb` widened to `vec4( rgb, 1 )` and added to the beauty pass.
+    quads.push(quad(
+        "ssr_resolve",
+        "webgpu_postprocessing_ssr_m26_ssr_resolve.wgsl",
+        texture_uv(&scene_color, uv()).add(vec4_join(vec![ssr_node.node().rgb(), float(1.0)])),
+    ));
+
+    // webgpu_postprocessing_ssr `m28`, `m30`, `m32`: `smaa( … )`'s edges,
+    // weights and blend passes over the page's `RTT`.
+    let smaa_node = smaa(&input());
+    for (label, fixture, material) in [
+        (
+            "smaa_edges",
+            "webgpu_postprocessing_ssr_m28_smaa_edges.wgsl",
+            smaa_node.edges_material(),
+        ),
+        (
+            "smaa_weights",
+            "webgpu_postprocessing_ssr_m30_smaa_weights.wgsl",
+            smaa_node.weights_material(),
+        ),
+        (
+            "smaa_blend",
+            "webgpu_postprocessing_ssr_m32_smaa_blend.wgsl",
+            smaa_node.blend_material(),
+        ),
+    ] {
+        let mut material = material.clone();
         material.vertex_node = Some(quad_vertex_node());
         quads.push(DisplayQuad {
             label,

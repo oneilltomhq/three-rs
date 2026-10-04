@@ -6102,6 +6102,117 @@ material's beauty at the contact and nowhere else.
 - `scenePass.options.samples`. The pass takes the renderer's sample count,
   which is 0 here.
 
+## 65. `SSRNode` and `SMAANode` (`webgpu_postprocessing_ssr`)
+
+§64 is reserved for the GTAO and denoise nodes, whose branch is not merged.
+
+### 65.1 What three does
+
+`ssr( colorNode, depthNode, normalNode, { metalnessNode, roughnessNode,
+camera } )` builds an `SSRNode`, which extends `Node` (not `TempNode`) and
+has `updateBeforeType = FRAME`. `camera` is an option, inferred from the
+colour pass when omitted. With `stochastic` left `false`, `updateBefore()`
+draws up to three quads:
+
+1. **`SSRNode.SSR`** draws into a half-float target. For each metallic pixel
+   it reflects the view ray about the normal, clips the ray to the near plane
+   and to `maxDistance`, and projects both ends to screen space. It then
+   marches from one end to the other in `totalStep` equal steps, where
+   `totalStep = max( |xLen|, |yLen| ) · quality` (truncated, at least 1) and
+   `xLen`, `yLen` are the ray's screen-space extent. Once the ray is behind
+   the depth buffer, a sample closer to the ray than `thickness` (or the
+   view-space width of 3 texels, if larger) is a candidate. `Continue()`
+   skips a candidate whose normal faces the same way as the reflected ray
+   (`dot( viewReflectDir, vN ) >= 0`), `Break()` ends the march on a
+   candidate further than `maxDistance` from the surface's plane, and any
+   other candidate is the hit. The output is the hit's colour, scaled by
+   `intensity`, metalness, a squared distance attenuation and a Fresnel-like
+   term. Its alpha is the world-space distance from the surface to the hit.
+2. **`SSRNode.Copy`** copies that target into mip 0 of the blur target.
+3. **`SSRNode.Blur`** box-blurs the SSR target into mips 1–4. The tap spacing
+   is the mip index, and the blur size is `blurQuality`, a build-time
+   constant.
+
+Passes 2 and 3 run only when `roughnessNode` is set. The texture node then
+samples the blur target at level `roughness² · 4`.
+
+`smaa( textureNode )` is iryoku's SMAA 1x: colour edge detection, then the
+blending weights from four 8-step searches and a 160×560 area texture, then
+the neighbourhood blend. Each runs into its own half-float target at the
+size of the drawing buffer.
+
+### 65.2 The port
+
+`nodes::display::{ssr, smaa}` build the same graphs. The six fragment
+shaders, and the page's `RTT` composite that reads the blur chain, are gated
+against three's dumps (`tests/nodes_display_wgsl.rs`, fixtures
+`webgpu_postprocessing_ssr_m21` … `m32`). Each long `Fn` in three
+(the march, `SMAASearchXLeft` … `SMAAArea`) is a `#[inline(never)]` Rust
+helper returning a `block`, not one large closure.
+
+The port needed these new pieces:
+
+- **`Node::Continue`** and `tsl::continue_loop()`, three's `Continue()`.
+  The builder emits `continue;` exactly where `Break` emits `break;`.
+- **`tsl::get_screen_position( viewPosition, projectionMatrix )`.**
+- **Rendering into one mip of a render target.**
+  - `RenderTarget::set_mip_level_count( n )` allocates the chain. It is the
+    port of `blurRenderTarget.texture.mipmaps.push( {}, … )`.
+  - `Renderer::set_render_target_level( rt, level )` is
+    `setRenderTarget( rt, 0, level )`. The pass draws into a one-level view
+    of that mip, and the viewport and scissor are scaled down to it.
+  - `active_mipmap_level()` reads the level back, so a node can save it and
+    restore it.
+  - Sampling the target with `texture_level` reads across the whole chain.
+- **`box_blur_with( map, options, sample )`.** SSR's blur pass is
+  `boxBlur( ssrTexture, { size, separation } )`, with taps at
+  `textureSample` level 0. The new variant takes the sample function. When
+  `size` is a constant, the loop bound is now an integer literal
+  (`i <= 1`), as three emits it, not `i32( 1.0 )`. The `dof_basic` box-blur
+  gate, whose size is a uniform, is unaffected.
+- **`Scene::environment_intensity`**, three's `scene.environmentIntensity`.
+  It scales the scene environment's PMREM radiance and irradiance through
+  the existing `material_env_intensity` uniform. A material's own
+  `envMap` is not scaled by it, as in three.
+
+**Order within a frame.** Both nodes run their input's updater at the top of
+`update_before()`, as `TraaNode` does (§63). Three's `setup()` produces the
+same order. The frame claim turns the input's own later run into a no-op.
+
+**State save and restore.** Both nodes save and then restore these:
+
+- the render target and its mip level;
+- the MRT;
+- the clear colour and alpha;
+- `auto_clear`.
+
+Three's `RendererUtils.resetRendererState()` / `restoreRendererState()` do
+the same. SMAA resizes its three targets to `drawing_buffer_size()` every
+frame. That is a no-op once the size is current.
+
+**SMAA's lookup textures.** `SMAANode.js` embeds them as base64 PNGs.
+`src/nodes/display/smaa_area.png` and `smaa_search.png` are those payloads
+base64-decoded, byte-identical PNG files. The port includes them with
+`include_bytes!` and decodes them to pixels at runtime, on first use, with
+the crate's PNG decoder.
+
+- The area texture is linear-filtered, with no mips.
+- The search texture is `NearestFilter`, so its taps are `textureLoad`, as
+  in three's dump.
+
+### 65.3 Not ported
+
+All of these are options the page leaves at their defaults:
+
+- `stochastic`;
+- `reflectNonMetals`, `binaryRefine` and `screenEdgeFadeBlack`;
+- `setHistory()` and `diffuseNode`;
+- `resolutionScale ≠ 1`;
+- an orthographic camera;
+- a logarithmic depth buffer.
+
+`docs/webgpu_postprocessing_ssr-progress.md` has the rung.
+
 ## 66. `DepthOfFieldNode` and `outputStruct()` (`webgpu_postprocessing_dof`, `webgpu_postprocessing_dof_basic`)
 
 ### 66.1 What three does
@@ -6197,8 +6308,8 @@ things that are not nodes:
 - Changing `focusDistance`, `focalLength` or `bokehScale` from a GUI. They
   are ordinary uniforms, so a host can set them, but no page here does.
 
-Sections 65, 69, 71 to 73, 76, 77 and 79 to 83 are reserved for the ports
-on sibling branches. They are numbered as those branches land.
+Sections 69, 71 to 73, 76, 77 and 79 to 83 are reserved for the ports on
+sibling branches. They are numbered as those branches land.
 
 ## 67. TSL sweep 2: the accessors batch
 

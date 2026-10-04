@@ -257,6 +257,20 @@ have their own sections after the release they ship with. The format follows [Ke
   `depth_texture_load`, `all`, `view_z_to_perspective_depth` and
   `get_view_position`. Also `Renderer::init_render_target` and
   `RenderPipeline::claim_view_offset`. (#165)
+- **`ssr`** (`nodes::display`), `SSRNode.js`: screen-space reflections, a
+  march through the depth buffer with roughness taken from a blurred mip
+  chain. `stochastic`, `binaryRefine`, `reflectNonMetals`,
+  `screenEdgeFadeBlack`, multi-bounce history and orthographic cameras are
+  not ported. See `docs/nodes.md` §65.
+- **`smaa`** (`nodes::display`), `SMAANode.js`: SMAA 1x with colour edge
+  detection, with three's area and search textures.
+- **`webgpu_postprocessing_ssr`** is graded: 4 of 100000 pixels, with the
+  reflections in the graded frame. Its six fragment shaders are gated against
+  three's dumps.
+- **Rendering into a mip level**: `RenderTarget::set_mip_level_count()`,
+  `Renderer::set_render_target_level()` (three's `setRenderTarget( rt, 0,
+  level )`) and `Renderer::active_mipmap_level()`.
+- TSL `continue_loop()` (`Continue()`) and `get_screen_position()`.
 - **`dof`** (`nodes::display`), `DepthOfFieldNode.js`: bokeh depth of field
   in nine full-screen draws. All seven distinct quad shaders are gated against
   three's dump (`dof_*` in `tests/nodes_display_wgsl.rs`). three lists the

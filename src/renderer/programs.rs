@@ -570,7 +570,8 @@ pub struct UniformContext<'a> {
     pub material_attenuation_distance: f64,
     pub material_attenuation_color: Color,
     pub env_rotation: Matrix4,
-    /// `material.envMapIntensity` — 1 on every material this rung builds.
+    /// `materialEnvIntensity`: `scene.environmentIntensity`, or 1 for a
+    /// material with its own environment.
     pub material_env_intensity: f64,
     /// `MeshStandardMaterial.aoMapIntensity`.
     pub material_ao_map_intensity: f64,

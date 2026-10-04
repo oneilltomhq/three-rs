@@ -848,6 +848,9 @@ pub struct Renderer {
 
     canvas: Option<CanvasTarget>,
     render_target: Option<RenderTarget>,
+    /// `Renderer._activeMipmapLevel` — the level of `render_target`'s colour
+    /// texture a pass draws into.
+    active_mipmap_level: u32,
     /// `Renderer._mrt` — the MRT configuration the *pass* sets, which
     /// `NodeMaterial.setup()` merges each material's own `mrtNode` over.
     /// The pass's `updateBefore()` sets it from its own `set_mrt` and
@@ -1333,6 +1336,7 @@ impl Renderer {
             sort_objects: true,
             canvas: None,
             render_target: None,
+            active_mipmap_level: 0,
             mrt: None,
             frame_buffer_target: None,
             opaque_frame: None,
@@ -1541,7 +1545,35 @@ impl Renderer {
 
     /// `renderer.setRenderTarget( target )`.
     pub fn set_render_target(&mut self, render_target: Option<RenderTarget>) {
+        self.set_render_target_level(render_target, 0);
+    }
+
+    /// `renderer.setRenderTarget( target, 0, activeMipmapLevel )`: the passes
+    /// that follow draw into one mip level of the target's colour texture.
+    ///
+    /// `Renderer._renderScene()` shifts the viewport, the scissor and the
+    /// context size right by the level, and `WebGPUBackend` views the texture
+    /// at `baseMipLevel: activeMipmapLevel, mipLevelCount: 1`. The target needs
+    /// that many levels ([`RenderTarget::set_mip_level_count`]).
+    ///
+    /// Three's `Textures.updateRenderTarget()` gives each level of a target
+    /// with a depth buffer its own depth texture (`depthTextureMips[ level ]`,
+    /// `size >> level` pixels). three-rs does not port that, nor per-level
+    /// MSAA or extra MRT attachments: at a level above 0 the target must be
+    /// colour-only (`depth_buffer: false`, no depth texture, `samples <= 1`,
+    /// one attachment), and the render pass panics otherwise.
+    pub fn set_render_target_level(
+        &mut self,
+        render_target: Option<RenderTarget>,
+        active_mipmap_level: u32,
+    ) {
         self.render_target = render_target;
+        self.active_mipmap_level = active_mipmap_level;
+    }
+
+    /// `renderer.getActiveMipmapLevel()`.
+    pub fn active_mipmap_level(&self) -> u32 {
+        self.active_mipmap_level
     }
 
     /// `renderer.setMRT( mrt )`. Read by the next `render()` into a render
@@ -7244,9 +7276,37 @@ impl Renderer {
 
         let inner = render_target.inner().borrow();
         let color_format = inner.texture.format();
-        let single = inner
-            .texture
-            .with_gpu(|gpu| gpu.create_view(&Default::default()));
+        // `WebGPUBackend.beginRender()`: a level above 0 is drawn through a
+        // one-level view of the colour texture.
+        let level = self.active_mipmap_level;
+        debug_assert!(
+            level < inner.mip_level_count,
+            "three-rs: active mipmap level {level} is past the render target's {} level(s); \
+             call RenderTarget::set_mip_level_count() first",
+            inner.mip_level_count,
+        );
+        let level = level.min(inner.mip_level_count - 1);
+        // Three's `Textures.updateRenderTarget()` gives each level its own
+        // depth texture (`depthTextureMips[ level ]`, sized `size >> level`);
+        // that is not ported, and neither is a per-level MSAA texture or
+        // per-level extra MRT attachments, so a level above 0 is colour-only.
+        assert!(
+            level == 0
+                || (!inner.depth_buffer
+                    && inner.depth_texture.is_none()
+                    && inner.samples <= 1
+                    && inner.extra_textures.is_empty()),
+            "three-rs: drawing into mip level {level} of a render target needs it to have no \
+             depth buffer, no depth texture, no MSAA (samples <= 1) and no extra MRT \
+             attachments; per-level depth and MSAA textures are not ported",
+        );
+        let single = inner.texture.with_gpu(|gpu| {
+            gpu.create_view(&wgpu::TextureViewDescriptor {
+                base_mip_level: level,
+                mip_level_count: Some(1),
+                ..Default::default()
+            })
+        });
 
         let (color, resolve) = match &inner.msaa {
             Some(msaa) => (msaa.create_view(&Default::default()), Some(single)),
@@ -7319,15 +7379,26 @@ impl Renderer {
             color_format,
             depth_format,
             sample_count: inner.samples.max(1),
-            width: inner.width,
-            height: inner.height,
+            width: (inner.width >> level).max(1),
+            height: (inner.height >> level).max(1),
             // `Renderer._renderScene()`: with a render target bound the
             // viewport and the scissor are the *target's*, and the pixel ratio
-            // is 1.
-            viewport: Rect::of(inner.viewport, 1.0, inner.width, inner.height),
-            scissor: inner
-                .scissor_test
-                .then(|| Rect::of(inner.scissor, 1.0, inner.width, inner.height)),
+            // is 1. Their width and height, and the context's, are shifted
+            // right by the active mipmap level (the origin is not).
+            viewport: Rect::of(
+                mip_rect(inner.viewport, level),
+                1.0,
+                (inner.width >> level).max(1),
+                (inner.height >> level).max(1),
+            ),
+            scissor: inner.scissor_test.then(|| {
+                Rect::of(
+                    mip_rect(inner.scissor, level),
+                    1.0,
+                    (inner.width >> level).max(1),
+                    (inner.height >> level).max(1),
+                )
+            }),
         }
     }
 
@@ -7485,7 +7556,7 @@ impl Renderer {
                         height,
                         depth_or_array_layers: 1,
                     },
-                    mip_level_count: 1,
+                    mip_level_count: inner.mip_level_count,
                     // The resolved, sampleable texture is always single-sample;
                     // `samples > 1` adds the MSAA texture below.
                     sample_count: 1,
@@ -7612,6 +7683,20 @@ impl Renderer {
             }
         }
     }
+}
+
+/// `viewportValue.width >>= activeMipmapLevel` (and the height) — the
+/// integer shift three applies to a render target's viewport or scissor.
+fn mip_rect(rect: Vector4, level: u32) -> Vector4 {
+    if level == 0 {
+        return rect;
+    }
+    Vector4::new(
+        rect.x,
+        rect.y,
+        ((rect.z as i64) >> level) as f64,
+        ((rect.w as i64) >> level) as f64,
+    )
 }
 
 /// `rgba16float` texels, as the GPU holds them, decoded to `f32`.
