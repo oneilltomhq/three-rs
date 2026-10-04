@@ -393,6 +393,13 @@ impl BufferGeometry {
     /// `SetupContext::geometry_attributes` carries to the node builder.
     /// Views of one [`InterleavedBuffer`] share a group number: the position
     /// of the first of them.
+    ///
+    /// Rebuilt on every call (one `String` per attribute) rather than cached
+    /// on the geometry: an attribute's kind can change behind `&self` —
+    /// [`BufferAttribute::data_mut`] swaps in a new [`TypedArray`](super::TypedArray)
+    /// through a shared borrow, as can the shared array of an interleaved
+    /// view — so no `&mut` geometry path sees every change a cache would
+    /// have to drop.
     pub fn attribute_descs(&self) -> Vec<AttributeDesc> {
         let mut groups: Vec<(usize, usize)> = Vec::new();
         self.attributes

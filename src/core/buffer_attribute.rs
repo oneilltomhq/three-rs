@@ -1475,17 +1475,24 @@ impl BufferAttribute {
         self
     }
 
-    /// `BufferAttribute.copyArray()` — the whole array, element by element
-    /// with the store's conversion.
+    /// `BufferAttribute.copyArray()` — `this.array.set( array )`: `array`
+    /// over the start of the attribute's array, element by element with the
+    /// store's conversion. A shorter `array` leaves the rest as it was.
+    ///
+    /// # Panics
+    ///
+    /// If `array` is longer than the attribute's array — `TypedArray.set()`'s
+    /// `RangeError`.
     pub fn copy_array(&mut self, array: &[f32]) -> &mut Self {
         let mut target = self.cell().borrow_mut();
-        assert_eq!(
-            target.len(),
+        assert!(
+            array.len() <= target.len(),
+            "three-rs: copy_array(): offset is out of bounds ({} elements into {})",
             array.len(),
-            "three-rs: copy_array() needs an array of the same length"
+            target.len()
         );
         if let Some(v) = target.as_f32_mut() {
-            v.copy_from_slice(array);
+            v[..array.len()].copy_from_slice(array);
         } else {
             for (i, v) in array.iter().enumerate() {
                 target.set(i, *v as f64);

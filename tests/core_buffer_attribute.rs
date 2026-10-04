@@ -431,4 +431,19 @@ fn set_and_copy_array_on_typed_arrays() {
 
     a.copy_array(&[5.0, 6.0, 7.0, 8.0]);
     assert_eq!(*a.data(), TypedArray::I8(vec![5, 6, 7, 8]));
+
+    // `TypedArray.set()` takes a shorter source over the start.
+    a.copy_array(&[9.0, 10.0]);
+    assert_eq!(*a.data(), TypedArray::I8(vec![9, 10, 7, 8]));
+    let mut f = BufferAttribute::new(vec![1.0, 2.0, 3.0], 3);
+    f.copy_array(&[4.0]);
+    assert_eq!(*f.array(), vec![4.0, 2.0, 3.0]);
+}
+
+/// A source longer than the array is `TypedArray.set()`'s `RangeError`.
+#[test]
+#[should_panic(expected = "out of bounds")]
+fn copy_array_rejects_a_longer_source() {
+    let mut a = BufferAttribute::new(vec![0.0; 2], 2);
+    a.copy_array(&[1.0, 2.0, 3.0]);
 }
