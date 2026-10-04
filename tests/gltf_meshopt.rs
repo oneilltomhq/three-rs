@@ -234,8 +234,11 @@ fn without_basisu(path: &Path) -> Vec<u8> {
     out
 }
 
+/// The raw elements, whatever the array's kind (`skinIndex` is a
+/// `Uint32Array`).
 fn attribute_values(attribute: &BufferAttribute) -> Vec<f64> {
-    attribute.array().iter().map(|&v| v as f64).collect()
+    let data = attribute.data();
+    (0..data.len()).map(|i| data.get(i)).collect()
 }
 
 fn check(name: &str) {
