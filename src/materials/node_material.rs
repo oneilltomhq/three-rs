@@ -1097,6 +1097,10 @@ pub fn tone_mapping_node(mode: ToneMapping, exposure: NodeRef, color: NodeRef) -
             agx_tone_mapping(color.clone().rgb(), exposure),
             color.a(),
         ]),
+        ToneMapping::Cineon => vec4_join(vec![
+            cineon_tone_mapping(color.clone().rgb(), exposure),
+            color.a(),
+        ]),
     }
 }
 

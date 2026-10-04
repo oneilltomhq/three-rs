@@ -226,7 +226,8 @@ fn negate_on_back_side(vector: NodeRef) -> NodeRef {
 /// a double-sided one.
 ///
 /// Three reads `builder.material.side` while it builds; the port builds the
-/// node before any material is in scope, so the caller passes the side.
+/// node before any material is in scope, so the caller passes the side
+/// (`docs/nodes.md` §68.3).
 pub fn direction_to_face_direction(vector: NodeRef, side: Side) -> NodeRef {
     match side {
         Side::Front => vector,
@@ -927,7 +928,8 @@ pub fn get_view_position(
 
 /// `getScreenPosition( viewPosition, projectionMatrix )` —
 /// `PostProcessingUtils.js`: the screen uv a view-space position projects
-/// to, `y` flipped for WebGPU. The uv before the flip is a `toVar()`.
+/// to, `y` flipped (three flips it unconditionally, on every backend). The
+/// uv before the flip is a `toVar()`.
 pub fn get_screen_position(view_position: NodeRef, projection_matrix: NodeRef) -> NodeRef {
     let sample_clip_pos = projection_matrix.mul(vec4_join(vec![view_position, float(1.0)]));
     let sample_uv = to_var(
@@ -2622,13 +2624,31 @@ accessor!(
 // it knows its material, so these take the material and read its maps then.
 // Build the node from the material it is set on.
 
+/// `builder.material.side` and `.flatShading` for the window in which a
+/// [`material_normal`] / [`material_clearcoat_normal`] is built, which is
+/// what three's build reads them from: the side for `negateOnBackSide()` in
+/// the TBN frame and `normalView`, flat shading for `normalViewGeometry`.
+/// `builder.geometry.hasAttribute( 'tangent' )` is not known until a mesh
+/// draws the material, so it stays whatever the enclosing scope says —
+/// outside a material setup, no tangent attribute (the derivative frame).
+/// See `docs/nodes.md` §68.4.
+fn with_material_normal_scope<R>(material: &MeshBasicNodeMaterial, f: impl FnOnce() -> R) -> R {
+    let _material = push_context(|cx| {
+        cx.material_side = material.side;
+        cx.flat_shading = material.flat_shading;
+    });
+    f()
+}
+
 /// `materialNormal` — `MaterialNode.NORMAL`: the material's `normalMap`
 /// (scaled by `normalScale`), else its `bumpMap`, else `normalView`.
 ///
 /// Built as three builds it in a `fragmentNode`: outside the `NORMAL`
 /// sub-build `setupNormal()` opens, so the TBN frame's vars are unprefixed.
+/// The material's `side` and `flat_shading` are read here, as three reads
+/// them while it builds; a tangent attribute is not (`docs/nodes.md` §68.4).
 pub fn material_normal(material: &MeshBasicNodeMaterial) -> NodeRef {
-    with_material_side(material.side, || {
+    with_material_normal_scope(material, || {
         match (&material.normal_map, &material.bump_map) {
             (Some(map), _) => normal_map_scaled_unlayered(texture(map), material_normal_scale()),
             (None, Some(bump)) => {
@@ -2641,9 +2661,9 @@ pub fn material_normal(material: &MeshBasicNodeMaterial) -> NodeRef {
 
 /// `materialClearcoatNormal` — `MaterialNode.CLEARCOAT_NORMAL`: the
 /// material's `clearcoatNormalMap` (scaled by `clearcoatNormalScale`), else
-/// `normalView`.
+/// `normalView`. Side and flat shading as for [`material_normal`].
 pub fn material_clearcoat_normal(material: &MeshBasicNodeMaterial) -> NodeRef {
-    with_material_side(material.side, || match &material.clearcoat_normal_map {
+    with_material_normal_scope(material, || match &material.clearcoat_normal_map {
         Some(map) => normal_map_scaled_unlayered(texture(map), material_clearcoat_normal_scale()),
         None => normal_view(),
     })
@@ -4173,34 +4193,32 @@ fn bump_map_unlayered(
     height: impl Fn(&dyn Fn(&Texture) -> NodeRef) -> NodeRef,
     scale: NodeRef,
 ) -> NodeRef {
-    {
-        let tap = |coord: NodeRef| {
-            height(&|map: &Texture| {
-                texture_uv(
-                    map,
-                    transformed_uv(coord.clone(), (0, map.id()), map.matrix()),
-                )
-            })
-        };
-        let hll = tap(uv());
-        let dhdxy = join(
-            Type::Vec2,
-            vec![
-                tap(uv().add(dpdx(uv()))).sub(hll.clone()),
-                tap(uv().add(dpdy(uv()))).sub(hll),
-            ],
-        )
-        .mul(scale);
+    let tap = |coord: NodeRef| {
+        height(&|map: &Texture| {
+            texture_uv(
+                map,
+                transformed_uv(coord.clone(), (0, map.id()), map.matrix()),
+            )
+        })
+    };
+    let hll = tap(uv());
+    let dhdxy = join(
+        Type::Vec2,
+        vec![
+            tap(uv().add(dpdx(uv()))).sub(hll.clone()),
+            tap(uv().add(dpdy(uv()))).sub(hll),
+        ],
+    )
+    .mul(scale);
 
-        let surf_norm = normal_view();
-        let v_sigma_x = dpdx(position_view()).normalize();
-        let v_sigma_y = dpdy(position_view()).normalize();
-        let r1 = cross(v_sigma_y, surf_norm.clone());
-        let r2 = cross(surf_norm.clone(), v_sigma_x.clone());
-        let f_det = v_sigma_x.dot(r1.clone()).mul(face_direction());
-        let v_grad = sign(f_det.clone()).mul(dhdxy.clone().x().mul(r1).add(dhdxy.y().mul(r2)));
-        abs(f_det).mul(surf_norm).sub(v_grad).normalize()
-    }
+    let surf_norm = normal_view();
+    let v_sigma_x = dpdx(position_view()).normalize();
+    let v_sigma_y = dpdy(position_view()).normalize();
+    let r1 = cross(v_sigma_y, surf_norm.clone());
+    let r2 = cross(surf_norm.clone(), v_sigma_x.clone());
+    let f_det = v_sigma_x.dot(r1.clone()).mul(face_direction());
+    let v_grad = sign(f_det.clone()).mul(dhdxy.clone().x().mul(r1).add(dhdxy.y().mul(r2)));
+    abs(f_det).mul(surf_norm).sub(v_grad).normalize()
 }
 
 /// `texture( map, uv ).grad( gradX, gradY )` — a 2-D tap with explicit

@@ -43,31 +43,41 @@ have their own sections after the release they ship with. The format follows [Ke
     (default 0.98).
   - `webgpu_tsl_raging_sea` uses the crate's `transform_normal_to_view` in
     place of its local helper.
-- **TSL sweep 3**: twenty-nine display, lighting and material `three/tsl` names,
-  each gated against three's own WGSL dump in `tests/nodes_tsl_batch.rs`.
+- **TSL sweep 3**: twenty-nine display, lighting and material `three/tsl` names.
+  Every shader-building addition is gated against three's own WGSL dump in
+  `tests/nodes_tsl_batch.rs`; `get_texture_index`, a CPU helper, is
+  unit-tested only. Divergences are recorded in `docs/nodes.md` §68.
   - Depth: `view_z_to_reversed_orthographic_depth`,
     `orthographic_depth_to_view_z`, `view_z_to_reversed_perspective_depth`,
     `view_z_to_logarithmic_depth` and `logarithmic_depth_to_view_z`.
   - Colour: `blend_burn`, `blend_dodge`, `blend_screen`, `blend_color`,
-    `vibrance`, `cdl` and `cineon_tone_mapping`.
+    `vibrance`, `cdl` and `cineon_tone_mapping`. `ToneMapping::Cineon`
+    selects it as a material or pass tone mapping, as `CineonToneMapping`
+    does.
   - Screen: `get_screen_position`, `get_normal_from_depth`,
     `viewport_coordinate` and `viewport_uv`. `screen_size` already existed
     and is now gated. `direction_to_face_direction`, three's deprecated alias
-    of `negateOnBackSide`, takes the material side.
+    of `negateOnBackSide`, takes the material side as a parameter.
   - Passes: `depth_pass( scene, camera )`, whose node is the scene's linear
-    depth, and `PassNode::linear_depth_node`. `nodes::get_texture_index` is
-    the MRT name lookup; it takes attachment names and returns an `Option`.
+    depth (`PassNode::a` follows it), and `PassNode::linear_depth_node`.
+    `nodes::get_texture_index` is the MRT name lookup; it takes attachment
+    names and returns an `Option`.
   - Lighting: `light_projection_uv`, `direct_point_light` (returns the
     `( lightDirection, lightColor )` pair) and `get_parallax_correct_normal`.
     `shadow_matrix( i )` now returns one shared node per light, as three's
-    `lightShadowMatrix` does.
+    `lightShadowMatrix` does. The renderer now refreshes `light.shadow.matrix`
+    every render for a light whose shadow is not rendered (`cast_shadow` or
+    `shadow_map_enabled` off), as `lightShadowMatrix`'s render update does,
+    so `light_projection_uv` follows a light that casts nothing.
   - Material: `material_normal`, `material_clearcoat_normal`,
     `material_specular_strength`, `material_light_map` and `material_ao`.
-    Each takes the material it reads the maps from. Also
+    Each takes the material it reads the maps from; `material_normal` and
+    `material_clearcoat_normal` also read its `side` and `flat_shading`. Also
     `material_point_size` and `point_width`. New `MeshBasicNodeMaterial` fields:
     `light_map`, `light_map_intensity` (default 1), `specular_map` and
     `size` (default 1). The material flows do not apply `light_map` or
-    `specular_map`, so both are reported by `unsupported_fields()`.
+    `specular_map`; the renderer warns once per material that only the
+    accessors read them, and `check_supported()` does not fail on them.
 - **`SkyMesh`** (`addons::objects`), a port of `examples/jsm/objects/SkyMesh.js`.
   It is the Preetham daylight model with a sun disc and an fbm cloud layer.
   Every uniform is a public `SettableValue`. `webgpu_sky` is graded green at 0

@@ -358,8 +358,9 @@ pub enum UniformSource {
     /// `MeshStandardMaterial.aoMapIntensity` — the scale in `materialAO`'s
     /// `tex.r.sub( 1 ).mul( aoMapIntensity ).add( 1 )`.
     MaterialAoMapIntensity,
-    /// `MeshLambertMaterial.lightMapIntensity` — the scale in
-    /// `materialLightMap`'s `tex.rgb.mul( lightMapIntensity )`.
+    /// `material.lightMapIntensity` (`MeshBasicMaterial`, `MeshLambertMaterial`,
+    /// `MeshPhongMaterial`, `MeshStandardMaterial`, `MeshToonMaterial`) — the
+    /// scale in `materialLightMap`'s `tex.rgb.mul( lightMapIntensity )`.
     MaterialLightMapIntensity,
     /// `PointsMaterial.size` — `materialPointSize`.
     MaterialPointSize,

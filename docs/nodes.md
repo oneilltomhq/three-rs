@@ -6067,3 +6067,136 @@ varying. Like three's, it is meant for the fragment stage.
   built. Only `renderer.highPrecision` sets that key in three.
 - Three's unnamed uniforms are numbered across both stages. The gates
   renumber them in order of first use (`renumber_uniforms`).
+
+## 68. TSL sweep 3: the display, lighting and material batch
+
+Twenty-nine `three/tsl` names, each gated against three's dump in
+`tests/nodes_tsl_batch.rs` except `getTextureIndex`, which builds no shader
+and is unit-tested on the CPU. The batch covers the depth conversions, the
+blend modes, `vibrance`, `cdl`, `cineonToneMapping`, the screen and viewport
+helpers, `directionToFaceDirection`, `depthPass`, `lightProjectionUV`,
+`directPointLight`, `getParallaxCorrectNormal`, the `MaterialNode` scopes,
+`materialPointSize` and `pointWidth`. Most are direct transcriptions. This
+section covers where the port's shape differs from three's.
+
+### 68.1 `shadow_matrix` is one node per light
+
+`lightShadowMatrix( light )` caches its uniform in
+`light.userData.shadowMatrix`, so every read of one light's matrix in a
+shader is the same node and the same binding. `shadow_matrix( i )` used to
+build a fresh uniform on each call. It now keeps one node per light index in
+a thread-local cache, built outside any sub-build (§67.1), so
+`lightProjectionUV` and a shadow read of the same light share it. The light
+is named by its index in the render's light list, as everywhere else in the
+port's light uniforms.
+
+### 68.2 The matrix of a shadow that is not rendered
+
+Three's `shadowMatrix` uniform has an `onRenderUpdate` that calls
+`light.shadow.updateMatrices( light )` when the light's shadow is not
+rendered (`castShadow` off, or `renderer.shadowMap.enabled` off). Normally
+`ShadowNode` updates the matrix, but a projector-style read of a light that
+casts nothing still needs a current one. The port's light gather
+(`gather_light_state` in `src/renderer/mod.rs`) does the same every render,
+for every light that has a shadow, whether or not a shader reads it. Spot
+lights first refresh the shadow camera's projection, as
+`SpotLightShadow.updateMatrices()` does. The two `src/renderer/mod.rs` unit
+tests pin the uniform's bytes for a moving light, and pin that a rendered
+shadow's matrix is left to `render_shadows()`.
+
+Two details differ:
+
+- Three's coordinate-system check has nothing to do. The port only has
+  WebGPU's.
+- `PointLightShadow` has no `updateMatrices()` of its own in r187, so three
+  falls back to `LightShadow`'s, which reads `light.target` and would throw
+  for a point light. The port's point light looks at the origin.
+
+### 68.3 `directionToFaceDirection` takes the side
+
+Three reads `builder.material.side` while the node builds. The port builds
+graphs eagerly, when the user calls the function, and the build context
+(`push_context`) is a construction-time stack, not the material's. A
+`colorNode` is built before it is set on any material, so no material is in
+scope. `direction_to_face_direction( vector, side )` therefore takes the side
+as a parameter. Its front, back and double-sided arms are each gated.
+The port's internal `negate_on_back_side()`, which runs inside a material's
+setup or a `material_normal` scope, still reads the side from the context.
+
+### 68.4 The `MaterialNode` scopes take the material
+
+`materialNormal`, `materialClearcoatNormal`, `materialSpecularStrength`,
+`materialLightMap` and `materialAO` resolve their maps against
+`builder.material` in three. Each port function takes the
+`MeshBasicNodeMaterial` it reads the maps from, so the node should be built
+from the material it is set on. The other material classes are not covered.
+
+`material_normal` and `material_clearcoat_normal` also read the material's
+`side` and `flat_shading`. They push both into the build context while they
+build, as three's build reads them from `builder.material`: the side for
+`negateOnBackSide()` in the TBN frame and in `normalView`, and flat shading
+for `normalViewGeometry` (`normalFlat`). Whether the geometry has a `tangent`
+attribute is not known until a mesh draws the material, so it is not read.
+Outside a material's setup the context says there is none, and a normal map
+takes the derivative (screen-space) branch. A mesh with tangents gets
+the attribute branch in three and the derivative branch here.
+
+Both are built as three builds them in a `fragmentNode`, outside the
+`NORMAL` sub-build that `setupNormal()` opens, so the frame's vars carry no
+`NORMAL_` prefix (`normal_map_scaled_unlayered`, `bump_map_unlayered`).
+
+### 68.5 `depthPass` takes no options
+
+`depthPass( scene, camera, options )` forwards `options` to `PassNode`. The
+port's `depth_pass( scene, camera )` has no options. No ported page passes
+them. If a filter or a shared depth texture is needed, build a
+`PassNode::new_with_options( options )`, set its scene, and read its
+`linear_depth_node()` instead. `PassNode::a()` swizzles
+`node()`, so on a depth pass it is the linear depth's `a`, as three's
+`PassNode` in depth scope gives.
+
+### 68.6 New uniform sources
+
+- **`MaterialLightMapIntensity`** reads
+  `MeshBasicNodeMaterial::light_map_intensity` (default 1), three's
+  `material.lightMapIntensity`.
+- **`MaterialPointSize`** reads `MeshBasicNodeMaterial::size` (default 1),
+  three's `PointsMaterial.size`.
+
+Both are object-group `f32` uniforms with no name, like the other
+`MaterialNode` properties.
+
+### 68.7 Maps only an accessor reads
+
+`MeshBasicNodeMaterial` gains `light_map` and `specular_map`, because
+`materialLightMap` and `materialSpecularStrength` read them. The port's
+material flows do not apply either map: three's basic, Lambert and Phong
+materials do. `check_supported()` does not fail on them, since a material
+that sets them for an accessor is valid. The renderer warns once per
+material that only the accessors read them.
+
+`ToneMapping::Cineon` is new as well, so `cineonToneMapping` can be a
+material's or a pass's tone mapping (`tone_mapping_node`). Three's
+`CustomToneMapping` is still not ported.
+
+### 68.8 Test rewrites
+
+Each rewrite of three's output in `tests/nodes_tsl_batch.rs` carries a
+comment naming the section it relies on:
+
+- **Uniform numbering** (§67.5): three numbers unnamed uniforms across both
+  stages; the gates renumber them in first-use order.
+- **One uv-matrix uniform per texture** (§41): three gives each
+  `texture( map )` its own `map.matrix` uniform, and the port shares one per
+  map. The material-map gates rename three's extra uniforms to the first.
+- **The `bitangentViewFrame` splat**: three writes the shared `scale` var
+  bare in `bitangentViewFrame` and splats it in `tangentViewFrame`. The port
+  splats both. `vec3 * f32` and `vec3 * vec3( f32 )` are the same value, and
+  the normal-map gates add the splat to three's line. `parallax_matches`
+  makes the same rewrite.
+- **Let against var** (§8): `inline_let` and `codes_as_lets` read a
+  conversion or `fn`-local value three writes as `let nodeConstN` against the
+  port's `var nodeVarN`.
+- **`ToneMapping::Cineon`**: the node's `main` passes `color.rgb` of a
+  `vec4` where the standalone probe passes a `vec3`. The gate checks that the
+  call is present and compares the emitted `fn` with three's.

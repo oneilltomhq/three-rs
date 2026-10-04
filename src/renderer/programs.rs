@@ -558,7 +558,8 @@ pub struct UniformContext<'a> {
     pub material_env_intensity: f64,
     /// `MeshStandardMaterial.aoMapIntensity`.
     pub material_ao_map_intensity: f64,
-    /// `material.lightMapIntensity`.
+    /// `material.lightMapIntensity` — see
+    /// [`MeshBasicNodeMaterial::light_map_intensity`](crate::materials::MeshBasicNodeMaterial::light_map_intensity).
     pub material_light_map_intensity: f64,
     /// `PointsMaterial.size`.
     pub material_point_size: f64,

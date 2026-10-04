@@ -150,6 +150,8 @@
 			probe( 'cdl', () => cdl( vec4( uv(), 0.5, 1 ), vec3( 1.1, 1.0, 0.9 ), vec3( 0.1 ), vec3( 1.2 ), float( 0.9 ) ).add( cdl( vec4( y(), x(), 0.25, 1 ) ) ) );
 			probe( 'cineon_tone_mapping', () => vec4( cineonToneMapping( vec3( uv(), 0.5 ), float( 1.2 ) ), 1 ) );
 			probe( 'direction_to_face_direction', () => vec4( directionToFaceDirection( vec3( uv(), 1 ) ), 1 ), null, ( m ) => { m.side = THREE.DoubleSide; } );
+			probe( 'direction_to_face_direction_front', () => vec4( directionToFaceDirection( vec3( uv(), 1 ) ), 1 ), null, ( m ) => { m.side = THREE.FrontSide; } );
+			probe( 'direction_to_face_direction_back', () => vec4( directionToFaceDirection( vec3( uv(), 1 ) ), 1 ), null, ( m ) => { m.side = THREE.BackSide; } );
 			probe( 'screen_position', () => vec4( getScreenPosition( positionView, cameraProjectionMatrix ), 0, 1 ) );
 			probe( 'normal_from_depth', () => vec4( getNormalFromDepth( uv(), depthMap, cameraProjectionMatrixInverse ), 1 ) );
 			probe( 'viewport_coords', () => vec4( viewportUV, viewportCoordinate.div( screenSize ) ) );
@@ -158,6 +160,9 @@
 			probe( 'point_width', () => vec4( pointWidth, 0, 0, 1 ) );
 			probe( 'material_maps', () => vec4( materialLightMap, materialAO.add( materialSpecularStrength ) ), null, ( m ) => { m.aoMap = map; m.specularMap = map; m.lightMap = map; } );
 			probe( 'material_normal_maps', () => vec4( materialNormal.add( materialClearcoatNormal ), 1 ), null, ( m ) => { m.normalMap = map; m.normalMapType = THREE.TangentSpaceNormalMap; m.normalScale = new THREE.Vector2( 1, 1 ); m.clearcoatNormalMap = map; m.clearcoatNormalScale = new THREE.Vector2( 1, 1 ); } );
+			probe( 'material_normal_map', () => vec4( materialNormal, 1 ), null, ( m ) => { m.normalMap = map; m.normalMapType = THREE.TangentSpaceNormalMap; m.normalScale = new THREE.Vector2( 0.5, 2 ); } );
+			probe( 'material_normal_bump', () => vec4( materialNormal, 1 ), null, ( m ) => { m.bumpMap = map; m.bumpScale = 2; } );
+			probe( 'material_normal_flat', () => vec4( materialNormal.add( materialClearcoatNormal ), 1 ), null, ( m ) => { m.flatShading = true; } );
 			probe( 'light_projection_uv', () => vec4( lightProjectionUV( spot ).add( lightProjectionUV( spot, vec4( positionView, 1 ) ) ), 1 ) );
 			probe( 'direct_point_light', () => {
 				const { lightDirection, lightColor } = directPointLight( { color: vec3( 1, 0.5, 0.25 ), lightVector: vec3( uv(), 1 ), cutoffDistance: x(), decayExponent: float( 2 ) } );

@@ -459,9 +459,10 @@ impl PassNode {
         }
     }
 
-    /// `pass( … ).a`.
+    /// `pass( … ).a` — the `a` of [`node`](Self::node), so a [`depth_pass`]
+    /// swizzles its linear depth as three's `PassNode` in depth scope does.
     pub fn a(&self) -> NodeRef {
-        self.node.a()
+        self.node().a()
     }
 
     /// `renderTarget.texture`.
