@@ -8900,3 +8900,192 @@ the following:
 - Over thirteen frames of fresh noise the variance keeps dropping
   (4.1, 1.1, 0.6, 0.35), and no texel is NaN.
 - A resize restarts the target at the new size.
+
+## 92. `DenoiseNode`
+
+### 92.1 What three does
+
+`denoise( node, depthNode, normalNode, camera )` is a `DenoiseNode` over
+`convertToTexture( node )`. It is a plain `Node` with
+`updateBeforeType = FRAME`, and `updateBefore()` only copies the input
+texture's size into the `_resolution` uniform. Its output is inline: the
+node is the denoised colour, built in `setup()` from three plain `Fn`s
+(`denoiseSample`, `denoise` and `output`), so nothing becomes a WGSL
+function.
+
+- **The centre.** `output` reads the depth, the view normal and the texel.
+  The sky (`depth >= 1`) and pixels without a normal (`dot( n, n ) == 0`)
+  pass the texel through. The rest go to the `Else` branch, which writes an
+  unnamed `property( 'vec4' )`.
+- **The rotation.** A 64×64 RGBA `DataTexture` of simplex noise
+  (`generateDefaultNoise()`, built with `math/SimplexNoise.js` seeded by
+  `Math.random`, nearest filtering, repeat wrapping) is tiled over the
+  screen. One channel of it gives the angle of a `mat2` rotation:
+  `noiseTexel.element( index.mod( 4 ).mul( 2 ).mul( PI ) )`. The index is a
+  float, so `ArrayElementNode` builds it as `u32( … )`. That puts the
+  channel at 0, 6, 12 or 18, so any `index` other than a multiple of 4 reads
+  past the end of a `vec4`. The default `index` is 0, which reads `.x`.
+- **The taps.** Sixteen sample vectors come from
+  `generateDenoiseSamples( 16, 2, 1 )`, a two-ring spiral, in a
+  `uniformArray`. Each tap is rotated, scaled by `radius` and divided by
+  the resolution. Its weight is the product of three similarities: luma,
+  `max( 1 - |Δluma| / lumaPhi, 0 )`; depth plane,
+  `max( 1 - |dot( Δview, n )| / depthPhi, 0 )`; and normal,
+  `pow( max( dot( n, nᵢ ), 0 ), normalPhi )`. The weighted colours and
+  weights are summed, the sum is divided by the total weight when it is
+  positive, and the centre's alpha is kept.
+- **No normal.** With `normalNode = null`, `getNormalFromDepth` rebuilds the
+  normal from four neighbouring depth taps.
+
+All four phis and `radius` default to 5. No r187 page calls `denoise()`.
+`webgpu_postprocessing_ssr_denoise` uses `recurrentDenoise` (§88).
+
+### 92.2 The port
+
+`nodes::display::denoise( &input, &depth, normal, &camera )` returns a
+`DenoiseNode`. `input` is a texture already in hand: a pass attachment, or
+the texture of the `convert_to_texture` that three's `denoise()` wraps
+around a node. `normal` is an `Option<SampleFn>`, and `None` takes the
+`getNormalFromDepth` path. `lumaPhi`, `depthPhi`, `normalPhi`, `radius` and
+`index` are public `SettableValue`s.
+
+Two Live uniforms take the place of `updateBefore()`. `_resolution` is read
+from the input texture's size at upload time. The projection inverse
+follows the camera by reference. So the node needs no `NodeUpdate`.
+
+The noise texture is `generate_default_noise( 64 )`, built with
+`addons::simplex_noise::SimplexNoise`. The port puts `SimplexNoise` next to
+`ImprovedNoise` in `src/addons/`, where the parity table lists it. It is a
+line-for-line port of three's 2D, 3D and 4D noise. Its unit test checks the
+permutation table and twelve values against three's JS fed the same
+Park–Miller sequence. Three seeds it from `Math.random`, so its noise
+texture changes on every load. The port seeds it from
+`testing::DeterministicRandom`, the sequence the harness pins
+`Math.random` to. The gates compare WGSL only.
+
+`tools/dump-pages/denoise.html` draws a scene pass with
+`mrt( { output, normal: normalView } )` and two quads:
+`denoise( output, depth, normal, camera )`, and the same with `null`
+chained after it through `convertToTexture()`. The dump's `m03` and `m05`
+are the fixtures of `denoise_matches_three` and
+`denoise_from_depth_matches_three`.
+
+To match the `u32( … )` around the element index, the builder now formats a
+float `Element` index as `u32`, as `ArrayElementNode.generate()` does. It
+had emitted the float bare. No other gate had a float index.
+
+The fingerprints match. The cosmetic differences are:
+
+- three's unnamed `property( 'vec4' )` is a `nodeVar`, and the port's
+  `property` needs a name, so it is `denoiseResult`;
+- the port declares `vec3<f32>( nodeVar.xyz )` where three folds the
+  redundant `vec3( texel.rgb )` to `nodeVar.xyz`;
+- the usual `let nodeConst` versus `nodeVar` single-assignment difference
+  (§8).
+
+`tests/denoise_frames.rs` uses a plane painted with a one-pixel
+checkerboard of two greys, and a nearer white plane over the right half.
+The variance of the checkerboard drops from about 650 to about 6, and its
+mean moves by two levels. The white plane stays white next to the edge, and
+the checkerboard beside it is not pulled towards white. All of this holds
+with and without a normal input. The test sets `depthPhi = 0.1`: at
+three's default of 5, a 0.8-unit step in depth still keeps 84% of a tap's
+weight.
+
+## 93. `SSAONode` and `depthAwareBlur` (`webgpu_postprocessing_ao`, SSAO mode)
+
+### 93.1 What three does
+
+`ssao( depthNode, normalNode, camera )` is an `SSAONode`. It is a plain
+`Node` with `updateBeforeType = FRAME`, two `RedFormat` targets
+(`_aoRenderTarget` and `_blurRenderTarget`, sized
+`max( 1, round( resolutionScale · drawingBuffer ) )`, with
+`resolutionScale = 0.5` by default), and two materials.
+
+- **`SSAO.AO`** is one plain `Fn`. It reads the depth into a var and
+  discards the sky. It then makes vars of the view position, the normalised
+  view normal, `phi = interleavedGradientNoise( screenCoordinate ) · 2π`,
+  and the fragment's clip position. Then comes
+  `Loop( { start: int( 0 ), end: samples, type: 'int' } )`, whose end is the
+  `samples` uniform itself, so changing it rebuilds nothing. Each sample
+  takes `vogelDiskSample( i, samples, phi ) · radius` in the view plane,
+  adds its projection to the clip position, finds the screen uv with
+  `getScreenPositionFromClip`, and reads one depth there. Occlusion
+  accumulates `max( cos θ - bias, 0 ) · radius / ( radius + dist )`. The
+  output is `clamp( 1 - occlusion / samples · intensity, 0, 1 )`, a float.
+- **`SSAO.Blur`** is `depthAwareBlur( _blurInput, depth, _blurDirection,
+  camera, blurSharpness, radius )`. That is a five-tap loop from `int( -2 )`
+  to `int( 3 )`, with weight `exp( -½ i² ) · exp( -|viewZᵢ - viewZ| /
+  radius · sharpness )`. `viewZ` comes from `perspectiveDepthToViewZ`, or
+  from `logarithmicDepthToViewZ` with a logarithmic depth buffer. Near and
+  far are `reference( 'near' / 'far', camera )`. The result is
+  `sum / max( weightSum, 0.0001 )`.
+- **`updateBefore()`** resets the renderer state, sizes both targets, clears
+  to white and draws the AO. With `blurEnabled` it then draws the blur
+  twice: horizontally from the AO target into the blur target, and
+  vertically back into the AO target. Between the draws it swaps
+  `_blurInput.value` and `_blurDirection`. So `getTextureNode()` is always
+  the AO target's texture, blurred or not.
+
+Defaults: radius 0.5, intensity 1, bias 0.025, samples 16, blurSharpness 2.
+`webgpu_postprocessing_ao` uses it when the GUI's `aoType` is `SSAO`, at
+resolution scale 1 with MSAA and no TRAA.
+
+### 93.2 The port
+
+`nodes::display::ssao( &depth, normal, &camera )` returns an `SsaoNode`, and
+`nodes::tsl::depth_aware_blur( input, &depth, direction, &camera,
+sharpness, radius )` is the blur. `normal` is a `SampleFn`, which is three's
+`sample( uv => … )`. The five uniforms are public `SettableValue`s. The
+`samples` uniform is the loop's end, as in three. `set_resolution_scale`
+and `set_blur_enabled` stand in for the two plain fields.
+
+`SsaoState` implements `NodeUpdate` and is registered as the updater of the
+AO texture, as `TraaState` is (§63). Its `update_before` runs the
+pre-pass first, with the AO context lifted as in `GtaoState`. The normal
+is a sampler, not a texture, so it finds the pass through the depth
+attachment the pass owns. The draws then follow three's order. Near and
+far, the projection matrix and its inverse are Live uniforms that read the
+camera by reference.
+
+Three swaps one blur material's input texture between the two draws. The
+port has two blur materials, one per input texture, each with its own
+direction uniform. They build the same WGSL.
+
+`tools/dump-pages/ssao.html` draws a pre-pass and `ssao()`. The dump's
+`m03` (`SSAO.AO`) and `m04` (`SSAO.Blur`) are the fixtures of
+`ssao_matches_three` and `ssao_blur_matches_three`. With `blurEnabled =
+false` the blur material is skipped, and no graph changes. The
+fingerprints match. The differences are:
+
+- **The targets.** The port has no `RedFormat`, so both targets are
+  `rgba8unorm`, read through `.x`, as `GtaoNode`'s are. Three's AO output
+  is `@location( 0 ) color: f32` with `output.color = clamp( … )`. The
+  port's is a `vec4<f32>`, with `output.color = vec4<f32>( clamp( … ) )`.
+  For the same reason, three's blur reads `textureSample( … ).x` into a
+  float var, and the port reads the `vec4` and takes `.x` where it is used.
+- **The blur's order.** Three's `weight` is built first at the
+  `sum.addAssign( input.r · weight )`, after the input sample, so its
+  `let nodeConst` follows the sample. The port declares `fi`, `sampleUv`
+  and `weight` as statements of the loop body, so `weight` comes before
+  the sample, and the uniforms are numbered in that order.
+- **Single assignment.** The usual `let nodeConst` versus `nodeVar`
+  difference (§8) applies.
+
+Not ported: the logarithmic-depth branches of both files (the port has no
+logarithmic depth buffer), `contextNode`, and `dispose()`.
+
+The page's SSAO mode is not wired into `examples/webgpu_postprocessing_ao.rs`.
+It needs the scene pass to render with 4 MSAA samples, which three sets as
+`scenePass.options.samples`. The port's `PassNode` takes the renderer's
+sample count and has no per-pass one, so the mode waits for that.
+
+`tests/ssao_frames.rs` uses the white box on a white floor of
+`gtao_frames`, at resolution scale 1:
+
+- The sky keeps the white clear.
+- No pixel is NaN.
+- The crease at the box's foot is darker than the open floor (209 against
+  255), both raw and blurred.
+- The blur cuts the mean squared difference between neighbouring pixels
+  from 11.5 to 4.3.
