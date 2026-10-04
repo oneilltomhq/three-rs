@@ -348,6 +348,69 @@ fn refraction_backdrop_matches_three() {
     assert_eq!(ours, three, "\n{}", program.fragment_wgsl);
 }
 
+/// Not a display node: `alphaMode: MASK` (#230). The gold leaf of
+/// `webgpu_loader_gltf_transmission`'s `IridescentDishWithOlives.glb` is the
+/// ladder's first `MASK` material, and three's `GLTFLoader` turns its
+/// `alphaCutoff` into `material.alphaTest`, which `NodeMaterial`'s
+/// `setupDiffuseColor()` compares against as `materialAlphaTest` — a
+/// *uniform*, not the literal an `alphaTestNode` would emit. Gated over the
+/// diffuse-colour prologue of the material's own `main()`: the base-colour
+/// map times the `COLOR_0` vertex colour, the opacity, the discard against
+/// the uniform, and the `DiffuseColor.w = 1.0` an opaque material ends on.
+#[test]
+fn gltf_transmission_gold_leaf_alpha_test_matches_three() {
+    let fixture_name = "webgpu_loader_gltf_transmission_m12_gold_leaf.wgsl";
+    let gltf = three_rs::loaders::GltfLoader::load(
+        three_rs::testing::three_js_dir()
+            .join("examples/models/gltf/IridescentDishWithOlives.glb"),
+    )
+    .expect("IridescentDishWithOlives.glb");
+    let node = gltf
+        .nodes
+        .iter()
+        .find(|node| node.borrow().name == "goldLeaf")
+        .expect("a goldLeaf node");
+    let object = node.borrow();
+    let material = object.payload.material().expect("goldLeaf's material");
+    assert_eq!(material.alpha_test, 0.5, "alphaCutoff");
+    assert!(material.alpha_test_node.is_none(), "no alphaTestNode");
+
+    let ctx = SetupContext {
+        // `COLOR_0` is a `VEC4` accessor in this file.
+        vertex_color_size: object.payload.geometry().map_or(0, |geometry| {
+            geometry
+                .get_attribute("color")
+                .map_or(0, |color| color.item_size)
+        }),
+        ..SetupContext::default()
+    };
+    let program = NodeBuilder::new().build(&setup(material, &ctx, None));
+    let three = fixture(fixture_name);
+    for which in [
+        Region::Statement("DiffuseColor = "),
+        Region::Statement("DiffuseColor.w = ( DiffuseColor.w *"),
+        Region::Statement("DiffuseColor.w <="),
+    ] {
+        assert_eq!(
+            fingerprint(&program.fragment_wgsl, which),
+            fingerprint(&three, which),
+            "\n{}",
+            program.fragment_wgsl
+        );
+    }
+    // A fingerprint drops names, so it cannot tell the uniform from a
+    // variable; these lines can (both sides happen to number the cutoff
+    // `nodeUniform4`).
+    check_three_lines(
+        &program.fragment_wgsl,
+        fixture_name,
+        &[
+            "\tif ( ( DiffuseColor.w <= object.nodeUniform4 ) ) {",
+            "\tDiffuseColor.w = 1.0;",
+        ],
+    );
+}
+
 #[test]
 fn hash_blur_loop_matches_three() {
     check("hash_blur", Region::Loop);
