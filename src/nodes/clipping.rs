@@ -34,16 +34,16 @@ use crate::objects::ClippingGroup;
 pub struct ClippingContext {
     /// `intersectionPlanes` — from the groups with `clipIntersection`: a
     /// fragment is clipped only when it is behind all of them.
-    pub intersection: Vec<[f32; 4]>,
+    pub(crate) intersection: Vec<[f32; 4]>,
     /// `unionPlanes` — from every other group: a fragment behind any one of
     /// them is clipped.
-    pub union: Vec<[f32; 4]>,
+    pub(crate) union: Vec<[f32; 4]>,
     /// `builder.isAvailable( 'clipDistance' )` — the device has the WebGPU
     /// `clip-distances` feature, so up to eight union planes become
     /// `@builtin( clip_distances )` in the vertex stage
     /// (`NodeMaterial.setupHardwareClipping()`) instead of a fragment
     /// discard. Taken from the walk's [`ClippingView`].
-    pub hardware: bool,
+    pub(crate) hardware: bool,
 }
 
 impl std::hash::Hash for ClippingContext {
@@ -97,6 +97,18 @@ impl ClippingView {
 }
 
 impl ClippingContext {
+    /// A context holding `union` and `intersection` planes (view space,
+    /// `( -normal, constant )`), on a device that does (`hardware`) or does
+    /// not clip in hardware. The renderer builds its contexts in the scene
+    /// walk; this is for the WGSL gate, which builds programs without one.
+    pub fn new(union: Vec<[f32; 4]>, intersection: Vec<[f32; 4]>, hardware: bool) -> Self {
+        Self {
+            intersection,
+            union,
+            hardware,
+        }
+    }
+
     /// `parentContext.getGroupContext( clippingGroup )`: the parent's planes
     /// with the group's appended — to the intersection planes when the group
     /// has `clipIntersection`, to the union planes otherwise. In a shadow
@@ -129,7 +141,7 @@ impl ClippingContext {
 
     /// `NodeMaterial.setupHardwareClipping()`'s test: one to eight union
     /// planes on a device that can clip in hardware.
-    pub fn hardware_clipping(&self) -> bool {
+    pub(crate) fn hardware_clipping(&self) -> bool {
         self.hardware && (1..=8).contains(&self.union.len())
     }
 }
@@ -160,7 +172,7 @@ fn plane_buffer(source: BufferSource, count: usize) -> impl Fn(&NodeRef) -> Node
 /// `NodeMaterial.setupClipping()` pushes it first in the fragment flow — ahead
 /// of `setupDepth()`, the diffuse colour and the mask discard — whenever the
 /// material does not take [`clipping_alpha`] instead.
-pub fn clipping(context: &ClippingContext) -> Vec<NodeRef> {
+pub(crate) fn clipping(context: &ClippingContext) -> Vec<NodeRef> {
     let mut statements = Vec::new();
     let union = context.union.len();
     if !context.hardware_clipping() && union > 0 {
@@ -201,7 +213,7 @@ pub fn clipping(context: &ClippingContext) -> Vec<NodeRef> {
 /// [`clipping`] when the material has `alphaToCoverage` and the target is
 /// multisampled, and `setup()` adds it to the flow after `setupLighting()` —
 /// once the diffuse alpha is final. A material with a `fragmentNode` drops it.
-pub fn clipping_alpha(context: &ClippingContext) -> Vec<NodeRef> {
+pub(crate) fn clipping_alpha(context: &ClippingContext) -> Vec<NodeRef> {
     let distance = to_var(Some("distanceToPlane"), float(0.0));
     let gradient = to_var(Some("distanceToGradient"), float(0.0));
     let clip_opacity = to_var(Some("clipOpacity"), float(1.0));
@@ -247,7 +259,7 @@ pub fn clipping_alpha(context: &ClippingContext) -> Vec<NodeRef> {
 /// [`hardware_clipping`](ClippingContext::hardware_clipping) holds; the
 /// count goes in [`MaterialFlow::clip_distances`](crate::nodes::builder::MaterialFlow::clip_distances),
 /// which declares the builtin.
-pub fn hardware_clipping(context: &ClippingContext) -> NodeRef {
+pub(crate) fn hardware_clipping(context: &ClippingContext) -> NodeRef {
     let union = context.union.len();
     let planes = plane_buffer(BufferSource::ClippingUnion, union);
     loop_n("i", int(union as i64), |i| {

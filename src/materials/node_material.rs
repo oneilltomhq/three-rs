@@ -144,6 +144,7 @@ pub struct SetupContext {
     /// out of the key (see [`ClippingContext`]'s `Hash`).
     ///
     /// [`ClippingContext`]: crate::nodes::clipping::ClippingContext
+    #[doc(hidden)]
     pub clipping: Option<std::rc::Rc<crate::nodes::clipping::ClippingContext>>,
 }
 

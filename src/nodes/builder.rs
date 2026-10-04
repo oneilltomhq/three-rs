@@ -3535,7 +3535,7 @@ pub struct MaterialFlow {
     /// `hw_clip_distances` varyings member; the statements that write it are
     /// in [`vertex_statements`](Self::vertex_statements). See
     /// [`hardware_clipping`](crate::nodes::clipping::hardware_clipping).
-    pub clip_distances: usize,
+    pub(crate) clip_distances: usize,
 }
 
 /// The WGSL type of one `OutputType` member: `vec4` for an `MRTNode`'s

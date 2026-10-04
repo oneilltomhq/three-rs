@@ -188,11 +188,11 @@ fn undo_vertex_sub_build(three: &str) -> String {
 /// `intersection` planes, on a device with or without `clip-distances`.
 fn clipped(union: usize, intersection: usize, hardware: bool) -> SetupContext {
     SetupContext {
-        clipping: Some(Rc::new(ClippingContext {
-            union: vec![[0.0; 4]; union],
-            intersection: vec![[0.0; 4]; intersection],
+        clipping: Some(Rc::new(ClippingContext::new(
+            vec![[0.0; 4]; union],
+            vec![[0.0; 4]; intersection],
             hardware,
-        })),
+        ))),
         ..SetupContext::default()
     }
 }
