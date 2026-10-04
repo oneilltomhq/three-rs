@@ -2598,9 +2598,11 @@ the glow missing. §26.6 lists the pixel counts.
 
 * **The anisotropic GGX.** `D_GGX_Anisotropic` / `V_GGX_SmithCorrelated_Anisotropic`
   are behind `direct()`, and this scene has no lights. They are deliberately
-  left out rather than written blind: nothing on this ladder would grade them,
-  and an unverified lobe in the lighting model is worse than a missing one.
-  The rung that adds a light to an anisotropic material adds them.
+  left out of the lighting model rather than wired blind: nothing on this
+  ladder would grade them, and an unverified lobe in the lighting model is
+  worse than a missing one. The functions themselves now exist as standalone
+  TSL, with their WGSL gated against three's (§78.1). The rung that adds a
+  light to an anisotropic material wires them into `BRDF_GGX`.
 * **`anisotropyMap`'s rotation.** The barn lamp's anisotropy texture is read and
   its `rg` rotate the vector, but the strength-only path (no texture) is not
   separately graded here.
@@ -6359,3 +6361,105 @@ port's `convert_to_texture` takes a `NodeRef` and returns an `RttNode`, so a
 sampled from there. That costs an extra pass and resolves the callback at the
 target's size. A caller holding a `SampleNode` can call its `sample( uv )`
 instead. The `sample` and `SampleNode` rows are Partial for this.
+
+## 78. TSL sweep 5: the lighting and material batch
+
+Eight names from the lighting and material family. Seven of them are
+Present: `materialAnisotropy`, `D_GGX_Anisotropic`,
+`V_GGX_SmithCorrelated_Anisotropic`, `Schlick_to_F0`, `LTC_Uv`,
+`LTC_Evaluate` and `LTC_Evaluate_Volume`. `lights` is Partial. They live in
+`src/nodes/tsl/lighting.rs`. Every shader-emitting one is gated against
+three's dump in `tests/nodes_tsl_batch.rs`.
+
+The rest of the family's Absent names each wait on a feature the port does
+not have. A standalone accessor for any of them would read a material field
+that nothing renders, so each stays Absent, and its parity row names what is
+missing:
+
+- **`shadow`.** Three's `ShadowNode` renders its own shadow map in
+  `updateBefore`. The port's shadow maps belong to the renderer, one per light
+  (`ShadowMap`, `src/materials/phong.rs`). A node that owns a map needs that
+  ownership moved first.
+- **The iridescence names** (`iridescence`, `iridescenceIOR`,
+  `iridescenceThickness` and their `material*` forms). They need the
+  material's iridescence fields and `evalIridescence` in `BRDF_GGX` (issue
+  229).
+- **The dash names** (`dashSize`, `gapSize`, `materialLineScale`,
+  `materialLineDashSize`, `materialLineGapSize`, `materialLineDashOffset`).
+  They need `LineDashedNodeMaterial`, or `Line2`'s `useDash` branch, and the
+  `lineDistance` attribute.
+- **`dispersion` and `materialDispersion`.** They need a dispersion field and
+  the dispersion loop in `getIBLVolumeRefraction`.
+- **`retroreflectivity` and `materialRetroreflectivity`.** They need the field
+  and the retroreflective lobe in `PhysicalLightingModel.direct()`.
+
+### 78.1 The BRDF and LTC functions are standalone
+
+The anisotropic GGX terms, `Schlick_to_F0` and the three LTC functions are
+layout functions emitted under three's names, so a graph can call them.
+Nothing in the port's own lighting calls them yet:
+
+- `BRDF_GGX`'s anisotropic branch is still not wired. §26.5 explains why:
+  no rung lights an anisotropic material, so the lobe would go into the
+  lighting model ungraded. The functions' WGSL now matches three's, but the
+  light the lobe would produce is still unchecked.
+- `Schlick_to_F0`'s only caller in three is `evalIridescence`.
+- The LTC functions are what `RectAreaLightNode` calls, and the port has no
+  `RectAreaLight`.
+
+Because of this, the rows are Present, and each row's note says the function
+is standalone.
+
+The LTC port keeps three's statement order:
+
+- `LTC_EdgeVectorFormFactor` builds `a / b` separately in each branch of its
+  `select`. Three writes the expression out twice, but one shared node would
+  be hoisted into a var of its own.
+- The vars come first in a `block`, so they are assigned before the `select`
+  reads them.
+- `LTC_Evaluate` and `LTC_Evaluate_Volume` share one body builder. It differs
+  only in how each corner is projected, the `mat` var `LTC_Evaluate` declares
+  inside its `If`, and the `abs()` `LTC_Evaluate_Volume` takes before clipping.
+
+### 78.2 `material_anisotropy` takes the material
+
+Three's `materialAnisotropy` reads `builder.material.anisotropyMap` when it
+builds. Like the other material accessors (§68), the port's
+`material_anisotropy( material )` reads the map when it is called:
+
+- With a map, the result is the map's direction rotated by
+  `materialAnisotropyVector` and scaled by the map's blue channel.
+- Without a map, the result is the uniform itself.
+
+The physical material's anisotropy setup used to build that expression
+inline. It now calls this function. The `dump_wgsl` output was identical
+before and after the change, and `webgpu_loader_gltf_anisotropy` renders
+through it. Both cases are gated.
+
+### 78.3 `lights` returns indices
+
+Three's `lights( [ light1, light2 ] )` builds a `LightsNode` over the light
+objects, and `material.lightsNode` holds it. The scene owns the port's
+lights, which are not `Rc`s, so `lights( [ 0, 2 ] )` collects indices into
+the renderer's light list. It returns the `Vec<usize>` that
+`MeshBasicNodeMaterial::lights_node` already held. The result is not a node,
+so a graph cannot use it, and the row is Partial. `webgpu_lights_selective`
+now builds its two light sets with it.
+
+### 78.4 Gating functions that declare vars
+
+The earlier gates compare `main`, or a function whose body has no vars. The
+LTC functions declare several, so the batch adds `canonical_codes`. It
+applies `canonical`'s renaming to every function, after two other changes:
+
+- Each `let nodeConstN` loses its `let`.
+- The port's hoisted `var nodeVarN : T;` declarations are dropped.
+
+This is the §8 let-vs-var divergence, applied per function. The locals are
+renamed `localK` instead of `vK`, because `LTC_EdgeVectorFormFactor`'s
+parameters are called `v1` and `v2`. The two renamings now share
+`rename_locals`.
+
+The `ltc` probe evaluates the quad `( ±1, ±1, 2 )` with
+`mInv = mat3( modelWorldMatrix )`. The matrix only needs to be some mat3 that
+three cannot fold into a constant.

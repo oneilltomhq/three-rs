@@ -22,12 +22,12 @@ This matrix judges every exported name in three.js revision 5f610f5 (r187) — `
 | loaders | 20 | 2 | 2 | 12 | 4 | 12% |
 | renderers | 39 | 9 | 9 | 3 | 18 | 43% |
 | nodes | 141 | 99 | 27 | 10 | 5 | 73% |
-| tsl | 683 | 516 | 46 | 96 | 25 | 78% |
+| tsl | 683 | 523 | 47 | 88 | 25 | 79% |
 | addons/controls | 9 | 0 | 2 | 7 | 0 | 0% |
 | addons/loaders | 71 | 6 | 2 | 63 | 0 | 8% |
 | addons/postprocessing | 30 | 0 | 0 | 0 | 30 | — |
 | addons/other | 102 | 11 | 4 | 64 | 23 | 14% |
-| **total** | **1315** | **768** | **127** | **297** | **123** | **64%** |
+| **total** | **1315** | **775** | **128** | **289** | **123** | **65%** |
 
 TSL by family:
 
@@ -37,7 +37,7 @@ TSL by family:
 | operators | 68 | 51 | 1 | 2 | 14 |
 | conditionals/flow | 13 | 8 | 1 | 4 | 0 |
 | textures | 23 | 17 | 1 | 5 | 0 |
-| lighting/material | 121 | 85 | 9 | 27 | 0 |
+| lighting/material | 121 | 92 | 10 | 19 | 0 |
 | accessors | 95 | 76 | 8 | 10 | 1 |
 | display/postprocessing | 75 | 61 | 7 | 7 | 0 |
 | compute/storage | 53 | 19 | 3 | 31 | 0 |
@@ -1134,11 +1134,11 @@ Partial: `textureLoad`.
 
 ### lighting/material
 
-85 of 121 applicable present (9 Partial, 27 Absent, 0 N.A.).
+92 of 121 applicable present (10 Partial, 19 Absent, 0 N.A.).
 
-Missing (Absent): `iridescence`, `iridescenceIOR`, `iridescenceThickness`, `dashSize`, `gapSize`, `dispersion`, `retroreflectivity`, `materialAnisotropy`, `materialIridescence`, `materialIridescenceIOR`, `materialIridescenceThickness`, `materialLineScale`, `materialLineDashSize`, `materialLineGapSize`, `materialLineDashOffset`, `materialDispersion`, `materialRetroreflectivity`, `materialReference`, `lights`, `lightingContext`, `shadow`, `D_GGX_Anisotropic`, `Schlick_to_F0`, `V_GGX_SmithCorrelated_Anisotropic`, `LTC_Evaluate`, `LTC_Evaluate_Volume`, `LTC_Uv`.
+Missing (Absent): `iridescence`, `iridescenceIOR`, `iridescenceThickness`, `dashSize`, `gapSize`, `dispersion`, `retroreflectivity`, `materialIridescence`, `materialIridescenceIOR`, `materialIridescenceThickness`, `materialLineScale`, `materialLineDashSize`, `materialLineGapSize`, `materialLineDashOffset`, `materialDispersion`, `materialRetroreflectivity`, `materialReference`, `lightingContext`, `shadow`.
 
-Partial: `transmission`, `thickness`, `attenuationDistance`, `pointShadow`, `BRDF_GGX`, `D_GGX`, `DFGLUT`, `EnvironmentBRDF`, `V_GGX_SmithCorrelated`.
+Partial: `transmission`, `thickness`, `attenuationDistance`, `lights`, `pointShadow`, `BRDF_GGX`, `D_GGX`, `DFGLUT`, `EnvironmentBRDF`, `V_GGX_SmithCorrelated`.
 
 | three.js name | verdict | three-rs symbol | verified by | note |
 |---|---|---|---|---|
@@ -1154,9 +1154,9 @@ Partial: `transmission`, `thickness`, `attenuationDistance`, `pointShadow`, `BRD
 | `clearcoatRoughness` | Present | clearcoat_roughness (src/nodes/tsl.rs:2915) | webgpu_clearcoat (graded) |  |
 | `sheen` | Present | sheen (src/nodes/tsl.rs:2865) | webgpu_loader_gltf_sheen (graded) |  |
 | `sheenRoughness` | Present | sheen_roughness (src/nodes/tsl.rs:2868) | webgpu_loader_gltf_sheen (graded) |  |
-| `iridescence` | Absent | — | — | issue 229; no definition on main; code on branch rung-gltf-iridescence |
-| `iridescenceIOR` | Absent | — | — | issue 229; no definition on main; code on branch rung-gltf-iridescence |
-| `iridescenceThickness` | Absent | — | — | issue 229; no definition on main; code on branch rung-gltf-iridescence |
+| `iridescence` | Absent | — | — | needs the iridescence feature: the MeshPhysicalMaterial iridescence fields and BRDF_GGX's evalIridescence (issue 229; code on branch rung-gltf-iridescence) |
+| `iridescenceIOR` | Absent | — | — | needs the iridescence feature: the MeshPhysicalMaterial iridescence fields and BRDF_GGX's evalIridescence (issue 229; code on branch rung-gltf-iridescence) |
+| `iridescenceThickness` | Absent | — | — | needs the iridescence feature: the MeshPhysicalMaterial iridescence fields and BRDF_GGX's evalIridescence (issue 229; code on branch rung-gltf-iridescence) |
 | `alphaT` | Present | alpha_t (src/nodes/tsl.rs:2903) | indirect: used by src/materials/node_material.rs |  |
 | `anisotropy` | Present | anisotropy (src/nodes/tsl.rs:2900) | webgpu_loader_gltf_anisotropy (graded) | IBL only; direct anisotropic BRDF not ported |
 | `anisotropyT` | Present | anisotropy_t (src/nodes/tsl.rs:2906) | indirect: used by src/materials/node_material.rs |  |
@@ -1166,16 +1166,16 @@ Partial: `transmission`, `thickness`, `attenuationDistance`, `pointShadow`, `BRD
 | `specularF90` | Present | specular_f90 (src/nodes/tsl.rs:2850) | indirect: used by src/materials/physical.rs |  |
 | `shininess` | Present | shininess (src/nodes/tsl.rs:2777) | webgpu_lights_phong (graded) |  |
 | `output` | Present | output_property (src/nodes/tsl.rs:2771) | tests/renderer_mrt.rs, webgpu_mrt (graded) |  |
-| `dashSize` | Absent | — | — | no dashed line material (docs/lines-progress.md:100); comment only: src/materials/line2.rs |
-| `gapSize` | Absent | — | — | no dashed line material (docs/lines-progress.md:100); comment only: src/materials/line2.rs |
+| `dashSize` | Absent | — | — | needs LineDashedNodeMaterial, or the useDash branch of Line2 (src/materials/line2.rs:24), and the lineDistance attribute (docs/lines-progress.md:100) |
+| `gapSize` | Absent | — | — | needs LineDashedNodeMaterial, or the useDash branch of Line2 (src/materials/line2.rs:24), and the lineDistance attribute (docs/lines-progress.md:100) |
 | `pointWidth` | Present | point_width (src/nodes/tsl.rs:3699) | tests/nodes_tsl_batch.rs (point_width_matches) |  |
 | `ior` | Present | ior (src/nodes/tsl.rs:2854) | webgpu_furnace_test (graded) |  |
 | `transmission` | Partial | transmission (src/nodes/tsl.rs:2920) | webgpu_materials_transmission (0.198% off) | no graded rung; issue 228 |
 | `thickness` | Partial | thickness (src/nodes/tsl.rs:2923) | webgpu_materials_transmission (0.198% off) | no graded rung; issue 228 |
 | `attenuationDistance` | Partial | attenuation_distance (src/nodes/tsl.rs:2926) | webgpu_materials_transmission (0.198% off) | no graded rung; issue 228 |
 | `attenuationColor` | Present | attenuation_color (src/nodes/tsl.rs:2929) | webgpu_shadowmap_opacity (graded) |  |
-| `dispersion` | Absent | — | — | comment only: src/materials/physical.rs |
-| `retroreflectivity` | Absent | — | — |  |
+| `dispersion` | Absent | — | — | needs a dispersion material field and the dispersion loop of getIBLVolumeRefraction, left out of src/materials/transmission.rs:15 |
+| `retroreflectivity` | Absent | — | — | needs a retroreflectivity material field and the retroreflective lobe of PhysicalLightingModel.direct() (three r187 PhysicalLightingModel.js:689) |
 | `ambientOcclusion` | Present | ambient_occlusion (src/nodes/tsl.rs:2826) | indirect: used by src/materials/physical.rs |  |
 | `materialAlphaTest` | Present | material_alpha_test (src/nodes/tsl.rs:2161) | indirect: used by src/renderer/mod.rs |  |
 | `materialColor` | Present | material_color (src/nodes/tsl.rs:2141) | indirect: used by src/renderer/mod.rs |  |
@@ -1197,23 +1197,23 @@ Partial: `transmission`, `thickness`, `attenuationDistance`, `pointShadow`, `BRD
 | `materialRotation` | Present | material_rotation (src/nodes/tsl.rs:2171) | indirect: used by src/renderer/mod.rs |  |
 | `materialSheen` | Present | material_sheen (src/nodes/tsl.rs:1256) | indirect: used by src/renderer/mod.rs |  |
 | `materialSheenRoughness` | Present | material_sheen_roughness (src/nodes/tsl.rs:1276) | indirect: used by src/renderer/mod.rs |  |
-| `materialAnisotropy` | Absent | — | — | comment only: src/materials/node_material.rs |
-| `materialIridescence` | Absent | — | — | issue 229; no definition on main; code on branch rung-gltf-iridescence |
-| `materialIridescenceIOR` | Absent | — | — | issue 229; no definition on main; code on branch rung-gltf-iridescence |
-| `materialIridescenceThickness` | Absent | — | — | issue 229; no definition on main; code on branch rung-gltf-iridescence |
+| `materialAnisotropy` | Present | material_anisotropy (src/nodes/tsl/lighting.rs:39) | tests/nodes_tsl_batch.rs (material_anisotropy_matches, material_anisotropy_map_matches); webgpu_loader_gltf_anisotropy (graded) | takes the material; the physical setup reads its vector from it |
+| `materialIridescence` | Absent | — | — | needs the iridescence feature: the MeshPhysicalMaterial iridescence fields and BRDF_GGX's evalIridescence (issue 229; code on branch rung-gltf-iridescence) |
+| `materialIridescenceIOR` | Absent | — | — | needs the iridescence feature: the MeshPhysicalMaterial iridescence fields and BRDF_GGX's evalIridescence (issue 229; code on branch rung-gltf-iridescence) |
+| `materialIridescenceThickness` | Absent | — | — | needs the iridescence feature: the MeshPhysicalMaterial iridescence fields and BRDF_GGX's evalIridescence (issue 229; code on branch rung-gltf-iridescence) |
 | `materialTransmission` | Present | material_transmission (src/nodes/tsl.rs:1330) | indirect: used by src/renderer/mod.rs |  |
 | `materialThickness` | Present | material_thickness (src/nodes/tsl.rs:1340) | indirect: used by src/renderer/mod.rs |  |
 | `materialIOR` | Present | material_ior (src/nodes/tsl.rs:1223) | indirect: used by src/renderer/mod.rs |  |
 | `materialAttenuationDistance` | Present | material_attenuation_distance (src/nodes/tsl.rs:1350) | indirect: used by src/renderer/mod.rs |  |
 | `materialAttenuationColor` | Present | material_attenuation_color (src/nodes/tsl.rs:1360) | indirect: used by src/renderer/mod.rs |  |
-| `materialLineScale` | Absent | — | — | no dashed line material (docs/lines-progress.md:100) |
-| `materialLineDashSize` | Absent | — | — | no dashed line material (docs/lines-progress.md:100) |
-| `materialLineGapSize` | Absent | — | — | no dashed line material (docs/lines-progress.md:100) |
+| `materialLineScale` | Absent | — | — | needs LineDashedNodeMaterial, or the useDash branch of Line2 (src/materials/line2.rs:24), and the lineDistance attribute (docs/lines-progress.md:100) |
+| `materialLineDashSize` | Absent | — | — | needs LineDashedNodeMaterial, or the useDash branch of Line2 (src/materials/line2.rs:24), and the lineDistance attribute (docs/lines-progress.md:100) |
+| `materialLineGapSize` | Absent | — | — | needs LineDashedNodeMaterial, or the useDash branch of Line2 (src/materials/line2.rs:24), and the lineDistance attribute (docs/lines-progress.md:100) |
 | `materialLineWidth` | Present | material_line_width (src/nodes/tsl.rs:2343) | examples/dump_wgsl.rs (manual WGSL diff) |  |
-| `materialLineDashOffset` | Absent | — | — | no dashed line material (docs/lines-progress.md:100) |
+| `materialLineDashOffset` | Absent | — | — | needs LineDashedNodeMaterial, or the useDash branch of Line2 (src/materials/line2.rs:24), and the lineDistance attribute (docs/lines-progress.md:100) |
 | `materialPointSize` | Present | material_point_size (src/nodes/tsl.rs:2613) | tests/nodes_tsl_batch.rs (material_point_size_matches) | the points flow sizes by sizeNode, not this uniform |
-| `materialDispersion` | Absent | — | — |  |
-| `materialRetroreflectivity` | Absent | — | — |  |
+| `materialDispersion` | Absent | — | — | needs a dispersion material field and the dispersion loop of getIBLVolumeRefraction, left out of src/materials/transmission.rs:15 |
+| `materialRetroreflectivity` | Absent | — | — | needs a retroreflectivity material field and the retroreflective lobe of PhysicalLightingModel.direct() (three r187 PhysicalLightingModel.js:689) |
 | `materialLightMap` | Present | material_light_map (src/nodes/tsl.rs:2683) | tests/nodes_tsl_batch.rs (material_defaults_match, material_maps_match) | takes the material; no material flow applies lightMap |
 | `materialAO` | Present | material_ao (src/nodes/tsl.rs:2692) | tests/nodes_tsl_batch.rs (material_defaults_match, material_maps_match) | takes the material |
 | `materialAnisotropyVector` | Present | material_anisotropy_vector (src/nodes/tsl.rs:1300) | indirect: used by src/materials/node_material.rs |  |
@@ -1231,7 +1231,7 @@ Partial: `transmission`, `thickness`, `attenuationDistance`, `pointShadow`, `BRD
 | `lightTargetPosition` | Present | light_target_position (src/nodes/tsl.rs:1091) | indirect: used by src/nodes/tsl.rs |  |
 | `lightViewPosition` | Present | light_view_position (src/nodes/tsl.rs:1059) | indirect: used by src/materials/phong.rs |  |
 | `lightTargetDirection` | Present | light_target_direction (src/nodes/tsl.rs:4926) | indirect: used by src/materials/phong.rs |  |
-| `lights` | Absent | — | — | comment only: src/error.rs |
+| `lights` | Partial | lights (src/nodes/tsl/lighting.rs:503) | webgpu_lights_selective (graded) | light indices for MeshBasicNodeMaterial::lights_node (src/materials/mod.rs:310), not a LightsNode a graph can use |
 | `lightingContext` | Absent | — | — | Not ported: no context node to wrap with. The port drives a LightingModel from the material flow (MeshBasicNodeMaterial::lighting_model, lighting_model::lights_node) |
 | `shadowPositionWorld` | Present | shadow_position_world (src/nodes/tsl.rs:4908) | indirect: used by src/lights/point_shadow.rs |  |
 | `BasicPointShadowFilter` | Present | basic_point_shadow_filter (src/lights/point_shadow.rs:88) | indirect: used by src/lights/shadow_filter.rs |  |
@@ -1239,7 +1239,7 @@ Partial: `transmission`, `thickness`, `attenuationDistance`, `pointShadow`, `BRD
 | `pointShadow` | Partial | point_shadow (src/lights/point_shadow.rs:157, pub(crate)) | webgpu_shadowmap_pointlight graded via renderer | internal only |
 | `directPointLight` | Present | direct_point_light (src/nodes/tsl.rs:1458) | tests/nodes_tsl_batch.rs (direct_point_light_matches) | returns the (lightDirection, lightColor) pair |
 | `getDistanceAttenuation` | Present | distance_attenuation (src/materials/phong.rs:29) | indirect: used by src/materials/phong.rs |  |
-| `shadow` | Absent | — | — | comment only: src/core/object3d.rs |
+| `shadow` | Absent | — | — | Not ported: needs node-owned shadow maps. Three's ShadowNode renders its own map in updateBefore; the port's are owned by the renderer per light (ShadowMap, src/materials/phong.rs:107) |
 | `BasicShadowFilter` | Present | basic_shadow_filter (src/lights/shadow_filter.rs:186) | indirect: used by src/lights/mod.rs |  |
 | `PCFShadowFilter` | Present | pcf_shadow_filter (src/lights/shadow_filter.rs:194) | indirect: used by src/lights/mod.rs |  |
 | `VSMShadowFilter` | Present | vsm_shadow_filter (src/lights/shadow_filter.rs:227) | indirect: used by src/lights/mod.rs |  |
@@ -1249,16 +1249,16 @@ Partial: `transmission`, `thickness`, `attenuationDistance`, `pointShadow`, `BRD
 | `BRDF_Lambert` | Present | brdf_lambert (src/materials/phong.rs:66) | indirect: used by src/materials/toon.rs |  |
 | `BRDF_Sheen` | Present | brdf_sheen (src/materials/physical.rs:228) | indirect: used by src/materials/physical.rs |  |
 | `D_GGX` | Partial | d_ggx (src/materials/physical.rs:102) | — | internal only (not public) |
-| `D_GGX_Anisotropic` | Absent | — | — | anisotropic BRDF_GGX not ported (src/renderer/mod.rs:7186) |
+| `D_GGX_Anisotropic` | Present | d_ggx_anisotropic (src/nodes/tsl/lighting.rs:69) | tests/nodes_tsl_batch.rs (anisotropic_ggx_matches) | standalone: BRDF_GGX's anisotropic branch is not wired (docs/nodes.md §26.5) |
 | `DFGLUT` | Partial | dfg_lut (src/materials/dfg_lut.rs:47) | — | internal only (not public) |
 | `EnvironmentBRDF` | Partial | Physical::environment_brdf (src/materials/physical.rs:569) | — | internal only (not public) |
 | `F_Schlick` | Present | f_schlick (src/materials/phong.rs:72) | indirect: used by src/materials/physical.rs |  |
-| `Schlick_to_F0` | Absent | — | — | issue 229; no definition on main; code on branch rung-gltf-iridescence |
+| `Schlick_to_F0` | Present | schlick_to_f0 (src/nodes/tsl/lighting.rs:188) | tests/nodes_tsl_batch.rs (schlick_to_f0_matches) | standalone: its caller in three is evalIridescence (issue 229) |
 | `V_GGX_SmithCorrelated` | Partial | v_ggx_smith_correlated (src/materials/physical.rs:63) | — | internal only (not public) |
-| `V_GGX_SmithCorrelated_Anisotropic` | Absent | — | — | anisotropic BRDF_GGX not ported (src/renderer/mod.rs:7186) |
-| `LTC_Evaluate` | Absent | — | — | no RectAreaLight (docs/nodes.md:3745) |
-| `LTC_Evaluate_Volume` | Absent | — | — | no RectAreaLight (docs/nodes.md:3745) |
-| `LTC_Uv` | Absent | — | — | no RectAreaLight (docs/nodes.md:3745) |
+| `V_GGX_SmithCorrelated_Anisotropic` | Present | v_ggx_smith_correlated_anisotropic (src/nodes/tsl/lighting.rs:123) | tests/nodes_tsl_batch.rs (anisotropic_ggx_matches) | standalone: BRDF_GGX's anisotropic branch is not wired (docs/nodes.md §26.5) |
+| `LTC_Evaluate` | Present | ltc_evaluate (src/nodes/tsl/lighting.rs:379) | tests/nodes_tsl_batch.rs (ltc_matches) | standalone: no RectAreaLight (docs/nodes.md:3745) |
+| `LTC_Evaluate_Volume` | Present | ltc_evaluate_volume (src/nodes/tsl/lighting.rs:442) | tests/nodes_tsl_batch.rs (ltc_matches) | standalone: no RectAreaLight (docs/nodes.md:3745) |
+| `LTC_Uv` | Present | ltc_uv (src/nodes/tsl/lighting.rs:221) | tests/nodes_tsl_batch.rs (ltc_matches) | standalone: no RectAreaLight (docs/nodes.md:3745) |
 | `getGeometryRoughness` | Present | geometry_roughness (src/materials/physical.rs:35) | indirect: used by src/materials/physical.rs |  |
 | `getParallaxCorrectNormal` | Present | get_parallax_correct_normal (src/nodes/tsl.rs:1008) | tests/nodes_tsl_batch.rs (parallax_correct_normal_matches) |  |
 | `getRoughness` | Present | get_roughness (src/materials/physical.rs:51) | indirect: used by src/materials/node_material.rs |  |

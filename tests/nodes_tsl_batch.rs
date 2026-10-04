@@ -596,7 +596,12 @@ fn deprecated_aliases() {
 /// `var`s and numbers them together, so the names differ while the
 /// statements, their order and every expression match.
 fn canonical(wgsl: &str) -> String {
-    let text = body(wgsl).replace("let nodeConst", "nodeConst");
+    rename_locals(&body(wgsl).replace("let nodeConst", "nodeConst"), "v")
+}
+
+/// Every `nodeConstN` / `nodeVarN` in `text` renamed `{prefix}K` in order of
+/// first appearance: [`canonical`]'s renaming.
+fn rename_locals(text: &str, prefix: &str) -> String {
     let mut names: Vec<String> = Vec::new();
     let mut out = String::with_capacity(text.len());
     let mut i = 0;
@@ -617,7 +622,7 @@ fn canonical(wgsl: &str) -> String {
                     names.push(name.to_string());
                     names.len() - 1
                 });
-                out.push_str(&format!("v{k}"));
+                out.push_str(&format!("{prefix}{k}"));
                 i += len;
             }
             None => {
@@ -628,6 +633,36 @@ fn canonical(wgsl: &str) -> String {
         }
     }
     out
+}
+
+/// [`codes`] up to the §8 let-vs-var divergence, function by function: each
+/// `let nodeConstN = X;` becomes `nodeConstN = X;`, each hoisted `var nodeVarN :
+/// T;` declaration is dropped, and the locals of each `fn` are renamed as
+/// [`canonical`] renames `main`'s. Three numbers its `let`s and `var`s
+/// separately and the port writes a shared intermediate as a hoisted `var`, so
+/// the names and declarations differ while the statements, their order and
+/// every expression match.
+fn canonical_codes(wgsl: &str) -> String {
+    let text = codes(wgsl).replace("let nodeConst", "nodeConst");
+    let mut kept = Vec::new();
+    for statement in text.split_inclusive("; ") {
+        let declaration = statement
+            .rsplit_once("var nodeVar")
+            .is_some_and(|(_, rest)| !rest.contains('='));
+        if declaration {
+            // Keep whatever precedes the declaration in the same chunk (a
+            // `fn` header or a `{`).
+            kept.push(statement[..statement.rfind("var nodeVar").unwrap()].to_string());
+        } else {
+            kept.push(statement.to_string());
+        }
+    }
+    let text = kept.concat();
+    // `local`, not `v`: a `fn`'s own parameters can be called `v1`.
+    text.split(" fn ")
+        .map(|chunk| rename_locals(chunk, "local"))
+        .collect::<Vec<_>>()
+        .join(" fn ")
 }
 
 /// Asserts the port's `main` equals three's up to [`canonical`].
@@ -1958,4 +1993,104 @@ fn event_nodes_emit_nothing() {
             float(1.0),
         ]),
     );
+}
+
+// ---------------------------------------------------------------------------
+// sweep 5: the lighting and material batch (`docs/nodes.md` §78)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn material_anisotropy_matches() {
+    // Unnamed uniforms renumbered in first-use order: `docs/nodes.md` §67.5.
+    assert_material(
+        "material_anisotropy",
+        |_| {},
+        |m| vec4_join(vec![material_anisotropy(m), float(0.0), float(1.0)]),
+        |theirs| theirs,
+    );
+}
+
+#[test]
+fn material_anisotropy_map_matches() {
+    let map = filterable_map();
+    // Unnamed uniforms renumbered in first-use order: `docs/nodes.md` §67.5.
+    assert_material(
+        "material_anisotropy_map",
+        |m| m.anisotropy_map = Some(map.clone()),
+        |m| vec4_join(vec![material_anisotropy(m), float(0.0), float(1.0)]),
+        |theirs| theirs,
+    );
+}
+
+#[test]
+fn anisotropic_ggx_matches() {
+    let node = vec4_join(vec![
+        d_ggx_anisotropic(x(), y(), x().mul(0.5), y().mul(0.25), x().mul(y())),
+        v_ggx_smith_correlated_anisotropic(
+            x(),
+            y(),
+            float(0.5),
+            float(0.25),
+            x().mul(0.5),
+            y().mul(0.5),
+            x(),
+            y(),
+        ),
+        float(0.0),
+        float(1.0),
+    ]);
+    let ours = fragment(node.clone());
+    let theirs = fixture("anisotropic_ggx");
+    assert_eq!(codes_as_lets(&ours), codes(&theirs), "--- port ---\n{ours}");
+    assert_body("anisotropic_ggx", node);
+}
+
+#[test]
+fn schlick_to_f0_matches() {
+    let node = vec4_join(vec![
+        schlick_to_f0(vec3_join(vec![uv(), float(0.5)]), float(1.0), x()),
+        float(1.0),
+    ]);
+    let ours = fragment(node.clone());
+    let theirs = fixture("schlick_to_f0");
+    assert_eq!(codes_as_lets(&ours), codes(&theirs), "--- port ---\n{ours}");
+    assert_body("schlick_to_f0", node);
+}
+
+#[test]
+fn ltc_matches() {
+    let n = vec3(0.0, 0.0, 1.0);
+    let v = vec3_join(vec![uv(), float(1.0)]).normalize();
+    let p = vec3_join(vec![uv(), float(0.0)]);
+    let corners = [
+        vec3(-1.0, -1.0, 2.0),
+        vec3(1.0, -1.0, 2.0),
+        vec3(1.0, 1.0, 2.0),
+        vec3(-1.0, 1.0, 2.0),
+    ];
+    let [p0, p1, p2, p3] = corners;
+    let m_inv = mat3_join(vec![model_world_matrix()]);
+    let node = vec4_join(vec![
+        ltc_evaluate(
+            n.clone(),
+            v.clone(),
+            p.clone(),
+            m_inv,
+            p0.clone(),
+            p1.clone(),
+            p2.clone(),
+            p3.clone(),
+        )
+        .add(ltc_evaluate_volume(p, p0, p1, p2, p3)),
+        float(1.0),
+    ])
+    .add(vec4_join(vec![ltc_uv(n, v, x()), float(0.0), float(0.0)]));
+    let ours = fragment(node.clone());
+    let theirs = fixture("ltc");
+    assert_eq!(
+        canonical_codes(&ours),
+        canonical_codes(&theirs),
+        "--- port ---\n{ours}"
+    );
+    assert_renumbered("ltc", node, &theirs);
 }

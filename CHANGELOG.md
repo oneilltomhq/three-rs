@@ -109,6 +109,18 @@ have their own sections after the release they ship with. The format follows [Ke
     `on_before_material_update` and `on_before_frame_update`. Each is a
     `void` node attached with `.bypass()`. Its callback runs in three's update
     phase and receives the `Renderer`.
+- **TSL sweep 5**: lighting and material `three/tsl` names, in
+  `nodes::tsl`. Each one that emits WGSL is gated against three's own dump in
+  `tests/nodes_tsl_batch.rs`. See `docs/nodes.md` §78.
+  - `material_anisotropy( material )`. The physical material's anisotropy
+    setup now reads it, and its WGSL is unchanged.
+  - `d_ggx_anisotropic`, `v_ggx_smith_correlated_anisotropic` and
+    `schlick_to_f0`. These are standalone: the physical lighting still
+    evaluates only the isotropic lobe.
+  - `ltc_uv`, `ltc_evaluate` and `ltc_evaluate_volume`. These are standalone
+    too, because there is no `RectAreaLight`.
+  - `lights( indices )` builds `MeshBasicNodeMaterial::lights_node`.
+    `webgpu_lights_selective` uses it.
 - **`SkyMesh`** (`addons::objects`), a port of `examples/jsm/objects/SkyMesh.js`.
   It is the Preetham daylight model with a sun disc and an fbm cloud layer.
   Every uniform is a public `SettableValue`. `webgpu_sky` is graded green at 0
