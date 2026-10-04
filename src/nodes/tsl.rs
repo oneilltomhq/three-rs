@@ -5076,6 +5076,49 @@ pub fn storage_f32(array: &[f32], element_ty: Type) -> StorageArray {
     storage_data(&words, element_ty)
 }
 
+/// `storage( attribute, type, count )` over a
+/// [`StorageBufferAttribute`](crate::core::StorageBufferAttribute) — a
+/// `StorageBufferNode` whose buffer **is** the attribute's: the node takes the
+/// attribute's [`BufferId`](crate::nodes::node::BufferId) and its contents
+/// (at the padded storage stride) as the buffer's initial data, so a kernel
+/// writing this node and a draw reading the attribute from the geometry meet
+/// on one GPU buffer.
+///
+/// [`to_attribute`](StorageArray::to_attribute) steps per vertex for a
+/// `StorageBufferAttribute` and per instance for a
+/// `StorageInstancedBufferAttribute`, as three's `attributeArray` /
+/// `instancedArray` do.
+///
+/// # Panics
+///
+/// If `element_ty` has a different component count from the attribute's
+/// `item_size`: the node would index the buffer at a stride the attribute
+/// does not lay it out at.
+pub fn storage(
+    attribute: &crate::core::StorageBufferAttribute,
+    element_ty: Type,
+    count: usize,
+) -> StorageArray {
+    assert_eq!(
+        element_ty.components(),
+        attribute.item_size,
+        "three-rs: storage() over a StorageBufferAttribute of itemSize {} wants a type of that many components, got {element_ty:?}",
+        attribute.item_size
+    );
+    StorageArray {
+        buffer: Rc::new(BufferNode {
+            id: attribute.id(),
+            source: BufferSource::StorageData {
+                init: Rc::new(attribute.init_words()),
+                read_only: false,
+            },
+            element_ty,
+            count,
+        }),
+        per_vertex: !attribute.is_instanced(),
+    }
+}
+
 impl StorageArray {
     /// `.toReadOnly()` — `var<storage, read>` in a kernel as well. The same
     /// buffer, so the same GPU buffer; only the declaration changes.
