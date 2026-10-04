@@ -475,6 +475,37 @@ impl TypedArray {
         array
     }
 
+    /// `new ArrayType( arrayBuffer )` — a view of little-endian `bytes` as
+    /// `kind`, copied out. A `Float16` array keeps the raw bits, as the
+    /// `Uint16Array` behind a `Float16BufferAttribute` does.
+    ///
+    /// # Panics
+    ///
+    /// If `bytes.len()` is not a multiple of the element size, where
+    /// JavaScript throws a `RangeError`.
+    pub fn from_le_bytes(kind: ArrayKind, bytes: &[u8]) -> Self {
+        let bpe = kind.bytes_per_element();
+        assert!(
+            bytes.len().is_multiple_of(bpe),
+            "three-rs: byte length of {kind:?} should be a multiple of {bpe}, got {}",
+            bytes.len()
+        );
+        fn words<const N: usize, T>(bytes: &[u8], f: impl Fn([u8; N]) -> T) -> Vec<T> {
+            bytes.as_chunks::<N>().0.iter().map(|w| f(*w)).collect()
+        }
+        match kind {
+            ArrayKind::F32 => TypedArray::F32(words(bytes, f32::from_le_bytes)),
+            ArrayKind::F16 => TypedArray::F16(words(bytes, u16::from_le_bytes)),
+            ArrayKind::I8 => TypedArray::I8(bytes.iter().map(|&b| b as i8).collect()),
+            ArrayKind::U8 => TypedArray::U8(bytes.to_vec()),
+            ArrayKind::U8Clamped => TypedArray::U8Clamped(bytes.to_vec()),
+            ArrayKind::I16 => TypedArray::I16(words(bytes, i16::from_le_bytes)),
+            ArrayKind::U16 => TypedArray::U16(words(bytes, u16::from_le_bytes)),
+            ArrayKind::I32 => TypedArray::I32(words(bytes, i32::from_le_bytes)),
+            ArrayKind::U32 => TypedArray::U32(words(bytes, u32::from_le_bytes)),
+        }
+    }
+
     /// The element type.
     pub fn kind(&self) -> ArrayKind {
         match self {
