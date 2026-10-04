@@ -12,7 +12,7 @@
 
 use std::rc::Rc;
 
-use crate::core::{BufferAttribute, BufferGeometry, Index, Node, Object3D};
+use crate::core::{ArrayKind, BufferAttribute, BufferGeometry, Index, Node, Object3D, TypedArray};
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::{Box3, CoordinateSystem, Frustum, Matrix4, Sphere, Vector3};
 use crate::nodes::batch::BatchEntry;
@@ -273,14 +273,27 @@ impl BatchedMesh {
         let geometry = Rc::get_mut(&mut self.mesh.geometry)
             .expect("three-rs: the batch geometry is shared; add geometries before rendering");
 
-        let names: Vec<(String, usize)> = reference
+        // "create new attribute buffers to hold the geometry data", each of
+        // the reference's typed-array kind and `normalized`.
+        let names: Vec<(String, usize, ArrayKind, bool)> = reference
             .attributes()
-            .map(|(name, attr)| (name.to_string(), attr.item_size))
+            .map(|(name, attr)| {
+                (
+                    name.to_string(),
+                    attr.item_size,
+                    attr.kind(),
+                    attr.normalized,
+                )
+            })
             .collect();
-        for (name, item_size) in names {
+        for (name, item_size, kind, normalized) in names {
             geometry.set_attribute(
                 &name,
-                BufferAttribute::new(vec![0.0; max_vertex_count * item_size], item_size),
+                BufferAttribute::from_typed(
+                    TypedArray::zeros(kind, max_vertex_count * item_size),
+                    item_size,
+                    normalized,
+                ),
             );
         }
 
@@ -403,15 +416,14 @@ impl BatchedMesh {
                     .expect("three-rs: validate_geometry checked this attribute exists");
                 let item_size = src.item_size;
                 let src_count = src.count();
-                let values: Vec<f32> = src.array().clone();
                 let dst = batch
                     .get_attribute_mut(&name)
                     .expect("three-rs: the batch geometry has this attribute");
-                dst.set(&values, vertex_start * item_size);
+                copy_attribute_data(src, dst, vertex_start);
                 // "fill the rest in with zeroes"
                 for i in src_count..reserved_vertex_count {
                     for c in 0..item_size {
-                        dst.array_mut()[(vertex_start + i) * item_size + c] = 0.0;
+                        dst.set_component(vertex_start + i, c, 0.0);
                     }
                 }
                 dst.set_needs_update();
@@ -841,4 +853,26 @@ fn init_matrices_texture(max_instance_count: usize) -> DataTexture {
 fn init_indirect_texture(max_instance_count: usize) -> DataTexture {
     let size = (max_instance_count as f64).sqrt().ceil().max(1.0) as u32;
     DataTexture::new_u32(vec![0; (size * size) as usize], size, size)
+}
+
+/// `copyAttributeData( src, target, targetOffset )` from
+/// `BatchedMesh.js`'s utils: a straight typed-array copy when both arrays are
+/// the same kind and `src` is not interleaved, otherwise through the
+/// component getters and setters (which denormalize and renormalize).
+fn copy_attribute_data(src: &BufferAttribute, target: &mut BufferAttribute, target_offset: usize) {
+    let item_size = target.item_size;
+    if src.is_interleaved() || src.kind() != target.kind() {
+        for i in 0..src.count() {
+            for c in 0..item_size {
+                target.set_component(i + target_offset, c, src.get_component(i, c));
+            }
+        }
+    } else {
+        let src = src.data();
+        let mut dst = target.data_mut();
+        for i in 0..src.len() {
+            dst.set(target_offset * item_size + i, src.get(i));
+        }
+    }
+    target.set_needs_update();
 }

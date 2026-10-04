@@ -208,13 +208,13 @@ pub fn compute_skinning(mesh: &crate::core::Node) -> NodeRef {
             .unwrap_or_else(|| panic!("three-rs: computeSkinning() needs `{name}`"))
     };
     let position = storage_f32(&attribute("position").array(), Type::Vec3).to_read_only();
-    // `skinIndex` is a `Uint16Array` in three; `storage( …, 'uvec4' )` over it
-    // is a `u32` array on the GPU. The port keeps the indices as floats.
-    let indices: Vec<u32> = attribute("skinIndex")
-        .array()
-        .iter()
-        .map(|&v| v as u32)
-        .collect();
+    // `skinIndex` is a `Uint16Array` in three (a `Uint32Array` from the
+    // port's glTF loader, a `Float32Array` from hand-built geometry);
+    // `storage( …, 'uvec4' )` over it is a `u32` array on the GPU.
+    let indices: Vec<u32> = {
+        let data = attribute("skinIndex").data();
+        (0..data.len()).map(|i| data.get(i) as u32).collect()
+    };
     let skin_index = storage_data(&indices, Type::UVec4).to_read_only();
     let skin_weight = storage_f32(&attribute("skinWeight").array(), Type::Vec4).to_read_only();
 
