@@ -1446,30 +1446,8 @@ fn setup_standard(
     }
 
     if use_anisotropy {
-        // `materialAnisotropy` — `MaterialNode.ANISOTROPY`. With a map the
-        // vector is the map's polar direction rotated by the material's, scaled
-        // by the map's blue channel; without one it is the uniform itself.
-        let anisotropy_v = match &material.anisotropy_map {
-            Some(map) => {
-                let polar = texture(map);
-                let v = material_anisotropy_vector();
-                let rotation = join(
-                    Type::Mat2,
-                    vec![v.clone().x(), v.clone().y(), v.clone().y().negate(), v.x()],
-                );
-                rotation.mul(
-                    polar
-                        .clone()
-                        .xy()
-                        .mul(2.0)
-                        .sub(vec2(1.0, 1.0))
-                        .normalize()
-                        .mul(polar.z()),
-                )
-            }
-            None => material_anisotropy_vector(),
-        };
-        let anisotropy_v = to_var(None, anisotropy_v);
+        // `materialAnisotropy` — `MaterialNode.ANISOTROPY`.
+        let anisotropy_v = to_var(None, material_anisotropy(material));
 
         fragment.push(anisotropy().assign(length(anisotropy_v.clone())));
         fragment.push(if_else(
