@@ -24,8 +24,15 @@
 //!   [`SkeletonHelper`] recompute their transform or vertices in an
 //!   `updateMatrixWorld()` override. The port's traversal has no per-type
 //!   hook, so each exposes `update_matrix_world(force)` instead: the
-//!   override's body, then [`Node::update_matrix_world`]. Call it after the
-//!   scene's own update.
+//!   override's body, then [`Node::update_matrix_world`]. Nothing calls it
+//!   for you, and [`Renderer::render`]'s own `scene.update_matrix_world()`
+//!   comes too late for a helper that reads another object's world matrix
+//!   ([`PlaneHelper`] its parent's, [`SkeletonHelper`] the bones'). So each
+//!   frame: update the graph first (`root.update_matrix_world(false)`, or
+//!   [`Scene::update_matrix_world`]), then the helper's
+//!   `update_matrix_world`, then render. [`Box3Helper`] reads only its box,
+//!   so it needs only to come before the render, whose update recomputes its
+//!   world matrix from the position and scale it set.
 //! - **`toneMapped: false`** has no counterpart: the port's materials carry no
 //!   tone-mapping flag.
 //! - **`dispose()`** is not ported: geometry and materials are freed on drop,
@@ -37,6 +44,8 @@
 //!
 //! [`Node`]: crate::core::Node
 //! [`Node::update_matrix_world`]: crate::core::Node::update_matrix_world
+//! [`Renderer::render`]: crate::Renderer::render
+//! [`Scene::update_matrix_world`]: crate::objects::Scene::update_matrix_world
 
 mod arrow_helper;
 mod axes_helper;

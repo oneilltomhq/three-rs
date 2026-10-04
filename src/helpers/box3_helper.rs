@@ -17,12 +17,15 @@ use crate::objects::LineSegments;
 /// override, so the scene's own traversal keeps it on the box. The port's
 /// traversal ([`Node::update_matrix_world`]) has no per-type overrides, so
 /// the override is [`update_matrix_world`](Self::update_matrix_world) here,
-/// and something has to call it: call it after the scene's own update (or
-/// before handing the scene to the renderer, whose update then recomputes
-/// the same matrix). An empty box returns before the world matrix is
-/// touched, in three and here; but the scene's traversal, which three would
-/// skip for it, still updates the node's world matrix from its last local
-/// one.
+/// and something has to call it before each render. It reads nothing but
+/// its box, so its place against the scene's own update does not change what
+/// is drawn: [`Renderer::render`](crate::Renderer::render)'s
+/// `scene.update_matrix_world()` recomputes the world matrix from the
+/// position and scale it set. (Call it after the graph's update if you read
+/// `node`'s world matrix yourself.) An empty box returns before the world
+/// matrix is touched, in three and here; but the scene's traversal, which
+/// three would skip for it, still updates the node's world matrix from its
+/// last local one.
 ///
 /// `toneMapped: false` has no counterpart, as for
 /// [`GridHelper`](super::GridHelper).

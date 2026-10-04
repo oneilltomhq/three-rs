@@ -17,8 +17,12 @@ use crate::objects::{Line, Mesh};
 /// As for [`Box3Helper`](super::Box3Helper): three re-orients the helper in
 /// an `updateMatrixWorld()` override, which the port's traversal cannot
 /// call, so it is [`update_matrix_world`](Self::update_matrix_world) here.
-/// Call it after the scene's own update. It reads the parent's world matrix
-/// (`lookAt()` does), so it gives three's result once the parent is current.
+/// It reads the parent's world matrix (`lookAt()` does), so the parent must
+/// be current when it runs, and
+/// [`Renderer::render`](crate::Renderer::render) updates the scene only
+/// after anything you call: each frame, `root.update_matrix_world(false)` (or
+/// [`Scene::update_matrix_world`](crate::objects::Scene::update_matrix_world)),
+/// then `helper.update_matrix_world(false)`, then render.
 ///
 /// `toneMapped: false` on both materials has no counterpart, as for
 /// [`GridHelper`](super::GridHelper).

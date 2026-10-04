@@ -22,9 +22,13 @@ use crate::objects::{is_bone, LineSegments};
 /// Three rewrites the vertices in an `updateMatrixWorld()` override, which
 /// the port's traversal cannot call, so it is
 /// [`update_matrix_world`](Self::update_matrix_world) here. It reads the
-/// bones' world matrices, so call it after the scene's own update: that gives
-/// three's result for a helper that comes after `object` in the scene, which
-/// is where three's traversal reads current bone matrices too.
+/// bones' world matrices, so they must be current when it runs, and
+/// [`Renderer::render`](crate::Renderer::render) updates the scene only
+/// after anything you call: each frame, `root.update_matrix_world(false)` (or
+/// [`Scene::update_matrix_world`](crate::objects::Scene::update_matrix_world)),
+/// then `helper.update_matrix_world(false)`, then render. That gives three's
+/// result for a helper that comes after `object` in the scene, which is where
+/// three's traversal reads current bone matrices too.
 ///
 /// `toneMapped: false` has no counterpart, as for
 /// [`GridHelper`](super::GridHelper).
