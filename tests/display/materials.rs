@@ -13,10 +13,11 @@ use three_rs::nodes::display::{
     after_image, anaglyph_pass, ao, barrel_uv, bayer_dither, bilateral_blur, bleach, box_blur,
     circle, color_bleeding, depth_aware_blend, dof, dot_screen, film, fxaa, gaussian_blur, godrays,
     hash_blur_with, lensflare, lut_3d, motion_blur, outline, parallax_barrier_pass,
-    pixelation_pass, retro_pass, rgb_shift, rtt, scanlines, sepia, smaa, sobel, ssgi, ssr, sss,
-    temporal_reproject, traa, viewport_shared_texture_at, BoxBlurOptions, DepthAwareBlendOptions,
-    EnvironmentLobe, GaussianBlurOptions, HashBlurOptions, ImportanceSampledEnvironment,
-    LensflareParams, OutlineParams, RetroPassOptions, SharpenNode, SsrOptions,
+    pixelation_pass, recurrent_denoise, retro_pass, rgb_shift, rtt, scanlines, sepia, smaa, sobel,
+    ssgi, ssr, sss, temporal_reproject, traa, viewport_shared_texture_at, BoxBlurOptions,
+    DenoiseAlphaSource, DenoiseMode, DepthAwareBlendOptions, EnvironmentLobe, GaussianBlurOptions,
+    HashBlurOptions, ImportanceSampledEnvironment, LensflareParams, OutlineParams,
+    RecurrentDenoiseOptions, RetroPassOptions, SampleFn, SharpenNode, SsrOptions,
     TemporalReprojectMode, TemporalReprojectOptions,
 };
 use three_rs::nodes::tsl::{
@@ -24,7 +25,7 @@ use three_rs::nodes::tsl::{
     geometry_term, get_specular_dominant_factor, ggx_reflection_sample, ggx_reflection_struct, int,
     mis_power_heuristic, osc_sine, pass_depth_texture, perspective_depth_to_view_z, posterize,
     replace_default_uv, screen_size, screen_uv, smith_g, struct_get, texture_3d_sampled,
-    texture_uv, time, uniform_value, uv, vec2, vec3, vec3_join, vec4_join,
+    texture_uv, time, uniform_value, uv, vec2, vec2_join, vec3, vec3_join, vec4_join,
 };
 use three_rs::nodes::Type;
 use three_rs::textures::{DepthTexture, MinFilter, Texture, TextureFilter};
@@ -878,9 +879,87 @@ pub fn display_quads() -> Vec<DisplayQuad> {
             material,
         });
     }
+    recurrent_denoise_quads(&mut quads);
     specular_helpers_quads(&mut quads);
 
     quads
+}
+
+/// `tools/dump-pages/recurrent_denoise.html` `m09` and `m05`: the diffuse
+/// denoiser over the scene pass (`alphaSource = 'ao'`, the beauty as its own
+/// raw input) and the page's specular configuration reading the first's
+/// output (`alphaSource = 'raylength'`, `accumulate`, every G-buffer bound).
+fn recurrent_denoise_quads(quads: &mut Vec<DisplayQuad>) {
+    let camera = Rc::new(RefCell::new(PerspectiveCamera::new(35.0, 1.6, 0.1, 50.0)));
+    let scene_color = input();
+    let depth = DepthTexture::new();
+    let normal_tex = input();
+    let diffuse_tex = input();
+    let normal: SampleFn = {
+        let normal_tex = normal_tex.clone();
+        Rc::new(move |coord| texture_uv(&normal_tex, coord))
+    };
+
+    let diffuse_denoise = recurrent_denoise(
+        &scene_color,
+        camera.clone(),
+        RecurrentDenoiseOptions {
+            depth: Some(depth.clone()),
+            normal: Some(normal.clone()),
+            raw: Some(scene_color.clone()),
+            ..Default::default()
+        },
+    );
+    diffuse_denoise.set_alpha_source(DenoiseAlphaSource::Ao);
+
+    let metal_roughness: SampleFn = {
+        let (diffuse_tex, normal_tex) = (diffuse_tex.clone(), normal_tex.clone());
+        Rc::new(move |coord: three_rs::nodes::NodeRef| {
+            vec2_join(vec![
+                texture_uv(&diffuse_tex, coord.clone()).w(),
+                texture_uv(&normal_tex, coord).w(),
+            ])
+        })
+    };
+    let diffuse: SampleFn = {
+        let diffuse_tex = diffuse_tex.clone();
+        Rc::new(move |coord| texture_uv(&diffuse_tex, coord))
+    };
+    let specular_denoise = recurrent_denoise(
+        &diffuse_denoise.texture(),
+        camera,
+        RecurrentDenoiseOptions {
+            depth: Some(depth),
+            normal: Some(normal),
+            metal_roughness: Some(metal_roughness),
+            diffuse: Some(diffuse),
+            raw: Some(scene_color),
+            mode: DenoiseMode::Specular,
+            accumulate: true,
+        },
+    );
+    specular_denoise.set_alpha_source(DenoiseAlphaSource::RayLength);
+
+    for (label, fixture, node) in [
+        (
+            "recurrent_denoise_diffuse",
+            "recurrent_denoise_m09_diffuse.wgsl",
+            &diffuse_denoise,
+        ),
+        (
+            "recurrent_denoise_specular",
+            "recurrent_denoise_m05_specular.wgsl",
+            &specular_denoise,
+        ),
+    ] {
+        let mut material = node.quad_material();
+        material.vertex_node = Some(quad_vertex_node());
+        quads.push(DisplayQuad {
+            label,
+            fixture,
+            material,
+        });
+    }
 }
 
 /// `tools/dump-pages/specular_helpers.html`: one `convertToTexture()` quad

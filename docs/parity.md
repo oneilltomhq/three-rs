@@ -822,7 +822,7 @@ Graded examples: 94 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ### Supplementary: `examples/jsm/tsl/display/*.js`
 
-These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 38 Present, 4 Partial, 6 Absent.
+These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 39 Present, 4 Partial, 5 Absent.
 
 | file | status | three-rs port and check |
 |---|---|---|
@@ -855,7 +855,7 @@ These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) an
 | `ParallaxBarrierPassNode.js` | Present | parallax_barrier_pass/ParallaxBarrierPassNode; tests/nodes_display_wgsl.rs (quad gate), tests/stereo_frames.rs; webgpu_display_stereo's parallax-barrier effect (not the graded default) |
 | `PixelationPassNode.js` | Present | pixelation_pass/PixelationPassNode (src/nodes/display/pixelation_pass.rs:35,24); tests/nodes_display_wgsl.rs; webgpu_postprocessing_pixel (ported, ungraded: three.js fails its own reference on this machine) |
 | `radialBlur.js` | Present | radial_blur; webgpu_postprocessing_radial_blur |
-| `RecurrentDenoiseNode.js` | Absent | — |
+| `RecurrentDenoiseNode.js` | Present | recurrent_denoise/RecurrentDenoiseNode (src/nodes/display/recurrent_denoise.rs:177,188); tests/nodes_display_wgsl.rs (recurrent_denoise_diffuse and recurrent_denoise_specular gates, tools/dump-pages/recurrent_denoise.html m09 and m05, and function gates for getNeighborhoodStats, karisTemporalBlend, lobeNormalFalloff and four more), tests/recurrent_denoise_frames.rs; webgpu_postprocessing_ssr_denoise (pending: the page's other nodes are not ported yet); `raw = null` reads the input (three throws), contextNode is not ported, dispose() drops the node (docs/nodes.md §88.2) |
 | `RetroPassNode.js` | Partial | retro_pass/RetroPassNode (src/nodes/display/retro_pass.rs:104); tests/retro_frames.rs; webgpu_postprocessing_retro (ported, ungraded: three fails its own reference here). No MeshStandardMaterial + envMap reflection branch, no per-material cache; docs/nodes.md §79.3 |
 | `RGBShiftNode.js` | Present | rgb_shift; tests/nodes_display_wgsl.rs; webgpu_postprocessing (ported, ungraded) |
 | `Sepia.js` | Present | sepia (src/nodes/display/sepia.rs:13); tests/nodes_display_wgsl.rs (film_sepia_bleach dump, m05; no webgpu page uses it) |
@@ -1677,7 +1677,7 @@ The first refresh of this matrix closed the previous top five. Velocity and TRAA
 1. **The screen-space effect nodes** (`DenoiseNode`; `denoise` 6 pages). `SSRNode` is Present (`webgpu_postprocessing_ssr`, graded). `GTAONode` and `builtinAOContext` are Present now (`webgpu_postprocessing_ao`, ungraded: it is on three's e2e exception list), and so are `DepthOfFieldNode` (`webgpu_postprocessing_dof`), `SSGINode` (`webgpu_postprocessing_ssgi`) and `SSSNode` with `builtinShadowContext` (`webgpu_postprocessing_sss`), all ungraded for the same reason. What is left needs a velocity target and a temporal resolve, and both now exist; these pages are the direct payoff of the velocity work. Porting them also gives the depth reads (`viewportDepthTexture`, `linearDepth`, `getViewPosition`) their first graded consumer.
 2. **EventDispatcher** (issues 153, 159). 8 pages subscribe to `change` or `finished` events. In ordinary use these are render-on-demand behind OrbitControls and chaining animation clips when one ends, and neither works in the port today. `AnimationMixer` and `AnimationAction` fire nothing.
 3. **The TransformControls pages** (`webgpu_modifier_curve`, `webgpu_shadowmap_progressive`, `webgpu_tsl_compute_attractors_particles`). `FirstPersonControls` (8 pages), `FlyControls` (1) and now `TransformControls` are ported and gated against three's classes (`docs/controls.md`). What is left is wiring the gizmo into the pages: `webgpu_modifier_curve`'s port still leaves it out, and the viewer's controls hook is typed for `OrbitControls`.
-4. The remaining display files (`DenoiseNode`, `depthAwareBlur`, `FSR1Node`, `RecurrentDenoiseNode`, `SSAONode`, `TAAUNode`, 0 to 2 pages each). Small and self-contained; most unlock one page.
+4. The remaining display files (`DenoiseNode`, `depthAwareBlur`, `FSR1Node`, `SSAONode`, `TAAUNode`, 0 to 2 pages each). Small and self-contained; most unlock one page.
 
 **Runners-up, and why they rank lower:**
 - RectAreaLight and LTC (3 pages).
