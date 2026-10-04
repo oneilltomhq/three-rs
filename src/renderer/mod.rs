@@ -5323,21 +5323,29 @@ impl Renderer {
         }
         // `ClippingNode`'s planes, from this draw's clipping context: the
         // buffer's `count` is the context's plane count, which is in the
-        // program key, so the two always agree.
+        // program key, so the two agree and the context's own list is
+        // written as it is, with nothing allocated per draw.
         if let BufferSource::ClippingIntersection | BufferSource::ClippingUnion = source {
             let planes = match (source, uniforms.clipping) {
                 (BufferSource::ClippingIntersection, Some(c)) => c.intersection.as_slice(),
                 (_, Some(c)) => c.union.as_slice(),
                 (_, None) => &[],
             };
-            let mut data = vec![[0f32; 4]; count];
-            for (out, plane) in data.iter_mut().zip(planes) {
-                *out = *plane;
-            }
+            let padded;
+            let planes = if planes.len() == count {
+                planes
+            } else {
+                // Not reached while the key holds the counts; a binding
+                // shorter than the shader's array would not validate.
+                padded = (0..count)
+                    .map(|i| planes.get(i).copied().unwrap_or_default())
+                    .collect::<Vec<[f32; 4]>>();
+                &padded
+            };
             return self.slot_buffer(
                 slot,
                 "three-rs clipping planes",
-                bytemuck::cast_slice(&data),
+                bytemuck::cast_slice(planes),
                 wgpu::BufferUsages::UNIFORM,
             );
         }
