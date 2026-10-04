@@ -348,3 +348,48 @@ fn traa_clip_aabb_matches_three() {
 fn traa_flicker_reduction_matches_three() {
     check("traa", Region::Function("flickerReduction"));
 }
+
+#[test]
+fn lut_3d_matches_three() {
+    check("lut_3d", Region::Body);
+}
+
+#[test]
+fn outline_depth_matches_three() {
+    check("outline_depth", Region::Body);
+}
+
+#[test]
+fn outline_prepare_mask_matches_three() {
+    check("outline_prepare_mask", Region::Body);
+}
+
+#[test]
+fn outline_copy_matches_three() {
+    check("outline_copy", Region::Body);
+}
+
+#[test]
+fn outline_edge_detection_matches_three() {
+    check("outline_edge_detection", Region::Body);
+}
+
+#[test]
+fn outline_separable_blur_matches_three() {
+    check("outline_separable_blur", Region::Body);
+}
+
+#[test]
+fn outline_separable_blur2_matches_three() {
+    check("outline_separable_blur2", Region::Body);
+}
+
+#[test]
+fn outline_composite_matches_three() {
+    check("outline_composite", Region::Body);
+}
+
+#[test]
+fn outline_output_matches_three() {
+    check("outline_output", Region::Body);
+}

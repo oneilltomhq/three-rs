@@ -430,6 +430,49 @@ const VARIANT_BACK_SIDE: u64 = 4;
 const VARIANT_TOON_OUTLINE: u64 = 6;
 const VARIANT_FRONT_SIDE: u64 = 5;
 
+/// The two render-object functions `OutlineNode.updateBefore()` installs
+/// around its scene renders, together with the
+/// `resetRendererAndSceneState()` they run under (`docs/nodes.md` §72):
+///
+/// ```js
+/// renderer.setRenderObjectFunction( ( object, …, material, … ) => {
+///     if ( this._selectionCache.has( object ) === draw_selected ) {
+///         const overrideMaterial = object.isSprite ? spriteMaterial : material;
+///         renderer.renderObject( object, …, overrideMaterial, … );
+///     }
+/// } );
+/// ```
+///
+/// Every object whose membership in `selected` differs from `draw_selected`
+/// is skipped, and every other one is drawn with `material` (`sprite_material`
+/// for a sprite) in place of its own. `resetSceneState()`'s `scene.background
+/// = null` is the skybox and colour background being ignored for the
+/// render. The shadow maps are not rendered either: three renders them from
+/// `ShadowNode.updateBefore()`, which only a lit material's program reaches,
+/// and both outline materials are unlit.
+pub(crate) struct OutlineSelection {
+    /// `this._selectionCache`, by `Object3D.id`.
+    pub(crate) selected: Rc<HashSet<u32>>,
+    /// `true` for the selected-objects pass, `false` for the depth pass of
+    /// everything else.
+    pub(crate) draw_selected: bool,
+    pub(crate) material: Rc<MeshBasicNodeMaterial>,
+    pub(crate) sprite_material: Rc<MeshBasicNodeMaterial>,
+}
+
+impl OutlineSelection {
+    /// The material `object` is drawn with, or `None` when this pass skips it.
+    fn material_for(&self, object: &crate::core::Object3D) -> Option<&MeshBasicNodeMaterial> {
+        (self.selected.contains(&object.id) == self.draw_selected).then(|| {
+            if object.payload.is_sprite() {
+                &*self.sprite_material
+            } else {
+                &*self.material
+            }
+        })
+    }
+}
+
 /// One entry of `Renderer::programs`: the compiled program, and the last
 /// frame a material state named it.
 struct ProgramEntry {
@@ -819,6 +862,10 @@ pub struct Renderer {
     /// render-object function. See
     /// [`ToonOutlinePassNode`](crate::nodes::display::ToonOutlinePassNode).
     pub(crate) toon_outline: Option<Rc<MeshBasicNodeMaterial>>,
+    /// `renderer.setRenderObjectFunction()` as `OutlineNode.updateBefore()`
+    /// sets it for its two scene renders. `None` is three's default
+    /// render-object function. See [`OutlineSelection`].
+    pub(crate) outline_selection: Option<OutlineSelection>,
     /// `PassNode.updateBefore()`'s `camera.layers.mask = this._layers.mask` —
     /// the layer mask `_projectObject()` tests against for the duration of one
     /// pass. `None` leaves the camera's own mask alone.
@@ -1305,6 +1352,7 @@ impl Renderer {
             transparent: true,
             lighting_enabled: true,
             toon_outline: None,
+            outline_selection: None,
             camera_layers: None,
             sort_objects: true,
             canvas: None,
@@ -1757,7 +1805,11 @@ impl Renderer {
         // What `Background.update()` builds the material's `colorNode` from is
         // the material's variant in the program cache: the cube map by
         // identity, a colour node by its value (it is baked as a constant).
-        let background = match scene.background.clone() {
+        let scene_background = scene
+            .background
+            .clone()
+            .filter(|_| self.outline_selection.is_none());
+        let background = match scene_background.clone() {
             Some(Background::CubeTexture(background)) => Some((
                 materials::background_color_node(&background),
                 hash_of(&("cube", background.id())),
@@ -1849,7 +1901,9 @@ impl Renderer {
         // scene from its own camera before the main pass builds any material,
         // because `LightDesc.shadow_map` is what decides whether a Phong
         // program carries the filter at all.
-        self.render_shadows(scene, &render_list, camera);
+        if self.outline_selection.is_none() {
+            self.render_shadows(scene, &render_list, camera);
+        }
 
         // `LightsNode`'s list, as the materials see it: the kind decides which
         // `AnalyticLightNode` subclass generates, and the shadow map (present
@@ -1945,11 +1999,17 @@ impl Renderer {
         if self.transparent {
             for item in &render_list.transparent {
                 let object = item.node.borrow();
-                let material = scene
-                    .override_material
-                    .as_ref()
-                    .or(item.material(&object))
-                    .unwrap_or(&self.default_material);
+                let material = match &self.outline_selection {
+                    Some(selection) => match selection.material_for(&object) {
+                        Some(material) => material,
+                        None => continue,
+                    },
+                    None => scene
+                        .override_material
+                        .as_ref()
+                        .or(item.material(&object))
+                        .unwrap_or(&self.default_material),
+                };
                 // `material.transparent === true && material.side ===
                 // DoubleSide && material.forceSinglePass === false`.
                 let split = material.transparent
@@ -1980,11 +2040,22 @@ impl Renderer {
             // `new Mesh( geometry )` with no material gets
             // `new MeshBasicMaterial()`, which under `WebGPURenderer` is a
             // `MeshBasicNodeMaterial`: white, opaque, front side, depth on.
-            let material: &MeshBasicNodeMaterial = scene
-                .override_material
-                .as_ref()
-                .or(item.material(&object))
-                .unwrap_or(&self.default_material);
+            //
+            // `OutlineNode`'s render-object functions skip the objects on the
+            // other side of the selection and draw the rest with the pass's
+            // own material (`resetSceneState()` has cleared
+            // `scene.overrideMaterial` for them).
+            let material: &MeshBasicNodeMaterial = match &self.outline_selection {
+                Some(selection) => match selection.material_for(&object) {
+                    Some(material) => material,
+                    None => continue,
+                },
+                None => scene
+                    .override_material
+                    .as_ref()
+                    .or(item.material(&object))
+                    .unwrap_or(&self.default_material),
+            };
 
             let primitive = Primitive::of(&object, &geometry, material.wireframe);
 
@@ -2219,7 +2290,7 @@ impl Renderer {
         // `Background.update()`'s `forceClear`: a `Color` background clears
         // even with `autoClear` off (`if ( renderer.autoClear === true ||
         // forceClear === true )`); anything else clears only when it is on.
-        let (clear_color, force_clear) = match &scene.background {
+        let (clear_color, force_clear) = match &scene_background {
             Some(Background::Color(Color { r, g, b })) => ([*r, *g, *b, 1.0], true),
             _ => (self.clear_color, false),
         };

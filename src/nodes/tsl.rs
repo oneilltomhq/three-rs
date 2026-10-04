@@ -3224,27 +3224,49 @@ pub fn texture_with_uv(map: &Texture, coord: NodeRef) -> NodeRef {
 /// fixed level, never the implicit-derivative `textureSample` a raymarch loop
 /// could not use. The node is a handle for `.sample()` and `.normal()`, the
 /// two things a raymarcher calls on it.
+///
+/// [`texture_3d_sampled`] is `texture3D( texture )`, with no level: the
+/// colour lookup of `Lut3DNode`, a plain `textureSample`.
 #[derive(Clone, Debug)]
 pub struct Texture3DNode {
     source: Rc<TextureSource>,
-    level: NodeRef,
+    level: Option<NodeRef>,
 }
 
 /// `texture3D( texture, null, level )`.
 pub fn texture_3d(texture: &crate::textures::Data3DTexture, level: NodeRef) -> Texture3DNode {
     Texture3DNode {
         source: Rc::new(TextureSource::Texture3D(texture.clone())),
-        level,
+        level: Some(level),
+    }
+}
+
+/// `texture3D( texture )` — no level, so `.sample( uvw )` is
+/// `textureSample`, with the implicit derivatives only a fragment stage has.
+/// `webgpu_postprocessing_3dlut` reads its lookup table through one.
+pub fn texture_3d_sampled(texture: &crate::textures::Data3DTexture) -> Texture3DNode {
+    Texture3DNode {
+        source: Rc::new(TextureSource::Texture3D(texture.clone())),
+        level: None,
     }
 }
 
 impl Texture3DNode {
+    /// `textureSampleLevel` at the node's level, or `textureSample` without
+    /// one.
+    fn mode(&self) -> SampleMode {
+        match &self.level {
+            Some(level) => SampleMode::Level(level.clone()),
+            None => SampleMode::Sample,
+        }
+    }
+
     /// `node.sample( uv )` — the `vec4` texel at `uv` in `[ 0, 1 ]³`.
     pub fn sample(&self, uv: impl Into<NodeRef>) -> NodeRef {
         NodeRef::new(Node::Texture {
             texture: self.source.clone(),
             uv: uv.into(),
-            mode: SampleMode::Level(self.level.clone()),
+            mode: self.mode(),
             ty: Type::Vec4,
         })
     }
@@ -3257,7 +3279,7 @@ impl Texture3DNode {
         NodeRef::new(Node::Texture {
             texture: self.source.clone(),
             uv: uv.into(),
-            mode: SampleMode::Level(self.level.clone()),
+            mode: self.mode(),
             ty: Type::F32,
         })
     }

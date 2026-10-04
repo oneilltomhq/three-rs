@@ -325,6 +325,8 @@ LightprobeCubecamera, webgpu_lightprobe_cubecamera, "../../examples/webgpu_light
 Sky, webgpu_sky, "../../examples/webgpu_sky.rs";
 Backdrop, webgpu_backdrop, "../../examples/webgpu_backdrop.rs";
 PostprocessingMotionBlur, webgpu_postprocessing_motion_blur, "../../examples/webgpu_postprocessing_motion_blur.rs";
+Postprocessing3dlut, webgpu_postprocessing_3dlut, "../../examples/webgpu_postprocessing_3dlut.rs";
+PostprocessingOutline, webgpu_postprocessing_outline, "../../examples/webgpu_postprocessing_outline.rs";
 }
 
 /// Where an example's assets come from: three.js at the commit this port is

@@ -8,7 +8,9 @@
 # Vulkan, except those with a reason after the name, which the reason explains.
 # A name that is not a test target fails both jobs.
 
+three-rs/lut_3d_frames
 three-rs/nodes_frame
+three-rs/outline_frames
 three-rs/pmrem_equirect
 three-rs/pmrem_scene
 three-rs/renderer_blending

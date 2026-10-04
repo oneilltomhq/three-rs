@@ -2102,6 +2102,12 @@ impl NodeBuilder {
                     }
                 };
                 let snippet = match mode {
+                    // `_generateTextureSample()`: outside the fragment stage
+                    // there are no implicit derivatives, so a plain sample is
+                    // `generateTextureSampleLevel()` at a literal level `0`.
+                    SampleMode::Sample if self.stage != Stage::Fragment => {
+                        format!("textureSampleLevel( {name}, {name}_sampler, {suv}, 0 )")
+                    }
                     SampleMode::Sample => {
                         format!("textureSample( {name}, {name}_sampler, {suv} )")
                     }
