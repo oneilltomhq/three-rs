@@ -676,28 +676,35 @@ impl BufferGeometry {
     ///
     /// The accumulation runs through the `normal` attribute itself, so every
     /// partial sum is rounded to `f32` before the next triangle adds to it.
+    /// An existing `normal` of the right count is written in place through
+    /// its setters, whatever its array kind and interleaved or not, and
+    /// marked for re-upload; a missing one (or one of another count) is
+    /// replaced by a new `Float32Array` attribute.
     pub fn compute_vertex_normals(&mut self) {
-        let Some(position) = self.position().cloned() else {
+        let Some(count) = self.position().map(BufferAttribute::count) else {
             return;
         };
 
         let needs_new = match self.normal() {
-            Some(normal) => normal.count() != position.count(),
+            Some(normal) => normal.count() != count,
             None => true,
         };
+        if needs_new {
+            self.set_attribute("normal", BufferAttribute::new(vec![0.0; count * 3], 3));
+        }
 
-        let mut normal = if needs_new {
-            BufferAttribute::new(vec![0.0; position.count() * 3], 3)
-        } else {
-            let mut normal = self
-                .normal()
-                .cloned()
-                .expect("three-rs: !needs_new means the normal attribute is there");
-            for i in 0..normal.count() {
-                normal.set_xyz(i, 0.0, 0.0, 0.0);
-            }
-            normal
+        let position = self.position().expect("three-rs: checked above");
+        let normal = self.normal().expect("three-rs: set above if missing");
+        let set_xyz = |i: usize, v: &Vector3| {
+            normal.store(i, 0, v.x);
+            normal.store(i, 1, v.y);
+            normal.store(i, 2, v.z);
         };
+        if !needs_new {
+            for i in 0..normal.count() {
+                set_xyz(i, &Vector3::ZERO);
+            }
+        }
 
         let mut cb = Vector3::ZERO;
         let mut ab = Vector3::ZERO;
@@ -734,9 +741,9 @@ impl BufferGeometry {
                 n_b.add(&cb);
                 n_c.add(&cb);
 
-                normal.set_xyz(v_a, n_a.x, n_a.y, n_a.z);
-                normal.set_xyz(v_b, n_b.x, n_b.y, n_b.z);
-                normal.set_xyz(v_c, n_c.x, n_c.y, n_c.z);
+                set_xyz(v_a, &n_a);
+                set_xyz(v_b, &n_b);
+                set_xyz(v_c, &n_c);
 
                 i += 3;
             }
@@ -753,17 +760,18 @@ impl BufferGeometry {
                 ab.sub_vectors(&p_a, &p_b);
                 cb.cross(&ab);
 
-                normal.set_xyz(i, cb.x, cb.y, cb.z);
-                normal.set_xyz(i + 1, cb.x, cb.y, cb.z);
-                normal.set_xyz(i + 2, cb.x, cb.y, cb.z);
+                set_xyz(i, &cb);
+                set_xyz(i + 1, &cb);
+                set_xyz(i + 2, &cb);
 
                 i += 3;
             }
         }
 
-        self.set_attribute("normal", normal);
-
         self.normalize_normals();
+        if let Some(normal) = self.normal() {
+            normal.set_needs_update();
+        }
     }
 
     /// `BufferGeometry.normalizeNormals()`.

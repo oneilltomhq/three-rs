@@ -120,3 +120,43 @@ fn geometry_clone_keeps_views_sharing_a_buffer() {
         .collect();
     assert_eq!(groups[0], groups[1], "one vertex buffer group");
 }
+
+/// `computeVertexNormals()` writes an existing normal through `setXYZ()`, so
+/// an interleaved normal stays a view of its buffer (and the buffer is the
+/// one marked for re-upload) rather than being replaced by a plain copy.
+#[test]
+fn compute_vertex_normals_writes_an_interleaved_normal_in_place() {
+    // position xyz, normal xyz per vertex: one triangle in the z = 0 plane.
+    let buffer = Rc::new(InterleavedBuffer::new(
+        vec![
+            0.0, 0.0, 0.0, 9.0, 9.0, 9.0, //
+            1.0, 0.0, 0.0, 9.0, 9.0, 9.0, //
+            0.0, 1.0, 0.0, 9.0, 9.0, 9.0,
+        ],
+        6,
+    ));
+    let mut geometry = BufferGeometry::new();
+    geometry.set_attribute(
+        "position",
+        BufferAttribute::interleaved(buffer.clone(), 3, 0, false),
+    );
+    geometry.set_attribute(
+        "normal",
+        BufferAttribute::interleaved(buffer.clone(), 3, 3, false),
+    );
+    let version = buffer.version();
+
+    geometry.compute_vertex_normals();
+
+    let normal = geometry.get_attribute("normal").unwrap();
+    assert!(normal.is_interleaved(), "still a view");
+    assert!(Rc::ptr_eq(normal.data_buffer().unwrap(), &buffer));
+    for i in 0..3 {
+        assert_eq!(
+            (normal.get_x(i), normal.get_y(i), normal.get_z(i)),
+            (0.0, 0.0, 1.0)
+        );
+    }
+    assert_eq!(buffer.array()[0..3], [0.0, 0.0, 0.0], "positions untouched");
+    assert!(buffer.version() > version, "the shared buffer re-uploads");
+}
