@@ -727,6 +727,12 @@ pub enum BufferSource {
     /// The same for `cameraProjectionMatrices` — the sub-cameras'
     /// `projectionMatrix`.
     CameraProjectionMatrices,
+    /// `ClippingNode`'s `uniformArray( intersectionPlanes ).setGroup(
+    /// renderGroup )` — the clipping context's intersection planes in view
+    /// space, one `vec4` each, written per draw from the draw's context.
+    ClippingIntersection,
+    /// The same for the context's `unionPlanes`.
+    ClippingUnion,
     /// `buffer( previousBoneMatrices, 'mat4', bones )` — `Skinning.js`'
     /// `getPreviousSkinnedPosition()`: the skeleton's bone matrices as they
     /// were before this frame's `skeleton.update()`, for the
@@ -820,13 +826,18 @@ impl BufferSource {
     }
 
     /// The group the binding joins and the name three gives it: the two
-    /// camera arrays are `renderGroup` buffers named by `setName()`, and
-    /// everything else is an object-group `NodeBuffer_N` (`None`).
+    /// camera arrays are `renderGroup` buffers named by `setName()`, the
+    /// clipping planes are unnamed `renderGroup` buffers, and everything else
+    /// is an object-group `NodeBuffer_N` (`None`).
     pub(crate) fn group_and_name(&self) -> (UniformGroup, Option<&'static str>) {
         match self {
             BufferSource::CameraViewMatrices => (UniformGroup::Render, Some("cameraViewMatrices")),
             BufferSource::CameraProjectionMatrices => {
                 (UniformGroup::Render, Some("cameraProjectionMatrices"))
+            }
+            // `setGroup( renderGroup )` without a name: `NodeBuffer_N`.
+            BufferSource::ClippingIntersection | BufferSource::ClippingUnion => {
+                (UniformGroup::Render, None)
             }
             _ => (UniformGroup::Object, None),
         }
@@ -2249,6 +2260,8 @@ impl std::hash::Hash for BufferSource {
             | BufferSource::PreviousBoneMatrices
             | BufferSource::CameraViewMatrices
             | BufferSource::CameraProjectionMatrices
+            | BufferSource::ClippingIntersection
+            | BufferSource::ClippingUnion
             | BufferSource::Storage
             | BufferSource::AtomicStorage => {}
         }
@@ -2312,6 +2325,8 @@ impl std::fmt::Debug for BufferSource {
             BufferSource::PreviousBoneMatrices => f.write_str("PreviousBoneMatrices"),
             BufferSource::CameraViewMatrices => f.write_str("CameraViewMatrices"),
             BufferSource::CameraProjectionMatrices => f.write_str("CameraProjectionMatrices"),
+            BufferSource::ClippingIntersection => f.write_str("ClippingIntersection"),
+            BufferSource::ClippingUnion => f.write_str("ClippingUnion"),
             BufferSource::Attribute(data) => f
                 .debug_tuple("Attribute")
                 .field(&format_args!("{} floats", data.len()))

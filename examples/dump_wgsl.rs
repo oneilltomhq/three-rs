@@ -229,6 +229,7 @@ fn main() {
             array_cameras: 0,
             orthographic: false,
             ambient_occlusion: None,
+            clipping: None,
         },
     );
 

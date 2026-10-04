@@ -138,6 +138,14 @@ pub struct SetupContext {
     /// which every non-transparent material drawn by that pass multiplies into
     /// its `AmbientOcclusion`. See [`AoContext`].
     pub ambient_occlusion: Option<AoContext>,
+    /// `builder.clippingContext` — the planes of the `ClippingGroup`s above
+    /// the object. Its plane *counts* and whether the device clips in
+    /// hardware change the generated WGSL; the plane values do not, and stay
+    /// out of the key (see [`ClippingContext`]'s `Hash`).
+    ///
+    /// [`ClippingContext`]: crate::nodes::clipping::ClippingContext
+    #[doc(hidden)]
+    pub clipping: Option<std::rc::Rc<crate::nodes::clipping::ClippingContext>>,
 }
 
 /// `builtinAOContext( aoNode )` — the `getAO` hook a pass installs on the
@@ -640,6 +648,20 @@ fn setup_inner(
         pre_vertex.push(normal_local().assign(inv_t.mul(normal_local()).normalize()));
     }
 
+    // `setupHardwareClipping()` and `setupClipping()`: a `ClippingGroup`'s
+    // planes. `clipping()` is the first statement of the fragment flow, with
+    // or without a `fragmentNode`; `clippingAlpha()` waits for the lighting
+    // setup below. (Three pushes `clipping()` ahead of `setupDepth()` too;
+    // the port writes a `depthNode`'s `output.depth` before every fragment
+    // statement, so a material with both has the two the other way round.)
+    let clipping = crate::nodes::clipping::MaterialClipping::new(
+        ctx.clipping.as_deref(),
+        material.alpha_to_coverage
+            && crate::nodes::builder::current_context(|cx| cx.alpha_to_coverage_samples),
+    );
+    fragment.extend(clipping.first);
+    let clip_alpha = clipping.alpha;
+
     // --- setupDiscard: `If( maskNode.not(), () => Discard() )`, the first
     // thing in the fragment flow, before `setupDiffuseColor`.
     if let Some(mask) = &material.mask_node {
@@ -650,11 +672,11 @@ fn setup_inner(
     let output = if let Some(fragment_node) = &material.fragment_node {
         fragment_node.clone()
     } else if material.kind == MaterialKind::Phong {
-        setup_phong(material, ctx, true, &mut fragment)
+        setup_phong(material, ctx, true, clip_alpha, &mut fragment)
     } else if material.kind == MaterialKind::Lambert || material.kind == MaterialKind::Toon {
-        setup_phong(material, ctx, false, &mut fragment)
+        setup_phong(material, ctx, false, clip_alpha, &mut fragment)
     } else if material.kind == MaterialKind::Standard || material.kind == MaterialKind::Physical {
-        setup_standard(material, ctx, &mut fragment)
+        setup_standard(material, ctx, clip_alpha, &mut fragment)
     } else if material.kind == MaterialKind::Normal {
         // `MeshNormalNodeMaterial.setupDiffuseColor()` replaces the base
         // implementation outright: no `colorNode`, no vertex colours, no alpha
@@ -675,6 +697,7 @@ fn setup_inner(
         ]))));
         // `setupAmbientOcclusion()` still runs; nothing lit reads it.
         setup_ambient_occlusion(material, ctx, &mut fragment);
+        fragment.extend(clip_alpha);
         vec4_join(vec![diffuse_color().xyz(), diffuse_color().w()]).max(float(0.0))
     } else {
         setup_diffuse_color(material, ctx, &mut fragment);
@@ -771,6 +794,13 @@ fn setup_inner(
             }
             None => outgoing,
         };
+
+        // `clippingAlpha()`, after `setupLighting()`. Three's `LightsNode`
+        // builds lazily, so its statements follow these; the port's lit
+        // paths above have already pushed theirs. They read only the
+        // diffuse colour's `rgb`, and the alpha these write is read by the
+        // output below, so the order changes nothing the shader computes.
+        fragment.extend(clip_alpha);
 
         // `basicOutput = vec4( outgoingLight, diffuseColor.a ).max( 0 )`.
         vec4_join(vec![outgoing, diffuse_color().w()]).max(float(0.0))
@@ -888,9 +918,12 @@ fn setup_inner(
         output_node,
         mrt,
         emit_output_property: material.fragment_node.is_none(),
-        vertex_statements: Vec::new(),
+        // `setupHardwareClipping()`: after the vertex node, so the loop
+        // reads the varyings the fragment stage asked for.
+        vertex_statements: clipping.hardware.iter().map(|(l, _)| l.clone()).collect(),
         position,
         geometry_has_tangent: ctx.has_tangent_attribute,
+        clip_distances: clipping.hardware.map_or(0, |(_, count)| count),
     }
 }
 
@@ -1246,6 +1279,7 @@ fn setup_phong(
     material: &MeshBasicNodeMaterial,
     ctx: &SetupContext,
     specular: bool,
+    clip_alpha: Vec<NodeRef>,
     fragment: &mut Vec<NodeRef>,
 ) -> NodeRef {
     setup_diffuse_color(material, ctx, fragment);
@@ -1263,6 +1297,9 @@ fn setup_phong(
         fragment.push(specular_color().assign(specular_value));
     }
     fragment.push(emissive_color().assign(material_emissive_value(material)));
+    // `clippingAlpha()`: the `LightsNode` below is built lazily in three, so
+    // its statements land after this.
+    fragment.extend(clip_alpha);
 
     let outgoing = if material.lights {
         // `LightsNode`: the scene's lights, or the selective subset the
@@ -1486,6 +1523,7 @@ fn material_emissive_value(material: &MeshBasicNodeMaterial) -> NodeRef {
 fn setup_standard(
     material: &MeshBasicNodeMaterial,
     ctx: &SetupContext,
+    clip_alpha: Vec<NodeRef>,
     fragment: &mut Vec<NodeRef>,
 ) -> NodeRef {
     // --- setupDiffuseColor
@@ -1678,6 +1716,8 @@ fn setup_standard(
     }
 
     fragment.push(emissive_color().assign(material_emissive_value(material)));
+    // `clippingAlpha()`, ahead of the lazily built `LightsNode`.
+    fragment.extend(clip_alpha);
 
     // `NodeMaterial.setupLighting()`: `sceneLighting = this.lights === true &&
     // builder.renderer.lighting.enabled`, `materialLightings = sceneLighting ?

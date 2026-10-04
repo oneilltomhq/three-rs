@@ -19,7 +19,8 @@ use crate::lights::LightObject;
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::{Matrix4, Sphere};
 use crate::objects::{
-    BatchedMesh, InstancedBufferAttribute, InstancedMesh, Line, Mesh, Points, SkinnedMesh, Sprite,
+    BatchedMesh, ClippingGroup, InstancedBufferAttribute, InstancedMesh, Line, Mesh, Points,
+    SkinnedMesh, Sprite,
 };
 
 /// The subclass state of one [`crate::core::Object3D`].
@@ -60,6 +61,9 @@ pub enum Payload {
     /// it through `RenderList.lights`, which `_projectObject()` fills from
     /// `object.is_light` — set alongside this variant.
     Light(LightObject),
+    /// `ClippingGroup extends Group` — the planes `_projectObject()` folds
+    /// into the clipping context of everything below it.
+    ClippingGroup(ClippingGroup),
 }
 
 impl fmt::Debug for Payload {
@@ -82,6 +86,7 @@ impl fmt::Debug for Payload {
             Payload::Points(_) => "Points",
             Payload::Sprite(_) => "Sprite",
             Payload::Light(_) => "Light",
+            Payload::ClippingGroup(_) => "ClippingGroup",
         };
         f.write_str(name)
     }
@@ -145,6 +150,27 @@ impl Payload {
     /// `object.isSprite`.
     pub fn is_sprite(&self) -> bool {
         matches!(self, Payload::Sprite(_))
+    }
+
+    /// `object.isClippingGroup`.
+    pub fn is_clipping_group(&self) -> bool {
+        matches!(self, Payload::ClippingGroup(_))
+    }
+
+    /// The `ClippingGroup` this node is, if it is one.
+    pub fn clipping_group(&self) -> Option<&ClippingGroup> {
+        match self {
+            Payload::ClippingGroup(group) => Some(group),
+            _ => None,
+        }
+    }
+
+    /// The `ClippingGroup` this node is, mutably, if it is one.
+    pub fn clipping_group_mut(&mut self) -> Option<&mut ClippingGroup> {
+        match self {
+            Payload::ClippingGroup(group) => Some(group),
+            _ => None,
+        }
     }
 
     /// The `Sprite` this node is, if it is one.

@@ -265,8 +265,7 @@ struct CanvasTarget {
     color: wgpu::Texture,
     msaa: Option<wgpu::Texture>,
     /// `Renderer.depth` is `true` by default, so a canvas pass gets a depth
-    /// buffer; `WebGPUUtils.getCurrentDepthStencilFormat()` picks `depth24plus`
-    /// when `stencil` and `reversedDepthBuffer` are both off.
+    /// buffer, in [`depth_buffer_format`].
     depth: Option<wgpu::Texture>,
 }
 
@@ -670,6 +669,9 @@ struct Draw {
     sub_cameras: Vec<SubCameraDraw>,
     /// Draw through the geometry's wireframe index (`Primitive::wireframe`).
     wireframe: bool,
+    /// `WebGPUBackend.draw()`'s `setStencilReference( material.stencilRef )`,
+    /// set when the material writes the stencil.
+    stencil_ref: Option<u32>,
 }
 
 /// One sub-camera of an `ArrayCamera` draw: `pass.setViewport( floor( vp *
@@ -738,6 +740,10 @@ struct PassTarget {
 struct ClearOps {
     color: Option<[f64; 4]>,
     depth: bool,
+    /// `RenderContext.clearStencil`, to `clearStencilValue` 0. Read only on a
+    /// pass whose depth buffer has a stencil aspect
+    /// ([`RendererParameters::stencil`]).
+    stencil: bool,
 }
 
 impl ClearOps {
@@ -746,6 +752,7 @@ impl ClearOps {
         Self {
             color: Some(color),
             depth: true,
+            stencil: true,
         }
     }
 }
@@ -842,6 +849,12 @@ pub struct Renderer {
 
     /// `Renderer._samples`: `antialias === true` means 4.
     samples: u32,
+    /// `Renderer.stencil` — [`RendererParameters::stencil`].
+    stencil: bool,
+    /// `backend.hasFeature( 'clip-distances' )` on this device — what
+    /// `builder.isAvailable( 'clipDistance' )` answers, so whether a
+    /// `ClippingGroup`'s union planes clip in the vertex stage or by discard.
+    clip_distances: bool,
     pixel_ratio: f64,
     width: f64,
     height: f64,
@@ -1186,6 +1199,13 @@ pub struct RendererParameters {
     /// `parameters.antialias` — MSAA on the swap chain / default render
     /// target.
     pub antialias: bool,
+    /// `parameters.stencil` — whether the canvas and the internal framebuffer
+    /// target get a stencil aspect: `depth24plus-stencil8` in place of
+    /// `depth24plus`, which `WebGPUUtils.getCurrentDepthStencilFormat()`
+    /// picks. Off by default, as in three.js; a material's `stencil_*`
+    /// fields only take effect with it on. A render target's own depth buffer
+    /// never has one (three's `RenderTarget.stencilBuffer` is not ported).
+    pub stencil: bool,
 }
 
 /// The wgpu backend every entry point in this crate asks an instance for, in
@@ -1342,8 +1362,13 @@ impl Renderer {
         // way and which the subgroup TSL functions need
         // (`WGSLNodeBuilder.enableSubGroups()`). An adapter without it only
         // costs those kernels: `compute()` logs three's error and skips them.
+        //
+        // `CLIP_DISTANCES` is WebGPU's `clip-distances`, which
+        // `NodeMaterial.setupHardwareClipping()` uses for a `ClippingGroup`'s
+        // union planes. Without it the planes discard in the fragment stage.
         let wanted = wgpu::Features::FLOAT32_FILTERABLE
             | wgpu::Features::RG11B10UFLOAT_RENDERABLE
+            | wgpu::Features::CLIP_DISTANCES
             | COMPRESSION_FEATURES
             | SUBGROUP_FEATURES;
         let required_features = adapter.features() & wanted;
@@ -1410,6 +1435,7 @@ impl Renderer {
         );
 
         let mipmap_shader = MipmapShader::new(&device);
+        let clip_distances = device.features().contains(wgpu::Features::CLIP_DISTANCES);
 
         Self {
             device,
@@ -1417,6 +1443,8 @@ impl Renderer {
             adapter_info,
             adapter,
             samples: if parameters.antialias { 4 } else { 0 },
+            stencil: parameters.stencil,
+            clip_distances,
             pixel_ratio: 1.0,
             width: 300.0,
             height: 150.0,
@@ -1630,6 +1658,7 @@ impl Renderer {
         let mut renderer = Self::with_instance(
             RendererParameters {
                 antialias: self.samples > 0,
+                stencil: self.stencil,
             },
             instance,
         )?;
@@ -1733,9 +1762,9 @@ impl Renderer {
 
     /// `renderer.clear( color, depth )` — a manual clear of the target that is
     /// current *right now*, which ignores the `auto_clear` switches. three.js'
-    /// third argument, `stencil`, has nothing behind it here: the port
-    /// allocates no stencil buffer, so the parameter would be a no-op and is
-    /// left out until one exists.
+    /// third argument, `stencil`, is not a parameter: a target with a stencil
+    /// aspect ([`RendererParameters::stencil`]) has it cleared to 0 along with
+    /// the depth, while [`clear_depth`](Self::clear_depth) leaves it.
     ///
     /// On the GPU it is a `beginRenderPass` with `loadOp: "clear"` and no
     /// draws, in its own command encoder and its own submit, exactly as
@@ -1756,6 +1785,14 @@ impl Renderer {
     /// shows. A clear with a render target bound — every one an
     /// `SsaaPassNode` makes — takes neither branch and is the bare pass.
     pub fn clear(&mut self, color: bool, depth: bool) {
+        // `clear( color, depth, stencil = true )`: the stencil goes with the
+        // depth here, since nothing in the port clears one without the other
+        // except `clearDepth()`.
+        self.clear_buffers(color, depth, depth);
+    }
+
+    /// `Renderer.clear( color, depth, stencil )`.
+    fn clear_buffers(&mut self, color: bool, depth: bool, stencil: bool) {
         let use_frame_buffer_target =
             self.needs_frame_buffer_target() && self.render_target.is_none();
 
@@ -1775,6 +1812,7 @@ impl Renderer {
         let clear = ClearOps {
             color: color.then_some(self.clear_color),
             depth,
+            stencil,
         };
         self.draw(&[], UniformContext::default(), &pass_target, clear);
 
@@ -1790,7 +1828,7 @@ impl Renderer {
     /// `renderer.clearDepth()` — `clear( false, true )`. The call a second view
     /// makes so it is not depth-tested against the first.
     pub fn clear_depth(&mut self) {
-        self.clear(false, true);
+        self.clear_buffers(false, true, false);
     }
 
     /// `renderer.render( scene, camera )`.
@@ -2356,6 +2394,9 @@ impl Renderer {
                     // disabled builds its materials with no lights *and* no
                     // environment (see `SetupContext::lighting_disabled`).
                     lighting_disabled: !self.lighting_enabled,
+                    // `renderItem.clippingContext`, built by the walk on
+                    // this device's `clip-distances` support.
+                    clipping: item.clipping.clone(),
                     // `builder.context.getAO` from the pass's
                     // `builtinAOContext`; `setupAmbientOcclusion()` applies
                     // it (and skips transparent materials).
@@ -2500,6 +2541,9 @@ impl Renderer {
             ClearOps {
                 color: self.auto_clear_color.then_some(clear_color),
                 depth: self.auto_clear_depth,
+                // `renderer.autoClearStencil`, which the port keeps at its
+                // default of true.
+                stencil: true,
             }
         } else {
             ClearOps::default()
@@ -2745,6 +2789,7 @@ impl Renderer {
                     &projection,
                     &view,
                     camera.coordinate_system(),
+                    self.clip_distances,
                 ),
                 0.0,
                 &mut shadow_list,
@@ -2829,6 +2874,9 @@ impl Renderer {
                         // shadow material is never lit, so three's dead
                         // `AmbientOcclusion` assignment would change nothing.
                         ambient_occlusion: None,
+                        // A `ClippingGroup` with `clipShadows` clips the
+                        // shadow draw too; the walk left the others out.
+                        clipping: item.clipping.clone(),
                         lights: Vec::new(),
                         // The shadow pass does not carry morph targets yet:
                         // nothing in the ladder both morphs and casts a shadow.
@@ -3055,6 +3103,7 @@ impl Renderer {
                 ClearOps {
                     color: Some([0.0, 0.0, 0.0, 0.0]),
                     depth: false,
+                    stencil: false,
                 },
             );
         }
@@ -3181,6 +3230,7 @@ impl Renderer {
                     &face_camera.projection_matrix,
                     &face_camera.matrix_world_inverse,
                     camera.coordinate_system(),
+                    self.clip_distances,
                 ),
                 0.0,
                 &mut face_list,
@@ -3239,6 +3289,9 @@ impl Renderer {
                         // shadow material is never lit, so three's dead
                         // `AmbientOcclusion` assignment would change nothing.
                         ambient_occlusion: None,
+                        // A `ClippingGroup` with `clipShadows` clips the
+                        // shadow draw too; the walk left the others out.
+                        clipping: item.clipping.clone(),
                         lights: Vec::new(),
                         morph: None,
                         skin: None,
@@ -3375,7 +3428,7 @@ impl Renderer {
         // `PassNode.updateBefore()` writes `camera.layers.mask` and restores it
         // after its render. The port keeps the override on the renderer and
         // applies it here, which is the only place the mask is read.
-        let mut project_camera = ProjectCamera::new(camera);
+        let mut project_camera = ProjectCamera::new(camera, self.clip_distances);
         if let Some(layers) = self.camera_layers {
             project_camera.layers = layers;
         }
@@ -3450,6 +3503,7 @@ impl Renderer {
             ClearOps {
                 color: self.auto_clear_color.then_some(self.clear_color),
                 depth: self.auto_clear_depth,
+                stencil: true,
             }
         } else {
             ClearOps::default()
@@ -3611,6 +3665,11 @@ impl Renderer {
             {
                 *slot = Some(*extra);
             }
+            // `renderObject.context.stencil`: the pass's depth buffer has a
+            // stencil aspect.
+            let stencil = target
+                .depth_format
+                .is_some_and(|format| format.has_stencil_aspect());
             let state = RenderState {
                 color_format: target.color_format,
                 color_attachments: 1 + target.extra_colors.len() as u32,
@@ -3621,6 +3680,18 @@ impl Renderer {
                 depth_test: item.material.depth_test,
                 depth_write: item.material.depth_write,
                 depth_func: item.material.depth_func,
+                color_write: item.material.color_write,
+                stencil_face: stencil.then(|| item.material.stencil_face()).flatten(),
+                stencil_read_mask: if stencil {
+                    item.material.stencil_func_mask
+                } else {
+                    0
+                },
+                stencil_write_mask: if stencil {
+                    item.material.stencil_write_mask
+                } else {
+                    0
+                },
                 alpha_to_coverage: item.material.alpha_to_coverage,
                 blend: target
                     .color_blend
@@ -3726,6 +3797,7 @@ impl Renderer {
                 viewport_size: Vector2::new(target.width as f64, target.height as f64),
                 viewport: target.viewport.to_vector4(),
                 screen_dpr: self.pixel_ratio,
+                clipping: item.setup.clipping.as_deref(),
                 ..camera_uniforms
             };
 
@@ -3851,6 +3923,8 @@ impl Renderer {
                 occlusion_test: object.as_ref().is_some_and(|object| object.occlusion_test),
                 sub_cameras,
                 wireframe: item.primitive.wireframe,
+                stencil_ref: (stencil && item.material.stencil_write)
+                    .then_some(item.material.stencil_ref),
             });
 
             // `nodes.updateAfter( renderObject )`, once the draw is made. The
@@ -4014,7 +4088,19 @@ impl Renderer {
                         },
                         store: wgpu::StoreOp::Store,
                     }),
-                    stencil_ops: None,
+                    // `WebGPUBackend.beginRender()`: a stencil aspect gets
+                    // `stencilLoadOp` from `clearStencil` and is stored.
+                    stencil_ops: target
+                        .depth_format
+                        .is_some_and(|format| format.has_stencil_aspect())
+                        .then_some(wgpu::Operations {
+                            load: if clear.stencil {
+                                wgpu::LoadOp::Clear(0)
+                            } else {
+                                wgpu::LoadOp::Load
+                            },
+                            store: wgpu::StoreOp::Store,
+                        }),
                 }
             }),
             occlusion_query_set,
@@ -4064,6 +4150,9 @@ impl Renderer {
                     .get(&draw.pipeline)
                     .expect("three-rs: the draw's pipeline was built into the cache above"),
             );
+            if let Some(reference) = draw.stencil_ref {
+                pass.set_stencil_reference(reference);
+            }
             for (index, group) in draw.bind_groups.iter().enumerate() {
                 pass.set_bind_group(index as u32, group, &[]);
             }
@@ -5325,6 +5414,34 @@ impl Renderer {
                 wgpu::BufferUsages::UNIFORM,
             );
         }
+        // `ClippingNode`'s planes, from this draw's clipping context: the
+        // buffer's `count` is the context's plane count, which is in the
+        // program key, so the two agree and the context's own list is
+        // written as it is, with nothing allocated per draw.
+        if let BufferSource::ClippingIntersection | BufferSource::ClippingUnion = source {
+            let planes = match (source, uniforms.clipping) {
+                (BufferSource::ClippingIntersection, Some(c)) => c.intersection.as_slice(),
+                (_, Some(c)) => c.union.as_slice(),
+                (_, None) => &[],
+            };
+            let padded;
+            let planes = if planes.len() == count {
+                planes
+            } else {
+                // Not reached while the key holds the counts; a binding
+                // shorter than the shader's array would not validate.
+                padded = (0..count)
+                    .map(|i| planes.get(i).copied().unwrap_or_default())
+                    .collect::<Vec<[f32; 4]>>();
+                &padded
+            };
+            return self.slot_buffer(
+                slot,
+                "three-rs clipping planes",
+                bytemuck::cast_slice(planes),
+                wgpu::BufferUsages::UNIFORM,
+            );
+        }
         if let BufferSource::BoneMatrices | BufferSource::PreviousBoneMatrices = source {
             let (matrices, label) = match source {
                 BufferSource::BoneMatrices => (uniforms.bone_matrices, "three-rs boneMatrices"),
@@ -5544,6 +5661,8 @@ impl Renderer {
             | BufferSource::PreviousBoneMatrices
             | BufferSource::CameraViewMatrices
             | BufferSource::CameraProjectionMatrices
+            | BufferSource::ClippingIntersection
+            | BufferSource::ClippingUnion
             | BufferSource::Storage
             | BufferSource::AtomicStorage
             | BufferSource::Struct { .. }
@@ -5746,8 +5865,19 @@ impl Renderer {
             entry.last_used = frames;
             return entry.view.clone();
         }
+        // A combined depth-stencil texture (the viewport depth copy of a
+        // `stencil: true` renderer's `depth24plus-stencil8` buffer) binds as
+        // `texture_depth_2d` through its depth aspect alone: a view of both
+        // aspects fails bind-group validation.
+        let format = gpu.format();
+        let aspect = if format.has_depth_aspect() && format.has_stencil_aspect() {
+            wgpu::TextureAspect::DepthOnly
+        } else {
+            wgpu::TextureAspect::All
+        };
         let view = gpu.create_view(&wgpu::TextureViewDescriptor {
             dimension,
+            aspect,
             mip_level_count: storage.then_some(1),
             ..Default::default()
         });
@@ -7493,6 +7623,8 @@ impl Renderer {
             )
             .expect("three-rs: the output buffer type is a colour type")
         });
+        // `stencilBuffer: this.stencil`.
+        target.inner().borrow_mut().stencil_buffer = self.stencil;
 
         target.set_size(width, height);
         target.clone()
@@ -7605,7 +7737,10 @@ impl Renderer {
                 ),
                 Some(depth_texture.gpu_format()),
             ),
-            (None, Some(depth)) => (Some(depth.clone()), Some(CANVAS_DEPTH_FORMAT)),
+            (None, Some(depth)) => (
+                Some(depth.clone()),
+                Some(depth_buffer_format(inner.stencil_buffer)),
+            ),
             (None, None) => (None, None),
         };
         let depth = depth_texture
@@ -7686,7 +7821,7 @@ impl Renderer {
             depth: depth.clone(),
             depth_texture: canvas.depth.clone(),
             color_format: CANVAS_FORMAT,
-            depth_format: depth.map(|_| CANVAS_DEPTH_FORMAT),
+            depth_format: depth.map(|_| depth_buffer_format(self.stencil)),
             sample_count: canvas.sample_count,
             width: canvas.width,
             height: canvas.height,
@@ -7708,7 +7843,7 @@ impl Renderer {
                 && canvas.sample_count == sample_count
             {
                 if needs_depth && canvas.depth.is_none() {
-                    let depth = self.create_depth_buffer(width, height, sample_count);
+                    let depth = self.create_depth_buffer(width, height, sample_count, self.stencil);
                     self.canvas
                         .as_mut()
                         .expect("three-rs: the canvas is Some in this branch")
@@ -7754,7 +7889,8 @@ impl Renderer {
             })
         });
 
-        let depth = needs_depth.then(|| self.create_depth_buffer(width, height, sample_count));
+        let depth = needs_depth
+            .then(|| self.create_depth_buffer(width, height, sample_count, self.stencil));
 
         self.canvas = Some(CanvasTarget {
             width,
@@ -7766,10 +7902,14 @@ impl Renderer {
         });
     }
 
-    /// The auto-allocated depth buffer of a pass: `depth24plus`, the format
-    /// `WebGPUUtils.getCurrentDepthStencilFormat()` picks with `stencil` and
-    /// `reversedDepthBuffer` both off.
-    fn create_depth_buffer(&self, width: u32, height: u32, sample_count: u32) -> wgpu::Texture {
+    /// The auto-allocated depth buffer of a pass, in [`depth_buffer_format`].
+    fn create_depth_buffer(
+        &self,
+        width: u32,
+        height: u32,
+        sample_count: u32,
+        stencil: bool,
+    ) -> wgpu::Texture {
         self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("three-rs depth buffer"),
             size: wgpu::Extent3d {
@@ -7780,7 +7920,7 @@ impl Renderer {
             mip_level_count: 1,
             sample_count,
             dimension: wgpu::TextureDimension::D2,
-            format: CANVAS_DEPTH_FORMAT,
+            format: depth_buffer_format(stencil),
             // `COPY_SRC` for `viewportDepthTexture()`'s copy.
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
@@ -7898,7 +8038,8 @@ impl Renderer {
         }
 
         if inner.depth_texture.is_none() && inner.depth_buffer && inner.depth.is_none() {
-            inner.depth = Some(self.create_depth_buffer(width, height, sample_count));
+            inner.depth =
+                Some(self.create_depth_buffer(width, height, sample_count, inner.stencil_buffer));
         }
 
         if let Some(depth_texture) = &inner.depth_texture {
@@ -8029,9 +8170,17 @@ impl std::future::Future for MapFuture {
 /// target with the channels already in readback order.
 const CANVAS_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 
-/// `WebGPUUtils.getCurrentDepthStencilFormat()` with `stencil` and
-/// `reversedDepthBuffer` both off.
-const CANVAS_DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24Plus;
+/// `WebGPUUtils.getCurrentDepthStencilFormat()` for an auto-allocated depth
+/// buffer with `reversedDepthBuffer` off: `depth24plus`, or
+/// `depth24plus-stencil8` when the pass has a stencil (`renderer.stencil` for
+/// the canvas and the framebuffer target).
+fn depth_buffer_format(stencil: bool) -> wgpu::TextureFormat {
+    if stencil {
+        wgpu::TextureFormat::Depth24PlusStencil8
+    } else {
+        wgpu::TextureFormat::Depth24Plus
+    }
+}
 
 /// One `copyExternalImageToTexture` of a cube face: the image is already the
 /// size of the level it goes to, so the extent comes from the image and not

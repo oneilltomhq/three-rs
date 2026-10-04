@@ -655,6 +655,17 @@ fn take_context_node_name() -> Option<&'static str> {
     BUILD_CONTEXT.with(|stack| stack.borrow_mut().last_mut()?.node_name.take())
 }
 
+/// Run `f` with `alphaToCoverage` on a multisampled target (`on`) as the
+/// context the renderer installs around a material's setup and build —
+/// what `shapeCircle()` and `NodeMaterial.setupClipping()` branch on. For a
+/// test that drives [`materials::setup`](crate::materials::setup) and
+/// [`NodeBuilder::build`] without a renderer.
+#[doc(hidden)]
+pub fn with_alpha_to_coverage_samples<R>(on: bool, f: impl FnOnce() -> R) -> R {
+    let _guard = push_context(|cx| cx.alpha_to_coverage_samples = on);
+    f()
+}
+
 /// Read the current context: the top of the stack, or the default one
 /// outside any push.
 pub(crate) fn current_context<R>(read: impl FnOnce(&BuildContext) -> R) -> R {
@@ -791,6 +802,8 @@ pub struct NodeBuilder {
     array_cameras: Option<ArrayCameraNodes>,
     /// [`MaterialFlow::geometry_has_tangent`] for the flow being built.
     geometry_has_tangent: bool,
+    /// [`MaterialFlow::clip_distances`] for the flow being built.
+    clip_distances: usize,
 }
 
 /// `Camera.js`' `ArrayCamera` arm: `uniformArray( matrices ).element(
@@ -824,6 +837,30 @@ fn directives(s: &StageState) -> &'static str {
         "enable subgroups;"
     } else {
         ""
+    }
+}
+
+/// The vertex stage's directives: [`directives`], plus `WGSLNodeBuilder.
+/// enableClipDistances()`'s `enable clip_distances;` when the flow writes
+/// hardware clip distances.
+#[inline(never)]
+fn vertex_directives(s: &StageState, clip_distances: usize) -> String {
+    match (directives(s), clip_distances) {
+        (d, 0) => d.to_string(),
+        ("", _) => "enable clip_distances;".to_string(),
+        (d, _) => format!("{d}\nenable clip_distances;"),
+    }
+}
+
+/// `WGSLNodeBuilder.enableHardwareClipping( planeCount )`'s
+/// `getBuiltin( 'clip_distances', 'hw_clip_distances', 'array<f32, N >',
+/// 'vertex' )` — the varyings struct member just above `builtinClipSpace`.
+#[inline(never)]
+fn clip_distances_member(clip_distances: usize) -> String {
+    if clip_distances == 0 {
+        String::new()
+    } else {
+        format!("\t@builtin( clip_distances ) hw_clip_distances : array<f32, {clip_distances} >,\n")
     }
 }
 
@@ -863,6 +900,7 @@ impl NodeBuilder {
             output_type: Type::Vec4,
             array_cameras: None,
             geometry_has_tangent: true,
+            clip_distances: 0,
         };
         for s in &mut b.stages {
             // Statements in `fn main` sit one tab in.
@@ -3553,6 +3591,13 @@ pub struct MaterialFlow {
     /// reads `tangent` whatever the geometry has, so it is the one checked.
     /// `true` in [`MaterialFlow::new`]: a hand-made flow keeps the slot.
     pub geometry_has_tangent: bool,
+    /// `builder.hardwareClipping`: the number of union clipping planes the
+    /// vertex stage writes to `@builtin( clip_distances )`, 0 for none. A
+    /// non-zero count enables the `clip_distances` directive and declares the
+    /// `hw_clip_distances` varyings member; the statements that write it are
+    /// in [`vertex_statements`](Self::vertex_statements). See
+    /// [`hardware_clipping`](crate::nodes::clipping::hardware_clipping).
+    pub(crate) clip_distances: usize,
 }
 
 impl MaterialFlow {
@@ -3572,6 +3617,7 @@ impl MaterialFlow {
             vertex_statements: Vec::new(),
             position,
             geometry_has_tangent: true,
+            clip_distances: 0,
         }
     }
 }
@@ -3747,6 +3793,7 @@ impl NodeBuilder {
             cx.extra.insert("clipSpace", flow.position.clone());
         });
         self.geometry_has_tangent = flow.geometry_has_tangent;
+        self.clip_distances = flow.clip_distances;
         // Each stage's flow is analysed in that stage, as three's
         // `build()` sets the shader stage before every stage's pass: a
         // [`CustomNode`] that branches on the stage (`clip_space`) is set up
@@ -4292,10 +4339,11 @@ impl NodeBuilder {
                 None => out.push_str(&format!("// structs\n\nstruct OutputStruct {{\n\t@location( 0 ) color: {}\n}};\nvar<private> output : OutputStruct;\n\n", wgsl::type_name(self.output_type))),
             }
         } else {
-            out.push_str(&format!(
-                "// directives\n{}\n\n// structs\n\n\n",
-                directives(s)
-            ));
+            let directives = match stage {
+                Stage::Vertex => vertex_directives(s, self.clip_distances),
+                _ => directives(s).to_string(),
+            };
+            out.push_str(&format!("// directives\n{directives}\n\n// structs\n\n\n"));
         }
 
         out.push_str("// uniforms\n");
@@ -4320,6 +4368,7 @@ impl NodeBuilder {
                     wgsl::type_name(*ty)
                 ));
             }
+            out.push_str(&clip_distances_member(self.clip_distances));
             out.push_str("\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n");
         }
 
