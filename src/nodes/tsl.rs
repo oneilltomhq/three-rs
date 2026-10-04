@@ -5994,6 +5994,36 @@ pub fn depth_texture_load(map: &DepthTexture, coord: NodeRef) -> NodeRef {
     )
 }
 
+/// `textureLoad( texture( map ), coord )` — a texel fetch through a
+/// `texture( map )` node that was made without a uv. Three's `texture()` then
+/// sets `updateMatrix`, and `textureLoad()` clones the node with it, so the
+/// integer coordinate still goes through `getTransformedUV()`:
+/// `textureLoad( t, vec2<i32>( ( map.matrix * vec3<f32>( vec2<f32>( coord ),
+/// 1.0 ) ).xy ), u32( 0u ) )`, one `mat3x3` uniform shared per map as
+/// [`texture`]'s is. `TemporalReprojectNode` reads its history and previous
+/// normal this way.
+pub fn texture_load_transformed(map: &Texture, coord: NodeRef) -> NodeRef {
+    texture_node(
+        TextureSource::Texture2D(map.clone()),
+        transformed_uv(coord.to(Type::Vec2), (0, map.id()), map.matrix()).to(Type::IVec2),
+        SampleMode::LoadTexel,
+        texture_type_for(map),
+    )
+}
+
+/// [`texture_load_transformed`] on a depth texture — `textureLoad( texture(
+/// depthTexture ), coord ).r`, an `f32` read through the (identity) uv
+/// matrix `texture()` gives the node. `TemporalReprojectNode`'s previous
+/// depth.
+pub fn depth_texture_load_transformed(map: &DepthTexture, coord: NodeRef) -> NodeRef {
+    texture_node(
+        TextureSource::Depth(map.clone()),
+        transformed_uv(coord.to(Type::Vec2), (1, map.id()), Matrix3::identity()).to(Type::IVec2),
+        SampleMode::LoadTexel,
+        Type::F32,
+    )
+}
+
 /// `varyingProperty( type, name )` — a named varying written by assignment.
 pub fn varying_property(name: &'static str, ty: Type, flat: bool) -> NodeRef {
     NodeRef::new(Node::VaryingProperty { name, ty, flat })

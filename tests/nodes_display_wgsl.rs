@@ -1180,6 +1180,36 @@ fn film_no_intensity_matches_three() {
 }
 
 #[test]
+fn temporal_reproject_seed_matches_three() {
+    check("temporal_reproject_seed", Region::Body);
+}
+
+#[test]
+fn temporal_reproject_resolve_matches_three() {
+    check("temporal_reproject_resolve", Region::Body);
+}
+
+#[test]
+fn temporal_reproject_resolve_specular_matches_three() {
+    check("temporal_reproject_resolve_specular", Region::Body);
+}
+
+#[test]
+fn temporal_reproject_layout_fns_match_three() {
+    for name in [
+        "beautyTexelFromScreen",
+        "velocityToUVOffset",
+        "clipToAABB",
+        "projectWorldToUV",
+    ] {
+        check(
+            "temporal_reproject_resolve_specular",
+            Region::Function(name),
+        );
+    }
+}
+
+#[test]
 fn specular_ggx_reflection_sample_matches_three() {
     check("specular_ggx_reflection_sample", Region::Body);
 }

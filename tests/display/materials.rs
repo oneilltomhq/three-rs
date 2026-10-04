@@ -14,9 +14,10 @@ use three_rs::nodes::display::{
     circle, color_bleeding, depth_aware_blend, dof, dot_screen, film, fxaa, gaussian_blur, godrays,
     hash_blur_with, lensflare, lut_3d, motion_blur, outline, parallax_barrier_pass,
     pixelation_pass, retro_pass, rgb_shift, rtt, scanlines, sepia, smaa, sobel, ssgi, ssr, sss,
-    traa, viewport_shared_texture_at, BoxBlurOptions, DepthAwareBlendOptions, EnvironmentLobe,
-    GaussianBlurOptions, HashBlurOptions, ImportanceSampledEnvironment, LensflareParams,
-    OutlineParams, RetroPassOptions, SharpenNode, SsrOptions,
+    temporal_reproject, traa, viewport_shared_texture_at, BoxBlurOptions, DepthAwareBlendOptions,
+    EnvironmentLobe, GaussianBlurOptions, HashBlurOptions, ImportanceSampledEnvironment,
+    LensflareParams, OutlineParams, RetroPassOptions, SharpenNode, SsrOptions,
+    TemporalReprojectMode, TemporalReprojectOptions,
 };
 use three_rs::nodes::tsl::{
     bind_analytic_noise, d_gtr, distance, equirect_dir_pdf, equirect_uv_to_dir, f_schlick, float,
@@ -889,6 +890,59 @@ pub fn display_quads() -> Vec<DisplayQuad> {
         ),
     ));
 
+    // tools/dump-pages/temporal_reproject.html: `m03` is the seed quad
+    // (`TemporalReproject.seed`) of the first node, `convertToTexture(
+    // temporalReproject( scenePassColor, depth, normal, velocity, camera ) )`
+    // with the defaults, and `m05` its resolve quad; `m09` is the resolve of
+    // the page's configuration, `{ mode: 'specular', accumulate: false }`
+    // with `setHistoryTexture()` given another texture.
+    let reproject_camera = || {
+        std::rc::Rc::new(std::cell::RefCell::new(three_rs::PerspectiveCamera::new(
+            70.0, 1.0, 0.1, 10.0,
+        )))
+    };
+    let diffuse = temporal_reproject(
+        &input(),
+        &DepthTexture::new(),
+        &input(),
+        &input(),
+        reproject_camera(),
+        TemporalReprojectOptions::default(),
+    );
+    let mut seed = diffuse.seed_material();
+    seed.vertex_node = Some(quad_vertex_node());
+    quads.push(DisplayQuad {
+        label: "temporal_reproject_seed",
+        fixture: "temporal_reproject_m03_seed.wgsl",
+        material: seed,
+    });
+    let mut resolve = diffuse.quad_material();
+    resolve.vertex_node = Some(quad_vertex_node());
+    quads.push(DisplayQuad {
+        label: "temporal_reproject_resolve",
+        fixture: "temporal_reproject_m05_resolve.wgsl",
+        material: resolve,
+    });
+    let specular = temporal_reproject(
+        &input(),
+        &DepthTexture::new(),
+        &input(),
+        &input(),
+        reproject_camera(),
+        TemporalReprojectOptions {
+            mode: TemporalReprojectMode::Specular,
+            accumulate: false,
+            ..TemporalReprojectOptions::default()
+        },
+    );
+    specular.set_history_texture(Some(&input()));
+    let mut resolve = specular.quad_material();
+    resolve.vertex_node = Some(quad_vertex_node());
+    quads.push(DisplayQuad {
+        label: "temporal_reproject_resolve_specular",
+        fixture: "temporal_reproject_m09_resolve_specular.wgsl",
+        material: resolve,
+    });
     // `tools/dump-pages/sharpen.html` `m03` and `m06`: `sharpen( scenePass,
     // 0.2 )`'s RCAS quad, then `sharpen( a, 0.5, true )`'s over the `RTT`
     // three's `convertToTexture()` makes of the first.

@@ -51,6 +51,7 @@ mod ssr;
 mod sss;
 mod stereo_composite_pass;
 mod stereo_pass;
+mod temporal_reproject;
 mod toon_outline_pass;
 mod traa;
 mod transition;
@@ -99,6 +100,9 @@ pub use ssgi::{ssgi, SsgiNode};
 pub use ssr::{ssr, SampleFn, SsrNode, SsrOptions};
 pub use sss::{sss, SssNode};
 pub use stereo_pass::{stereo_pass, StereoPassNode};
+pub use temporal_reproject::{
+    temporal_reproject, TemporalReprojectMode, TemporalReprojectNode, TemporalReprojectOptions,
+};
 pub use toon_outline_pass::{toon_outline_pass, ToonOutlinePassNode};
 pub use traa::{traa, TraaNode};
 pub use transition::transition;

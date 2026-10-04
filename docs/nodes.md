@@ -8604,3 +8604,138 @@ darkens and its shoulder lightens, and the flat regions do not move. At 1
 the edge moves less in total than at 0. With `denoise`, no pixel moves
 further than without it. After a resize the target follows the drawing
 buffer.
+
+## 87. `TemporalReprojectNode` (`webgpu_postprocessing_ssr_denoise`)
+
+### 87.1 What three does
+
+`temporalReproject( beauty, depth, normal, velocity, camera, options )` is the
+temporal stage of `webgpu_postprocessing_ssr_denoise`'s denoiser. It is a
+`Node` with `updateBeforeType = FRAME`, and its texture node is
+`passTexture( this, resolve.texture )`. The options are `mode` (`'diffuse'`
+or `'specular'`), `accumulate` (default `false`) and `hitPointReprojection`
+(default `mode === 'specular'`). The uniforms are `maxFrames` (32),
+`hitPointReprojection`, `clampIntensity` (1) and `flickerSuppression` (1).
+
+- **Targets.** There are two half-float targets. The history also carries a
+  `DepthTexture`, which becomes the previous frame's depth after a copy. The
+  resolve is what the node outputs. A clone of the normal texture holds the
+  previous frame's normals.
+- **`updateBefore()`.** It rolls the current camera matrices into the
+  previous ones and reads the camera. On a size change it resizes the
+  targets, re-clones the normal and draws the seed quad (the beauty, clamped
+  at zero) into the history. It renders the resolve quad and, with
+  `accumulate`, copies the resolve into the history. Last, it copies the
+  scene's depth and normal into the previous ones.
+- **The history binding.** One `texture()` node reads the history. Its value
+  is the internal history or, with `accumulate: false`, the texture given to
+  `setHistoryTexture()` (on the page, the denoiser's output). On the frame
+  after a resize, the external history is stale, so the freshly seeded
+  internal one is bound for that frame (`_syncHistoryTextureBinding`).
+- **The resolve.**
+  - It discards the background (depth ≥ 1).
+  - It reprojects along the velocity attachment with a 4-tap bilinear fetch.
+    Each tap is weighted by how close the previous frame's reconstructed
+    position lies to the current surface's plane, and how well the previous
+    normal agrees.
+  - It clips the history to the YCoCg mean ± γσ of the 3×3 neighbourhood.
+    γ widens with stillness, and the samples are compressed by luminance
+    first.
+  - It lowers the confidence for reprojection stretch, clip distance and
+    motion.
+  - It writes the history colour with `1 / frameCount` in alpha. That alpha
+    is the weight the downstream accumulating pass gives the current frame.
+  - In `'specular'` mode, a Welford pass over the beauty's alpha (the SSR ray
+    length) adds a second history at the reflection's parallax hit point,
+    blended over the surface one by edge, curvature and environment
+    probability.
+- **The view offset.** `setup()` claims `renderPipelineState.viewOffsetOwner`
+  without jittering: before the pipeline it hands the camera's projection to
+  `velocity.setProjectionMatrix()`, and after it clears it.
+
+### 87.2 The port
+
+`nodes::display::temporal_reproject` builds the same graph.
+
+**Gates.** The dump page `tools/dump-pages/temporal_reproject.html` builds
+two nodes over one scene pass with an `output`, packed `normal` and
+`velocity` MRT:
+
+- `convertToTexture( temporalReproject( … ) )` with the defaults;
+- the page's configuration, `{ mode: 'specular', accumulate: false }`, with
+  `setHistoryTexture()` given the first node.
+
+`tests/nodes_display_wgsl.rs` gates three of the modules:
+
+- `temporal_reproject_seed`: the seed quad (`m03`);
+- `temporal_reproject_resolve`: the diffuse resolve (`m05`);
+- `temporal_reproject_resolve_specular`: the specular resolve (`m09`). It is
+  structurally different from the diffuse one, so it is gated too;
+- `temporal_reproject_layout_fns`: the four `Fn`s with layouts,
+  `beautyTexelFromScreen`, `velocityToUVOffset`, `clipToAABB` and
+  `projectWorldToUV`.
+
+The other module-level `Fn`s inline in three, and each is an
+`#[inline(never)]` helper here. In the diffuse resolve, the neighbourhood is
+only read, so three emits it where it is first read; in the specular one,
+`stdDevRayLength` is assigned, so it is a variable declared up front. The
+port does the same (`to_var_intent` in specular mode only).
+
+Three's `originalHistoryColor = vec3( historyColor.rgb )` is the same node as
+`historyColor.rgb`. The clip-distance confidence therefore reads the colour
+after it is pulled towards the clipped one, and so does the port.
+
+`tests/temporal_reproject_frames.rs` runs `traa_frames`'s white box on the
+GPU and checks the following:
+
+- **The first frame is the beauty.** It has no usable previous depth, so
+  every tap is rejected. The alpha is `1 / 2`.
+- **The history ages with `accumulate`.** The box's alpha falls as
+  `1 / (n + 1)` over eight frames, while its colour, the inside and the
+  outside stay as they were.
+- **A resize restarts the history.**
+- **An all-black external history (`accumulate: false`).** It is replaced
+  by the seeded internal one on the first frame and after a resize. On the
+  second frame it is accepted across the box, where it is pulled halfway to
+  `1 / 11` (the beauty, compressed by the neighbourhood's scale and
+  decompressed by the history's), and the background stays black.
+
+**Differences:**
+
+- **The history binding.** A texture node here binds its texture when the
+  graph is built. So `set_history_texture()` builds a second resolve quad
+  over the external texture, and `update_before()` picks between the two
+  quads where three swaps the node's value.
+- **The previous depth.** It is the history target's `DepthTexture` from the
+  start, as in `traa.rs`. Three starts from a 1×1 placeholder and repoints
+  the uniform after the first copy. Either way, the first frame reads an
+  unusable depth and falls back to the beauty.
+- **The seed draw.** The seed quad is drawn into the history with its
+  depth attached, so it clears that depth. The copy at the end of the same
+  `update_before()` overwrites it.
+- **The previous normal.** It is a render target of the normal's format, so
+  it can be allocated and copied into, and it is resized on every restart.
+- **The copies' guard.** The copies run when the normal attachment matches
+  the drawing buffer. Three's guard is that the depth has an image; on its
+  pages, the two coincide.
+- **The view-offset hooks.** As with TRAA, `TemporalReprojectNode::attach(
+  &mut RenderPipeline )` installs them behind `claim_view_offset()`.
+  `_needsPostProcessingSync` has no counterpart, because the hooks exist
+  before the first frame.
+- **`dispose()`.** It drops the three targets' GPU textures and returns them
+  to 1×1, so a node rendered again starts a fresh history.
+- **`ENV_RAY_LENGTH` and `ENV_RAY_LENGTH_THRESHOLD`.** `SpecularHelpers.js`'s
+  constants are private `const`s in the module until the `specular-helpers`
+  branch lands them in `nodes::tsl`.
+- **New TSL functions.** `texture_load_transformed` and
+  `depth_texture_load_transformed` are three's `textureLoad( texture( map ),
+  coord )`, whose coordinate goes through the map's uv transform. The taps
+  read the history, previous depth and previous normal that way.
+
+**Not ported:**
+
+- an orthographic camera;
+- a logarithmic or reversed depth buffer;
+- a beauty that is an arbitrary node (three's `convertToTexture()`): pass a
+  texture;
+- a `RecurrentDenoiseNode` as the history: pass its texture.
