@@ -157,9 +157,11 @@
 //! storage view and a draw reading the attribute view meet on one buffer, as
 //! `IndirectStorageBufferAttribute` already arranges for indirect args. The
 //! renderer looks a `BufferAttribute` whose backing is `Storage(id)` up in its
-//! storage-buffer map rather than uploading it. `itemSize === 3` storage is
-//! padded to `vec4` stride as `createAttribute()` pads it; the attribute view
-//! of a padded buffer uses that stride.
+//! storage-buffer map rather than uploading it. `createAttribute()` treats
+//! the storage array as any other first — a non-normalized 8- or 16-bit
+//! integer array is widened to 32 bits — and then pads `itemSize === 3` to a
+//! `vec4` stride; the attribute view of the buffer uses that widened, padded
+//! stride, and a `storage()` node over it reads the same 32-bit words.
 //!
 //! ## Not in this PR
 //!
@@ -389,6 +391,23 @@ impl ArrayKind {
             ArrayKind::I8 => 127.0,
         };
         js_round(value * scale)
+    }
+}
+
+/// `createAttribute()`'s `paddedItemSize` for an upload whose elements are
+/// `kind` (already widened): a storage attribute of item size 3 is padded to
+/// 4 ("WGSL does not support packed vec3 data in storage buffers"); otherwise
+/// an item of more than one element whose byte stride is not a multiple of 4
+/// is padded up to one. `item_size` when no padding applies.
+fn padded_item_size(kind: ArrayKind, item_size: usize, storage: bool) -> usize {
+    if storage && item_size == 3 {
+        return 4;
+    }
+    let bpe = kind.bytes_per_element();
+    if item_size > 1 && !(item_size * bpe).is_multiple_of(4) {
+        (item_size * bpe).div_ceil(4) * 4 / bpe
+    } else {
+        item_size
     }
 }
 
@@ -986,20 +1005,29 @@ impl StorageBufferAttribute {
         self.instanced
     }
 
-    /// Components per element in the GPU buffer: `item_size`, or 4 for 3.
-    pub(crate) fn padded_item_size(&self) -> usize {
-        if self.item_size == 3 {
-            4
-        } else {
-            self.item_size
-        }
+    /// The kind of the uploaded elements: the array's own, or — for 8- and
+    /// 16-bit integers that are not `normalized` — the 32-bit one
+    /// `createAttribute()`'s "patch for INT16 and UINT16" widens it to, which
+    /// it applies to a storage attribute as to any other.
+    pub(crate) fn upload_kind(&self, normalized: bool) -> ArrayKind {
+        self.array.borrow().kind().upload_kind(normalized, false)
     }
 
-    /// The GPU buffer's initial contents as 32-bit words, at the padded
-    /// stride — what `createAttribute()` uploads for a storage attribute.
-    pub fn init_words(&self) -> Vec<u32> {
+    /// Components per element in the GPU buffer, after widening: 4 for an
+    /// item size of 3, otherwise `item_size` rounded up to a 4-byte stride.
+    pub(crate) fn padded_item_size(&self, normalized: bool) -> usize {
+        padded_item_size(self.upload_kind(normalized), self.item_size, true)
+    }
+
+    /// The GPU buffer's initial contents as 32-bit words, widened and at the
+    /// padded stride — what `createAttribute()` uploads for a storage
+    /// attribute. `normalized` is the attribute view's (`false` for a
+    /// `storage()` node, as three's `StorageBufferAttribute` never sets it).
+    pub(crate) fn init_words(&self, normalized: bool) -> Vec<u32> {
+        let kind = self.upload_kind(normalized);
+        let padded = self.padded_item_size(normalized);
         let array = self.array.borrow();
-        let bytes = array.to_bytes(array.kind(), self.item_size, self.padded_item_size());
+        let bytes = array.to_bytes(kind, self.item_size, padded);
         bytes
             .as_chunks::<4>()
             .0
@@ -1568,17 +1596,11 @@ impl BufferAttribute {
             Backing::Own(array) => {
                 let array = array.borrow();
                 let kind = array.kind().upload_kind(self.normalized, false);
-                let n = self.item_size;
-                let bpe = kind.bytes_per_element();
-                let padded = if n > 1 && !(n * bpe).is_multiple_of(4) {
-                    (n * bpe).div_ceil(4) * 4 / bpe
-                } else {
-                    n
-                };
-                array.to_bytes(kind, n, padded)
+                let padded = padded_item_size(kind, self.item_size, false);
+                array.to_bytes(kind, self.item_size, padded)
             }
             Backing::Storage(storage) => storage
-                .init_words()
+                .init_words(self.normalized)
                 .iter()
                 .flat_map(|w| w.to_le_bytes())
                 .collect(),
@@ -1597,7 +1619,7 @@ impl BufferAttribute {
                 offset: *offset,
             },
             Backing::Storage(storage) => AttributeLayout::Storage {
-                padded_item_size: storage.padded_item_size(),
+                padded_item_size: storage.padded_item_size(self.normalized),
             },
         };
         AttributeDesc {
@@ -1723,7 +1745,8 @@ impl AttributeDesc {
             }
             AttributeLayout::Interleaved { stride, .. } => stride * self.kind.bytes_per_element(),
             AttributeLayout::Storage { padded_item_size } => {
-                padded_item_size * self.kind.bytes_per_element()
+                let kind = self.kind.upload_kind(self.normalized, false);
+                padded_item_size * kind.bytes_per_element()
             }
         };
         stride as u64

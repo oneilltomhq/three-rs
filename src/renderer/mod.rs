@@ -6856,7 +6856,7 @@ impl Renderer {
                 let storage = attribute
                     .storage_buffer()
                     .expect("three-rs: a storage key has a storage attribute");
-                let init = storage.init_words();
+                let init = storage.init_words(attribute.normalized);
                 self.storage_buffer(id.get(), (init.len() * 4) as u64, Some(&init))
                     .gpu
             }

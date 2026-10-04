@@ -5102,9 +5102,10 @@ pub fn storage_f32(array: &[f32], element_ty: Type) -> StorageArray {
 /// [`StorageBufferAttribute`](crate::core::StorageBufferAttribute) — a
 /// `StorageBufferNode` whose buffer **is** the attribute's: the node takes the
 /// attribute's [`BufferId`](crate::nodes::node::BufferId) and its contents
-/// (at the padded storage stride) as the buffer's initial data, so a kernel
-/// writing this node and a draw reading the attribute from the geometry meet
-/// on one GPU buffer.
+/// (8- and 16-bit integers widened to 32 bits, at the padded storage stride,
+/// as `createAttribute()` uploads them) as the buffer's initial data, so a
+/// kernel writing this node and a draw reading the attribute from the
+/// geometry meet on one GPU buffer.
 ///
 /// [`to_attribute`](StorageArray::to_attribute) steps per vertex for a
 /// `StorageBufferAttribute` and per instance for a
@@ -5131,7 +5132,7 @@ pub fn storage(
         buffer: Rc::new(BufferNode {
             id: attribute.id(),
             source: BufferSource::StorageData {
-                init: Rc::new(attribute.init_words()),
+                init: Rc::new(attribute.init_words(false)),
                 read_only: false,
             },
             element_ty,

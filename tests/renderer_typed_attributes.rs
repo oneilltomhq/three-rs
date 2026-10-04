@@ -18,7 +18,12 @@
 
 use std::rc::Rc;
 
-use three_rs::core::{BufferAttribute, BufferGeometry, InterleavedBuffer};
+use three_rs::core::{
+    ArrayKind, BufferAttribute, BufferGeometry, InterleavedBuffer, StorageBufferAttribute,
+    TypedArray,
+};
+use three_rs::nodes::tsl::storage;
+use three_rs::nodes::Type;
 use three_rs::{
     Color, Mesh, MeshBasicNodeMaterial, OrthographicCamera, Renderer, RendererParameters, Scene,
 };
@@ -145,4 +150,50 @@ fn an_interleaved_buffer_update_reaches_the_gpu() {
         [255, 0, 0],
         "the neighbours are untouched"
     );
+}
+
+/// A `StorageBufferAttribute` over a non-normalized `Uint16Array`, read as a
+/// vertex attribute: `createAttribute()` widens it to `Uint32Array` like any
+/// other (so the format is `uint32x4` / `uint32x3`), and pads item size 3 to
+/// a `vec4` stride, so the buffer is 16 bytes per item either way. The
+/// colours are 0 or 1, which `vertexColor()` converts to the floats 0 and 1.
+#[test]
+fn a_uint16_storage_attribute_is_widened_on_upload() {
+    let green =
+        StorageBufferAttribute::new(TypedArray::U16([0, 1, 0, 1].repeat(4)), 4, ArrayKind::U16);
+    let blue = StorageBufferAttribute::new(TypedArray::U16([0, 0, 1].repeat(4)), 3, ArrayKind::U16);
+
+    let mut scene = Scene::new();
+    scene.set_background(Color::from_hex(0x000000));
+    for (slot, color) in [&green, &blue].into_iter().enumerate() {
+        scene.add(&Mesh::new(quad(slot, color.clone().into()), material()));
+    }
+    let mut camera = OrthographicCamera::new(0.0, W as f64, H as f64, 0.0, -1.0, 1.0);
+    let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
+    renderer.set_pixel_ratio(1.0);
+    renderer.set_size(W as f64, H as f64);
+
+    renderer.render(&mut scene, &mut camera);
+    let (_, _, pixels) = renderer.read_canvas_pixels().unwrap();
+    assert_eq!(
+        middle(&pixels, 0),
+        [0, 255, 0],
+        "Uint16 storage, item size 4"
+    );
+    assert_eq!(
+        middle(&pixels, 1),
+        [0, 0, 255],
+        "Uint16 storage, item size 3"
+    );
+    assert_eq!(middle(&pixels, 2), [0, 0, 0], "nothing drawn");
+
+    // What the draw uploaded: one `u32` per element, item size 3 padded to 4.
+    let words = renderer
+        .read_storage_buffer_u32(&storage(&green, Type::UVec4, 4))
+        .unwrap();
+    assert_eq!(words, [0, 1, 0, 1].repeat(4));
+    let words = renderer
+        .read_storage_buffer_u32(&storage(&blue, Type::UVec3, 4))
+        .unwrap();
+    assert_eq!(words, [0, 0, 1, 0].repeat(4));
 }
