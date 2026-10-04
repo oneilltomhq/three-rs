@@ -763,6 +763,8 @@ pub struct NodeBuilder {
     /// `ArrayCamera`, which stand in for the plain uniforms wherever the
     /// graph reaches them. See [`with_array_cameras`](Self::with_array_cameras).
     array_cameras: Option<ArrayCameraNodes>,
+    /// [`MaterialFlow::geometry_has_tangent`] for the flow being built.
+    geometry_has_tangent: bool,
 }
 
 /// `Camera.js`' `ArrayCamera` arm: `uniformArray( matrices ).element(
@@ -813,6 +815,7 @@ impl NodeBuilder {
             usage: HashMap::new(),
             output_type: Type::Vec4,
             array_cameras: None,
+            geometry_has_tangent: true,
         };
         for s in &mut b.stages {
             // Statements in `fn main` sit one tab in.
@@ -925,6 +928,11 @@ impl NodeBuilder {
     /// `builder.context.getViewZ`.
     pub fn context(&self, key: &str) -> Option<NodeRef> {
         current_context(|cx| cx.extra.get(key).cloned())
+    }
+
+    /// `builder.shaderStage === 'fragment'`.
+    pub(crate) fn is_fragment_stage(&self) -> bool {
+        self.stage == Stage::Fragment
     }
 
     fn children(&mut self, node: &NodeRef) -> Vec<NodeRef> {
@@ -1788,6 +1796,14 @@ impl NodeBuilder {
             }
 
             Node::Attribute { name, ty } => {
+                // `AttributeNode.generate()`'s `hasGeometryAttribute()` miss:
+                // a warning and a typed zero, in either stage, and no slot.
+                if *name == "tangent" && !self.geometry_has_tangent {
+                    eprintln!(
+                        "three-rs: AttributeNode: Vertex attribute \"tangent\" not found on geometry."
+                    );
+                    return wgsl::default_constant(*ty);
+                }
                 if self.stage == Stage::Fragment {
                     return self.attribute_varying(node);
                 }
@@ -3100,6 +3116,14 @@ pub struct MaterialFlow {
     pub vertex_statements: Vec<NodeRef>,
     /// The clip-space position the vertex stage writes.
     pub position: NodeRef,
+    /// `builder.geometry.hasAttribute( 'tangent' )`, at build time.
+    /// `AttributeNode.generate()` checks the geometry for every attribute and,
+    /// when it is missing, warns and writes `builder.generateConst( type )` in
+    /// its place. The port knows only this one ahead of the draw, and the
+    /// vertex layer of [`tangent_world`](crate::nodes::tsl::tangent_world)
+    /// reads `tangent` whatever the geometry has, so it is the one checked.
+    /// `true` in [`MaterialFlow::new`]: a hand-made flow keeps the slot.
+    pub geometry_has_tangent: bool,
 }
 
 impl MaterialFlow {
@@ -3118,6 +3142,7 @@ impl MaterialFlow {
             mrt: None,
             vertex_statements: Vec::new(),
             position,
+            geometry_has_tangent: true,
         }
     }
 }
@@ -3282,9 +3307,16 @@ impl NodeBuilder {
         let _clip_space = push_context(|cx| {
             cx.extra.insert("clipSpace", flow.position.clone());
         });
+        self.geometry_has_tangent = flow.geometry_has_tangent;
+        // Each stage's flow is analysed in that stage, as three's
+        // `build()` sets the shader stage before every stage's pass: a
+        // [`CustomNode`] that branches on the stage (`clip_space`) is set up
+        // in the stage that first reaches it.
+        self.stage = Stage::Vertex;
         for stmt in &flow.pre_vertex_statements {
             self.analyze(stmt);
         }
+        self.stage = Stage::Fragment;
         if let Some(node) = &flow.depth {
             self.analyze(node);
         }
@@ -3313,6 +3345,7 @@ impl NodeBuilder {
         for member in flow.mrt.iter().flatten() {
             self.analyze(member);
         }
+        self.stage = Stage::Vertex;
         for stmt in &flow.vertex_statements {
             self.analyze(stmt);
         }

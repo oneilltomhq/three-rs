@@ -787,6 +787,7 @@ fn setup_inner(
         emit_output_property: material.fragment_node.is_none(),
         vertex_statements: Vec::new(),
         position,
+        geometry_has_tangent: ctx.has_tangent_attribute,
     }
 }
 
@@ -1095,6 +1096,10 @@ pub fn tone_mapping_node(mode: ToneMapping, exposure: NodeRef, color: NodeRef) -
         ]),
         ToneMapping::AgX => vec4_join(vec![
             agx_tone_mapping(color.clone().rgb(), exposure),
+            color.a(),
+        ]),
+        ToneMapping::Cineon => vec4_join(vec![
+            cineon_tone_mapping(color.clone().rgb(), exposure),
             color.a(),
         ]),
     }

@@ -470,8 +470,11 @@ pub fn transform_normal_by_view_matrix(
 
 /// `transformNormal( normal, matrix )` — `Normal.js`: `mat3( matrix )
 /// .inverse().transpose().mul( normal ).normalize()`, the normal through the
-/// inverse transpose of `matrix`'s upper 3×3. Three's default `matrix` is
-/// `modelWorldMatrix`.
+/// inverse transpose of `matrix`'s upper 3×3.
+///
+/// Three's `matrix` defaults to `modelWorldMatrix`. Rust has no default
+/// arguments, so three's one-argument `transformNormal( normal )` is
+/// `transform_normal( normal, model_world_matrix() )` here.
 pub fn transform_normal(normal: impl Into<NodeRef>, matrix: impl Into<NodeRef>) -> NodeRef {
     matrix
         .into()
@@ -1326,7 +1329,9 @@ impl NodeRef {
     pub fn transform_normal_by_view_matrix(&self, view_matrix: impl Into<NodeRef>) -> NodeRef {
         transform_normal_by_view_matrix(self, view_matrix)
     }
-    /// `n.transformNormal( matrix )` — see [`transform_normal`].
+    /// `n.transformNormal( matrix )` — see [`transform_normal`]. Three's
+    /// `matrix` defaults to `modelWorldMatrix`; pass `model_world_matrix()`
+    /// for its no-argument form.
     pub fn transform_normal(&self, matrix: impl Into<NodeRef>) -> NodeRef {
         transform_normal(self, matrix)
     }

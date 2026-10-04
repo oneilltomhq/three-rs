@@ -2263,40 +2263,13 @@ impl Renderer {
         // `RenderList.lightsArray` — scene-traversal order, which is the order
         // `LightsNode.setLights()` receives and which `UniformSource::Light*( i )`
         // indexes.
+        let camera_view = camera.matrix_world_inverse();
+        let shadow_map_enabled = self.shadow_map_enabled;
         let lights: Vec<LightState> = render_list
             .lights
             .iter()
             .map(|node| {
-                let object = node.borrow();
-                let light = object
-                    .light()
-                    .expect("three-rs: the light list only holds lights");
-
-                let mut view_position = LightObject::world_position(&object.matrix_world);
-                view_position.apply_matrix4(&camera.matrix_world_inverse());
-
-                let shadow = light.shadow.as_deref();
-                LightState {
-                    color: light.color_intensity(),
-                    view_position,
-                    distance: light.distance,
-                    decay: light.decay,
-                    world_position: LightObject::world_position(&object.matrix_world),
-                    target_position: light.target_world_position(),
-                    ground_color: light.ground_color_intensity(),
-                    cone_cos: light.cone_cos(),
-                    penumbra_cos: light.penumbra_cos(),
-                    shadow_matrix: shadow.map_or_else(Matrix4::identity, |s| s.matrix),
-                    shadow_camera_near: shadow.map_or(0.5, |s| s.camera.near()),
-                    shadow_camera_far: shadow.map_or(500.0, |s| s.camera.far()),
-                    shadow_bias: shadow.map_or(0.0, |s| s.bias),
-                    shadow_normal_bias: shadow.map_or(0.0, |s| s.normal_bias),
-                    shadow_radius: shadow.map_or(1.0, |s| s.radius),
-                    shadow_blur_samples: shadow.map_or(8.0, |s| s.blur_samples as f64),
-                    shadow_map_size: shadow.map_or(Vector2::new(512.0, 512.0), |s| s.map_size),
-                    shadow_intensity: shadow.map_or(1.0, |s| s.intensity),
-                    sh: light.sh_intensity(),
-                }
+                gather_light_state(&mut node.borrow_mut(), &camera_view, shadow_map_enabled)
             })
             .collect();
 
@@ -2599,7 +2572,10 @@ impl Renderer {
                         // A shadow material is `MeshBasicNodeMaterial`: it has
                         // no roughness, so the flag cannot reach any code.
                         geometry_missing_normal: false,
-                        has_tangent_attribute: false,
+                        // What `AttributeNode` checks: a cast-shadow or
+                        // position node that reads `tangent` gets the
+                        // attribute, or a zero on a geometry without one.
+                        has_tangent_attribute: geometry.has_attribute("tangent"),
                         instanced_attributes: Vec::new(),
                     },
                     fog: None,
@@ -2987,7 +2963,10 @@ impl Renderer {
                         // A shadow material is `MeshBasicNodeMaterial`: it has
                         // no roughness, so the flag cannot reach any code.
                         geometry_missing_normal: false,
-                        has_tangent_attribute: false,
+                        // What `AttributeNode` checks: a cast-shadow or
+                        // position node that reads `tangent` gets the
+                        // attribute, or a zero on a geometry without one.
+                        has_tangent_attribute: geometry.has_attribute("tangent"),
                         instanced_attributes: Vec::new(),
                     },
                     fog: None,
@@ -7867,23 +7846,99 @@ fn warn_unsupported(id: usize, material: &MeshBasicNodeMaterial, setup: &SetupCo
             fields.push("size without sizeNode (PointsNodeMaterial on a Sprite)");
         }
     }
+    let label = format!(
+        "{:?}{}",
+        material.kind,
+        if material.name.is_empty() {
+            String::new()
+        } else {
+            format!(" \"{}\"", material.name)
+        }
+    );
     WARNED.with(|warned| {
         let mut warned = warned.borrow_mut();
         for field in fields {
             if warned.insert((id, field)) {
                 eprintln!(
-                    "three-rs: material {id} ({:?}{}): {} is set but not supported, and is ignored",
-                    material.kind,
-                    if material.name.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" \"{}\"", material.name)
-                    },
-                    field,
+                    "three-rs: material {id} ({label}): {field} is set but not supported, and is ignored",
+                );
+            }
+        }
+        // Read by an accessor (`materialLightMap` / `materialSpecularStrength`)
+        // but not by the material's own lighting flow.
+        for field in material.accessor_only_fields() {
+            if warned.insert((id, field)) {
+                eprintln!(
+                    "three-rs: material {id} ({label}): {field} is set, but the built-in lighting flow does not apply it; only the materialLightMap / materialSpecularStrength accessors read it",
                 );
             }
         }
     });
+}
+
+/// One light's [`LightState`] for the render: `LightsNode.setupLights()`'s
+/// colour and view-space position, plus every per-light uniform the light's
+/// nodes read.
+///
+/// `light.shadow.matrix` is refreshed here for a light whose shadow is not
+/// rendered — `castShadow` off, or `renderer.shadowMap.enabled` off — as
+/// `lightShadowMatrix()`'s `onRenderUpdate` (`Lights.js`) does with
+/// `light.shadow.updateMatrices( light )`, so a
+/// [`light_projection_uv`](crate::nodes::tsl::light_projection_uv) on a light
+/// that casts nothing still projects through its current pose. A rendered
+/// shadow's matrices are already updated by `render_shadows()`. Three's
+/// coordinate-system check has nothing to do: the port only has WebGPU's.
+/// Three's `PointLightShadow` has no `updateMatrices()` of its own, so a
+/// point light takes `LightShadow`'s (looking at the origin, where three
+/// would throw on the missing `light.target`).
+fn gather_light_state(
+    object: &mut crate::core::Object3D,
+    camera_view: &Matrix4,
+    shadow_map_enabled: bool,
+) -> LightState {
+    let world_position = LightObject::world_position(&object.matrix_world);
+    let shadow_rendered = object.cast_shadow && shadow_map_enabled;
+    let light = object
+        .light_mut()
+        .expect("three-rs: the light list only holds lights");
+
+    if !shadow_rendered {
+        let (kind, angle, distance) = (light.kind, light.angle, light.distance);
+        let target_position = light.target_world_position();
+        if let Some(shadow) = light.shadow.as_deref_mut() {
+            // `SpotLightShadow.updateMatrices()`'s projection half.
+            if kind == LightKind::Spot {
+                shadow.update_spot_projection(angle, distance);
+            }
+            shadow.update_matrices(world_position, target_position);
+        }
+    }
+
+    let mut view_position = world_position;
+    view_position.apply_matrix4(camera_view);
+
+    let shadow = light.shadow.as_deref();
+    LightState {
+        color: light.color_intensity(),
+        view_position,
+        distance: light.distance,
+        decay: light.decay,
+        world_position,
+        target_position: light.target_world_position(),
+        ground_color: light.ground_color_intensity(),
+        cone_cos: light.cone_cos(),
+        penumbra_cos: light.penumbra_cos(),
+        shadow_matrix: shadow.map_or_else(Matrix4::identity, |s| s.matrix),
+        shadow_camera_near: shadow.map_or(0.5, |s| s.camera.near()),
+        shadow_camera_far: shadow.map_or(500.0, |s| s.camera.far()),
+        shadow_bias: shadow.map_or(0.0, |s| s.bias),
+        shadow_normal_bias: shadow.map_or(0.0, |s| s.normal_bias),
+        shadow_radius: shadow.map_or(1.0, |s| s.radius),
+        shadow_blur_samples: shadow.map_or(8.0, |s| s.blur_samples as f64),
+        shadow_map_size: shadow.map_or(Vector2::new(512.0, 512.0), |s| s.map_size),
+        shadow_intensity: shadow.map_or(1.0, |s| s.intensity),
+        sh: light.sh_intensity(),
+    }
 }
 
 /// `SkinningNode.update( frame )`: `if ( _frameId.get( skeleton ) ===
@@ -7907,5 +7962,88 @@ fn update_skeleton(
         node_frame.velocity.rotate_bones(skeleton);
         skeleton.borrow_mut().update();
         node_frame.settle(claim, true);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lights::SpotLight;
+    use crate::math::Vector3;
+    use crate::nodes::{UniformMember, UniformSource};
+
+    /// The `ShadowMatrix( 0 )` uniform's bytes for one gathered light.
+    fn shadow_matrix_uniform(light: LightState) -> Vec<u8> {
+        let lights = [light];
+        let context = UniformContext {
+            lights: &lights,
+            ..Default::default()
+        };
+        let member = UniformMember {
+            name: "shadowMatrix".into(),
+            source: UniformSource::ShadowMatrix(0),
+            ty: Type::Mat4,
+            offset: 0,
+        };
+        context.bytes(&[member], 64)
+    }
+
+    fn expected_spot_matrix(position: Vector3, angle: f64, distance: f64) -> Vec<u8> {
+        let mut shadow = LightShadow::spot();
+        shadow.update_spot_projection(angle, distance);
+        shadow.update_matrices(position, Vector3::new(0.0, 0.0, 0.0));
+        bytemuck::cast_slice(&shadow.matrix.to_f32_array()).to_vec()
+    }
+
+    /// `lightShadowMatrix()`'s `onRenderUpdate`: a light that casts no
+    /// shadow still gets `light.shadow.updateMatrices( light )`, so the
+    /// uniform tracks the light as it moves rather than holding whatever
+    /// the matrix last was.
+    #[test]
+    fn shadow_matrix_follows_a_light_that_casts_no_shadow() {
+        let node = SpotLight::new(Color::new(1.0, 1.0, 1.0), 1.0);
+        node.borrow_mut().position.set(3.0, 4.0, 5.0);
+        node.update_matrix_world(true);
+        assert!(!node.borrow().cast_shadow);
+        let angle = node.borrow().light().unwrap().angle;
+
+        let first = gather_light_state(&mut node.borrow_mut(), &Matrix4::identity(), true);
+        let first = shadow_matrix_uniform(first);
+        assert_eq!(
+            first,
+            expected_spot_matrix(Vector3::new(3.0, 4.0, 5.0), angle, 0.0)
+        );
+        let identity: Vec<u8> = bytemuck::cast_slice(&Matrix4::identity().to_f32_array()).to_vec();
+        assert_ne!(first, identity);
+
+        node.borrow_mut().position.set(-2.0, 6.0, 1.0);
+        node.update_matrix_world(true);
+        let moved = gather_light_state(&mut node.borrow_mut(), &Matrix4::identity(), true);
+        assert_eq!(
+            shadow_matrix_uniform(moved),
+            expected_spot_matrix(Vector3::new(-2.0, 6.0, 1.0), angle, 0.0)
+        );
+    }
+
+    /// The same refresh when the light casts but `shadowMap.enabled` is off,
+    /// and none when the shadow is rendered: `render_shadows()` owns the
+    /// matrix then.
+    #[test]
+    fn shadow_matrix_refresh_depends_on_the_shadow_being_rendered() {
+        let node = SpotLight::new(Color::new(1.0, 1.0, 1.0), 1.0);
+        node.borrow_mut().position.set(3.0, 4.0, 5.0);
+        node.borrow_mut().cast_shadow = true;
+        node.update_matrix_world(true);
+        let angle = node.borrow().light().unwrap().angle;
+
+        let rendered = gather_light_state(&mut node.borrow_mut(), &Matrix4::identity(), true);
+        let identity: Vec<u8> = bytemuck::cast_slice(&Matrix4::identity().to_f32_array()).to_vec();
+        assert_eq!(shadow_matrix_uniform(rendered), identity);
+
+        let disabled = gather_light_state(&mut node.borrow_mut(), &Matrix4::identity(), false);
+        assert_eq!(
+            shadow_matrix_uniform(disabled),
+            expected_spot_matrix(Vector3::new(3.0, 4.0, 5.0), angle, 0.0)
+        );
     }
 }

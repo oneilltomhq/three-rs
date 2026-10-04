@@ -124,6 +124,9 @@ pub enum ToneMapping {
     Neutral,
     /// `AgXToneMapping` — Blender's AgX, through Rec. 2020.
     AgX,
+    /// `CineonToneMapping` — Hejl and Burgess-Dawson's filmic operator,
+    /// [`cineon_tone_mapping`](crate::nodes::tsl::cineon_tone_mapping).
+    Cineon,
 }
 
 /// Which `NodeMaterial` subclass this is — i.e. which `setupLightingModel()`
@@ -220,6 +223,15 @@ pub struct MeshBasicNodeMaterial {
     /// `MeshBasicMaterial.refractionRatio` — the index ratio
     /// [`refract_view`](crate::nodes::tsl::refract_view) bends the view ray by
     /// (`materialRefractionRatio`).
+    ///
+    /// 0.98 for the kinds whose three.js material has the property — Basic
+    /// ([`new`](Self::new)), [`lambert`](Self::lambert) and
+    /// [`phong`](Self::phong) — and 0 from every other constructor, whose
+    /// material has none. Three's `materialRefractionRatio` is one shared
+    /// `uniform( 0 )` that `onObjectUpdate` leaves alone when
+    /// `material.refractionRatio` is `undefined`, so such a material reads 0
+    /// until a Basic, Lambert or Phong draw writes it, and the last value
+    /// written after that; the port writes this field every draw instead.
     pub refraction_ratio: f64,
     /// `MeshBasicMaterial.envMap` — `setupEnvironment()` turns it into
     /// `BasicEnvironmentNode( cubeTexture( envMap ) )`.
@@ -363,15 +375,17 @@ pub struct MeshBasicNodeMaterial {
     /// `MeshStandardMaterial.aoMapIntensity` — multiplies
     /// [`ao_map`](Self::ao_map)'s contribution.
     pub ao_map_intensity: f64,
-    /// `MeshStandardMaterial.lightMap` — read by
-    /// [`material_light_map`](crate::nodes::tsl::material_light_map) only:
-    /// three's `setupLightMap()` (an `IrradianceNode` in the lights list) is
-    /// not ported, so the material's own flow does not apply it.
+    /// `material.lightMap` (`MeshBasicMaterial`, `MeshLambertMaterial`,
+    /// `MeshPhongMaterial`, `MeshStandardMaterial`, `MeshToonMaterial`) —
+    /// read by [`material_light_map`](crate::nodes::tsl::material_light_map)
+    /// only: three's `setupLightMap()` (an `IrradianceNode` in the lights
+    /// list) is not ported, so the material's own flow does not apply it.
     pub light_map: Option<Texture>,
-    /// `MeshStandardMaterial.lightMapIntensity` — the
-    /// `materialLightMap` scale.
+    /// `material.lightMapIntensity`, on the same materials as
+    /// [`light_map`](Self::light_map) — the `materialLightMap` scale.
     pub light_map_intensity: f64,
-    /// `MeshPhongMaterial.specularMap` — read by
+    /// `material.specularMap` (`MeshBasicMaterial`, `MeshLambertMaterial`,
+    /// `MeshPhongMaterial`) — read by
     /// [`material_specular_strength`](crate::nodes::tsl::material_specular_strength)
     /// only; the Phong flow does not apply it.
     pub specular_map: Option<Texture>,
@@ -768,20 +782,33 @@ impl MeshBasicNodeMaterial {
         if self.ao_map.is_some() && !pbr {
             fields.push("aoMap");
         }
-        // `setupLightMap()` and Phong's `specularMap` are not wired into any
-        // flow; the maps reach a shader only through `materialLightMap` /
-        // `materialSpecularStrength` in a node the application builds.
-        if self.light_map.is_some() {
-            fields.push("lightMap");
-        }
-        if self.specular_map.is_some() {
-            fields.push("specularMap");
-        }
         // `MeshNormalNodeMaterial`'s flow packs the normal straight into the
         // output, with no `setupLighting()` step for the backdrop arm to sit
         // in. Every other kind blends it into `totalDiffuse`.
         if self.backdrop_node.is_some() && self.kind == Normal {
             fields.push("backdropNode");
+        }
+        fields
+    }
+
+    /// The maps set on this material that the built-in lighting flow does not
+    /// apply but that an accessor does read: `lightMap` (three's
+    /// `setupLightMap()`, an `IrradianceNode` in the lights list, is not
+    /// ported) reaches a shader only through
+    /// [`material_light_map`](crate::nodes::tsl::material_light_map), and
+    /// Phong's `specularMap` only through
+    /// [`material_specular_strength`](crate::nodes::tsl::material_specular_strength),
+    /// in a node the application builds. Not in
+    /// [`unsupported_fields`](Self::unsupported_fields), so
+    /// [`check_supported`](Self::check_supported) passes them; the renderer
+    /// still says once per material that the flow leaves them out.
+    pub(crate) fn accessor_only_fields(&self) -> Vec<&'static str> {
+        let mut fields = Vec::new();
+        if self.light_map.is_some() {
+            fields.push("lightMap");
+        }
+        if self.specular_map.is_some() {
+            fields.push("specularMap");
         }
         fields
     }
@@ -857,6 +884,7 @@ impl MeshBasicNodeMaterial {
         Self {
             kind: MaterialKind::Sprite,
             transparent: true,
+            refraction_ratio: 0.0,
             ..Self::default()
         }
     }
@@ -874,6 +902,7 @@ impl MeshBasicNodeMaterial {
         Self {
             kind: MaterialKind::Points,
             transparent: true,
+            refraction_ratio: 0.0,
             ..Self::default()
         }
     }
@@ -900,6 +929,7 @@ impl MeshBasicNodeMaterial {
     pub fn line(color: Color) -> Self {
         Self {
             color,
+            refraction_ratio: 0.0,
             ..Self::default()
         }
     }
@@ -922,6 +952,7 @@ impl MeshBasicNodeMaterial {
             color,
             blending: Blending::No,
             alpha_to_coverage: true,
+            refraction_ratio: 0.0,
             ..Self::default()
         }
     }
@@ -936,6 +967,7 @@ impl MeshBasicNodeMaterial {
     pub fn normal() -> Self {
         Self {
             kind: MaterialKind::Normal,
+            refraction_ratio: 0.0,
             ..Self::default()
         }
     }
@@ -979,6 +1011,7 @@ impl MeshBasicNodeMaterial {
             color,
             gradient_map,
             lights: true,
+            refraction_ratio: 0.0,
             ..Self::default()
         }
     }
@@ -991,6 +1024,7 @@ impl MeshBasicNodeMaterial {
             roughness,
             metalness,
             lights: true,
+            refraction_ratio: 0.0,
             ..Self::default()
         }
     }
