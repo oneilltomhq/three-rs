@@ -6222,13 +6222,97 @@ the crate's PNG decoder.
 - The search texture is `NearestFilter`, so its taps are `textureLoad`, as
   in three's dump.
 
-### 65.3 Not ported
+### 65.3 The stochastic path
 
-All of these are options the page leaves at their defaults:
+**What three does.** `stochastic: true` is `SSRNode`'s second generation,
+the form `webgpu_postprocessing_ssr_denoise` uses. The same `SSRNode.SSR`
+quad changes in these places, each an `if ( this.stochastic … )` at build
+time:
 
-- `stochastic`;
-- `reflectNonMetals`, `binaryRefine` and `screenEdgeFadeBlack`;
-- `setHistory()` and `diffuseNode`;
+- *The ray.* `bindAnalyticNoise( resolution, 47 )( uv, _noiseIndex )`
+  gives each pixel four numbers, and `_noiseIndex` advances by one every
+  frame. `Xi.y` is pulled toward the lobe's top by `mirrorBias` (default
+  0.5), and `ggxReflectionSample( N, V, roughness, metalness, albedo, Xi )`
+  draws the reflected direction from the GGX lobe. The albedo is
+  `diffuseNode.sample( uv ).rgb` when there is a diffuse node. A sample
+  below the surface is drawn again with `fract( Xi · 8 )`. The sample's
+  weight replaces the mirror path's metalness, attenuation and Fresnel
+  terms, and nothing is discarded for being a non-metal.
+- *The march.* It takes `quality · 64` steps (at least 1), spaced
+  `( ( i + noise.z − 0.5 ) / steps )^stepExponent` along the ray rather than
+  one texel apart. There is no normal test and no `maxDistance` break at a
+  candidate. With `binaryRefine`, the bracketing step is then bisected eight
+  times, after the loop rather than inside it.
+- *The hit.* The alpha is the world distance times
+  `getSpecularDominantFactor( NdotV, roughness )`. Near the screen's edge
+  (`computeScreenBorderFactor`, a `Fn` with a layout) the colour fades
+  toward the environment over `screenEdgeFade · glossiness`, or to black
+  with `screenEdgeFadeBlack`.
+- *A miss.* It returns the environment lobe times `environmentIntensity`
+  (default π), with `ENV_RAY_LENGTH` in alpha. The lookup is
+  `ImportanceSampledEnvironment`'s BRDF form, or its MIS form with
+  `envImportanceSampling` (second noise seed 59). Without an environment
+  the miss is black.
+- *Multi-bounce.* `setHistory( history, velocity )` adds the previous
+  frame's denoised reflection at the hit, reprojected by the velocity and
+  damped by `1 − history.a`.
+
+`getTextureNode()` is the raw SSR target, and no copy or blur quad runs.
+
+**The port.** `SsrOptions` gains `stochastic`, `reflect_non_metals`,
+`environment`, `env_importance_sampling`, `diffuse` and `binary_refine`
+(builders `with_*`), so `ssr()` keeps its signature. `SsrNode` adds:
+
+- the uniforms `mirror_bias`, `screen_edge_fade`, `environment_intensity`
+  and `env_map_intensity()`;
+- `set_env_map()`, `set_history( &Texture, &Texture )` and
+  `clear_history()`;
+- `render_target()` and `stochastic()`;
+- getters and setters for `binary_refine`, `reflect_non_metals`,
+  `step_exponent` and `screen_edge_fade_black`.
+
+Those four setters and the two history and environment calls rebuild the
+SSR material, as three's do. `set_history` takes the denoiser's target
+texture where three also accepts the node. `updateBefore()`'s camera world
+position and noise index are kept current as three keeps them. The march is
+one set of `#[inline(never)]` helpers for both paths, branching where three
+does.
+
+`tools/dump-pages/ssr_stochastic.html` builds three quads:
+
+| Quad | Options | Fixture | Gate |
+|---|---|---|---|
+| a | stochastic, diffuse, BRDF environment | `ssr_stochastic_m10_ssr_stochastic` | `ssr_stochastic_matches_three`, `ssr_screen_border_factor_matches_three` |
+| b | the page's options (MIS, `binaryRefine`), `stepExponent` 3, a history | `ssr_stochastic_m14_ssr_stochastic_refine` | `ssr_stochastic_refine_matches_three` |
+| c | mirror path, `reflectNonMetals` | `ssr_stochastic_m16_ssr_reflect_non_metals` | `ssr_reflect_non_metals_matches_three` |
+
+The four gates from §65.2 pass unchanged. `tests/ssr_stochastic_frames.rs`
+checks the render:
+
+- a mirror floor shows a white box exactly where its mirror image lands;
+- nothing else is lit;
+- hits carry a positive ray length in alpha;
+- two consecutive frames differ but have the same mean;
+- nothing is NaN;
+- `intensity = 0` leaves no colour.
+
+The builder gained a **struct-typed var**. `ggxReflectionSample( … )
+.toVar()` declares `var nodeVarN : StructType0;`, because a `to_var` of a
+value that carries a struct is declared as that struct.
+
+**Differences.** The fingerprint ignores these, and none is in SSR's own
+graph:
+
+- Helpers that existed before this port emit `nodeVarN = …` where three
+  emits `let nodeConstN = …`. These are `get_view_position`, the analytic
+  noise and the environment lookups' intermediates.
+- Three's `let nodeVar14 = nodeVar14;` texture re-declarations are not
+  emitted.
+- `ImportanceSampledEnvironment`'s BRDF lookup fetches the texel before its
+  `max( 0.0, dot( … ) )` terms, where three fetches it after them.
+
+**Still not ported:**
+
 - `resolutionScale ≠ 1`;
 - an orthographic camera;
 - a logarithmic depth buffer.
@@ -8441,7 +8525,8 @@ image against hand-computed values from three's arithmetic. They cover:
   .toVar()`, and three copies the struct into a second var
   (`nodeVar50 = nodeVar49`) before reading members. The port reads them off
   the struct var `ggx_reflection_sample` builds, because a struct-typed
-  `to_var` is not supported. The fingerprint is the same.
+  `to_var` was not supported when this landed (§65.3 has since added it).
+  The fingerprint is the same.
 
 ## 86. `SharpenNode` (`webgpu_postprocessing_ssr_denoise`)
 

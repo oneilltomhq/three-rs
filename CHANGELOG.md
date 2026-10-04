@@ -8,6 +8,17 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Added
 
+- **`ssr()`'s stochastic path** (`nodes::display`): `SsrOptions` gains
+  `stochastic`, `reflect_non_metals`, `environment`,
+  `env_importance_sampling`, `diffuse` and `binary_refine`, and `SsrNode`
+  gains `set_env_map`, `set_history`, `render_target` and the mirror-bias,
+  screen-edge-fade and environment-intensity uniforms. This ports the rest
+  of `examples/jsm/tsl/display/SSRNode.js`: GGX-sampled rays jittered by a
+  per-frame noise index, binary refinement, the environment fallback on a
+  miss and the multi-bounce history. The three SSR quads of
+  `tools/dump-pages/ssr_stochastic.html` are gated against three's dump in
+  `tests/nodes_display_wgsl.rs`, and `tests/ssr_stochastic_frames.rs` checks
+  a mirror floor's reflection. See `docs/nodes.md` §65.3.
 - **`ImportanceSampledEnvironment`** and **`EnvMapCdfGenerator`**
   (`nodes::display`), with the SpecularHelpers microfacet helpers
   (`d_gtr`, `ggx_reflection_sample`, `mis_power_heuristic`, …) and
