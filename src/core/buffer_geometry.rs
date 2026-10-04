@@ -176,7 +176,8 @@ pub struct DrawRange {
 /// What a cached pair of bounds was computed from: the `position` attribute's
 /// id and version, every `position` morph target's id and version in order,
 /// and `morph_targets_relative`. The ids are the numbers, never an
-/// [`AttributeId`] clone, which would mint a fresh id and never match.
+/// [`AttributeId`](super::AttributeId) clone, which would mint a fresh id and
+/// never match.
 #[derive(Clone, Debug, PartialEq)]
 struct BoundsKey {
     position: (usize, u32),
