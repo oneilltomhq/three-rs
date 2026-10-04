@@ -87,8 +87,8 @@ fn color(c: Color) -> Value {
 /// combination is named by its parts, so it fails the comparison.
 fn material_type(m: &MeshBasicNodeMaterial) -> String {
     match (m.kind, m.refraction_ratio) {
-        (MaterialKind::Basic, ratio) if ratio == 0.0 => "LineBasicMaterial".to_owned(),
-        (MaterialKind::Basic, ratio) if ratio == 0.98 => "MeshBasicMaterial".to_owned(),
+        (MaterialKind::Basic, 0.0) => "LineBasicMaterial".to_owned(),
+        (MaterialKind::Basic, 0.98) => "MeshBasicMaterial".to_owned(),
         (kind, ratio) => format!("{kind:?} with refraction_ratio {ratio}"),
     }
 }
