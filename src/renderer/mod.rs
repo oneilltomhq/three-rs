@@ -5772,8 +5772,19 @@ impl Renderer {
             entry.last_used = frames;
             return entry.view.clone();
         }
+        // A combined depth-stencil texture (the viewport depth copy of a
+        // `stencil: true` renderer's `depth24plus-stencil8` buffer) binds as
+        // `texture_depth_2d` through its depth aspect alone: a view of both
+        // aspects fails bind-group validation.
+        let format = gpu.format();
+        let aspect = if format.has_depth_aspect() && format.has_stencil_aspect() {
+            wgpu::TextureAspect::DepthOnly
+        } else {
+            wgpu::TextureAspect::All
+        };
         let view = gpu.create_view(&wgpu::TextureViewDescriptor {
             dimension,
+            aspect,
             mip_level_count: storage.then_some(1),
             ..Default::default()
         });
