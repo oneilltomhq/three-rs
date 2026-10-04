@@ -77,13 +77,13 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
-        let red = BufferAttribute::uint8(vec![255, 0, 0].repeat(4), 3, true);
+        let red = BufferAttribute::uint8([255, 0, 0].repeat(4), 3, true);
 
         // RGBA bytes, the fourth unused: the view reads three of each four.
         let interleaved = Rc::new(InterleavedBuffer::new([0u8, 255, 0, 7].repeat(4), 4));
         let green = BufferAttribute::interleaved(interleaved.clone(), 3, 0, true);
 
-        let blue = BufferAttribute::uint16(vec![0, 0, 65535, 65535].repeat(4), 4, true);
+        let blue = BufferAttribute::uint16([0, 0, 65535, 65535].repeat(4), 4, true);
 
         let mut scene = Scene::new();
         scene.set_background(Color::from_hex(0x000000));

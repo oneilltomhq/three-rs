@@ -1001,8 +1001,10 @@ impl StorageBufferAttribute {
         let array = self.array.borrow();
         let bytes = array.to_bytes(array.kind(), self.item_size, self.padded_item_size());
         bytes
-            .chunks_exact(4)
-            .map(|w| u32::from_le_bytes([w[0], w[1], w[2], w[3]]))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|w| u32::from_le_bytes(*w))
             .collect()
     }
 }
@@ -1568,7 +1570,7 @@ impl BufferAttribute {
                 let kind = array.kind().upload_kind(self.normalized, false);
                 let n = self.item_size;
                 let bpe = kind.bytes_per_element();
-                let padded = if n > 1 && (n * bpe) % 4 != 0 {
+                let padded = if n > 1 && !(n * bpe).is_multiple_of(4) {
                     (n * bpe).div_ceil(4) * 4 / bpe
                 } else {
                     n
