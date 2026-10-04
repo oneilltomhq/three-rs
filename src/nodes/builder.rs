@@ -429,9 +429,10 @@ enum CacheKey {
     /// `WGSLNodeBuilder.generateTextureDimension()`'s
     /// `textureData.dimensionsSnippet`: the `textureDimensions` var of one
     /// texture, keyed by its binding name (one name per texture, see
-    /// `NodeBuilder::texture_names`). Three keys it on the texture object
-    /// and the level snippet; the port's only level is `0`.
-    TextureDimensions(String),
+    /// `NodeBuilder::texture_names`) and the level snippet, as three keys it
+    /// on the texture object and `levelSnippet`: `"0"` for a plain tap, the
+    /// level node's snippet for `texture( map, uv ).level( n )`.
+    TextureDimensions(String, String),
 }
 
 impl CacheKey {
@@ -2067,6 +2068,15 @@ impl NodeBuilder {
             // built as a `float`, so the fetch itself is narrowed and
             // the node's var is an `f32` — three's
             // `nodeVar7 = textureSampleLevel( … ).x`.
+            // `generateTextureLevel()` on an unfilterable map is
+            // `generateTextureLod()`: a `textureLoad` at the level, not a
+            // `textureSampleLevel` through a sampler the map has none of.
+            SampleMode::Level(level)
+                if kind == TextureKind::FloatData2D
+                    && matches!(*texture, TextureSource::Texture2D(_)) =>
+            {
+                self.generate_texture_lod(&texture, &name, kind, &suv, &level)
+            }
             SampleMode::Level(level) if node.ty().components() == 1 => {
                 let slevel = self.generate(&level);
                 format!("textureSampleLevel( {name}, {name}_sampler, {suv}, {slevel} ).x")
@@ -2128,7 +2138,7 @@ impl NodeBuilder {
                 // one dimensions var per texture in `builder.cache`,
                 // so a second tap in the same scope (or one nested in
                 // it) reuses it, and a sibling `if` declares its own.
-                let dims_key = CacheKey::TextureDimensions(name.clone());
+                let dims_key = CacheKey::TextureDimensions(name.clone(), "0".to_string());
                 let dims = match self.cache_get(dims_key.clone()) {
                     Some(dims) => dims,
                     None => {
@@ -2156,6 +2166,38 @@ impl NodeBuilder {
         } else {
             snippet
         }
+    }
+
+    /// `WGSLNodeBuilder.generateTextureLod()` with a level snippet — a
+    /// `.level( n )` tap of an unfilterable 2-D map: the wrapped, clamped
+    /// texel fetch [`SampleMode::Load`] emits, but with `u32( level )` in
+    /// both the `textureDimensions` (cached per texture *and* level, as
+    /// three's `dimensionsSnippet[ levelSnippet ]` is) and the `textureLoad`.
+    /// `ImportanceSampledEnvironment`'s `texture( map, uv ).level( 0 )` on a
+    /// `NearestFilter` `DataTexture` is the caller.
+    #[inline(never)]
+    fn generate_texture_lod(
+        &mut self,
+        texture: &Rc<TextureSource>,
+        name: &str,
+        kind: TextureKind,
+        suv: &str,
+        level: &NodeRef,
+    ) -> String {
+        let slevel = self.generate(level);
+        let wrap_fn = self.wrap_function(texture);
+        let dims_key = CacheKey::TextureDimensions(name.to_string(), slevel.clone());
+        let dims = match self.cache_get(dims_key.clone()) {
+            Some(dims) => dims,
+            None => {
+                let dims = self.declare_var(None, Type::UVec2);
+                let dims_expr = wgsl::texture_dimensions_level(name, kind, &slevel);
+                self.emit(format!("{dims} = {dims_expr};"));
+                self.cache_put(dims_key, dims.clone());
+                dims
+            }
+        };
+        wgsl::texture_load_level(name, &wrap_fn, suv, &dims, &slevel)
     }
 
     #[inline(never)]

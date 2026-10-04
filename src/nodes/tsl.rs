@@ -30,10 +30,14 @@ pub use super::node::TextureSource;
 
 mod gpgpu;
 mod lighting;
+mod rnoise;
+mod specular_helpers;
 mod utils;
 mod wrappers;
 pub use gpgpu::*;
 pub use lighting::*;
+pub use rnoise::*;
+pub use specular_helpers::*;
 pub use utils::*;
 pub use wrappers::*;
 

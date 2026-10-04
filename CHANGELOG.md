@@ -20,6 +20,16 @@ have their own sections after the release they ship with. The format follows [Ke
   resolve quads are gated against three's dump in
   `tests/nodes_display_wgsl.rs`, and `tests/temporal_reproject_frames.rs`
   checks the history on the GPU. See `docs/nodes.md` §87.
+- **`ImportanceSampledEnvironment`** and **`EnvMapCdfGenerator`**
+  (`nodes::display`), with the SpecularHelpers microfacet helpers
+  (`d_gtr`, `ggx_reflection_sample`, `mis_power_heuristic`, …) and
+  `bind_analytic_noise` in `nodes::tsl`. These port
+  `examples/jsm/tsl/display/ImportanceSampledEnvironment.js`,
+  `tsl/utils/SpecularHelpers.js` and `tsl/utils/RNoise.js`: the CPU
+  luminance CDF tables and the reflect, BRDF and MIS environment lookups the
+  SSR-denoise stack shares. The WGSL is gated against three's dump of
+  `tools/dump-pages/specular_helpers.html` in `tests/nodes_display_wgsl.rs`,
+  and the CDF tables by a hand-computed 4×2 unit test.
 - **`WaterMesh`** (`addons::objects`), a port of
   `examples/jsm/objects/WaterMesh.js`: a planar `reflector()` distorted by
   four scrolling taps of a normal map, with a sun highlight and a Fresnel mix
@@ -443,6 +453,15 @@ have their own sections after the release they ship with. The format follows [Ke
   three's `scene.backgroundIntensity` and `scene.environmentIntensity`.
 - **`tsl::const_array_of`**, a literal array of vectors, and
   `UniformArray::element_xyz`.
+- **`sharpen()` / `SharpenNode`** (`nodes::display`), a port of
+  `examples/jsm/tsl/display/SharpenNode.js`: AMD FidelityFX FSR 1's RCAS,
+  a contrast-limited five-tap sharpen drawn once a frame into a half-float
+  target, with optional noise attenuation. `sharpness` is a number (a
+  constant, as in three) or any float node, such as a `uniform_settable`.
+  Both variants' WGSL is gated against three's dump of
+  `tools/dump-pages/sharpen.html` in `tests/nodes_display_wgsl.rs`, and
+  `tests/sharpen_frames.rs` checks on the GPU that it steepens a soft edge
+  without moving flat regions. See `docs/nodes.md` §86.
 
 ### Changed
 

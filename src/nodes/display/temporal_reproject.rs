@@ -62,20 +62,13 @@ use crate::nodes::tsl::{
     max, mix, screen_coordinate, shader_fn, smoothstep, sqrt, struct_get, struct_new, struct_type,
     texture_load, texture_load_transformed, texture_size, texture_uv, to_const, to_var,
     to_var_intent, uniform_settable, unpack_rgb_to_normal, uv, vec2, vec3, vec3_join, vec4_join,
+    ENV_RAY_LENGTH, ENV_RAY_LENGTH_THRESHOLD,
 };
 use crate::nodes::{NodeRef, NodeUpdate, NodeUpdateType};
 use crate::objects::QuadMesh;
 use crate::renderer::{RenderPipeline, RenderTarget, RenderTargetOptions, Renderer};
 use crate::textures::{DepthTexture, Texture, TextureFilter, TextureType};
 
-/// `SpecularHelpers.js`'s constants; replaced by `nodes::tsl`'s when the
-/// `specular-helpers` branch lands. `ENV_RAY_LENGTH` is the ray length an SSR
-/// miss (an environment reflection) writes into the beauty's alpha.
-const ENV_RAY_LENGTH: f64 = 10000.0;
-/// `SpecularHelpers.js`'s constants; replaced by `nodes::tsl`'s when the
-/// `specular-helpers` branch lands. A ray length at or above it counts as an
-/// environment miss rather than a screen-space hit.
-const ENV_RAY_LENGTH_THRESHOLD: f64 = 1000.0;
 /// `VARIANCE_CLIP_LUMA_SCALE`: how hard bright samples are compressed before
 /// they enter the variance box.
 const VARIANCE_CLIP_LUMA_SCALE: f64 = 10.0;
