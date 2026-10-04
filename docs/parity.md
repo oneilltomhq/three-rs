@@ -22,12 +22,12 @@ This matrix judges every exported name in three.js revision 5f610f5 (r187) — `
 | loaders | 20 | 2 | 2 | 12 | 4 | 12% |
 | renderers | 39 | 9 | 9 | 3 | 18 | 43% |
 | nodes | 141 | 100 | 27 | 9 | 5 | 74% |
-| tsl | 683 | 553 | 51 | 54 | 25 | 84% |
+| tsl | 683 | 554 | 51 | 53 | 25 | 84% |
 | addons/controls | 11 | 1 | 6 | 4 | 0 | 9% |
 | addons/loaders | 71 | 6 | 2 | 63 | 0 | 8% |
 | addons/postprocessing | 30 | 0 | 0 | 0 | 30 | — |
 | addons/other | 102 | 11 | 4 | 64 | 23 | 14% |
-| **total** | **1317** | **807** | **136** | **251** | **123** | **68%** |
+| **total** | **1317** | **808** | **136** | **250** | **123** | **68%** |
 
 TSL by family:
 
@@ -39,12 +39,12 @@ TSL by family:
 | textures | 23 | 17 | 1 | 5 | 0 |
 | lighting/material | 121 | 92 | 10 | 19 | 0 |
 | accessors | 95 | 76 | 8 | 10 | 1 |
-| display/postprocessing | 75 | 61 | 7 | 7 | 0 |
+| display/postprocessing | 75 | 62 | 7 | 6 | 0 |
 | compute/storage | 53 | 46 | 7 | 0 | 0 |
 | materialx | 49 | 48 | 0 | 1 | 0 |
 | utils | 77 | 46 | 15 | 6 | 10 |
 
-Graded examples: 87 (the README gallery plus `webgpu_textures_2d-array_compressed`, which has a live `rung!` but a hyphen in its name). 10 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
+Graded examples: 88 (the README gallery plus `webgpu_textures_2d-array_compressed`, which has a live `rung!` but a hyphen in its name). 10 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
 
 ## math
 
@@ -682,7 +682,7 @@ Graded examples: 87 (the README gallery plus `webgpu_textures_2d-array_compresse
 |---|---|---|---|---|
 | `AfterimagePass` | N.A. | — | — | WebGL composer; AfterimagePass -> AfterImageNode afterImage(): Present; after_image (src/nodes/display/after_image.rs:37); tests/nodes_display_wgsl.rs; webgpu_postprocessing_afterimage (ungraded) |
 | `BloomPass` | N.A. | — | — | WebGL composer; BloomPass -> nearest BloomNode bloom(): Present; bloom (src/nodes/display/bloom.rs:219); webgpu_postprocessing_bloom |
-| `BokehPass` | N.A. | — | — | WebGL composer; BokehPass -> DepthOfFieldNode dof(): Absent |
+| `BokehPass` | N.A. | — | — | WebGL composer; BokehPass -> DepthOfFieldNode dof(): Present |
 | `ClearPass` | N.A. | — | — | WebGL composer; ClearPass -> no TSL node (renderer clear / autoClear): Present; Renderer clear (src/renderer); webgpu_postprocessing_masking |
 | `CubeTexturePass` | N.A. | — | — | WebGL composer; CubeTexturePass -> no TSL node (scene.background cube): Present; CubeTexture background; webgpu_materials_envmaps |
 | `DotScreenPass` | N.A. | — | — | WebGL composer; DotScreenPass -> DotScreenNode dotScreen(): Present; dot_screen (src/nodes/display/dot_screen.rs:15); tests/nodes_display_wgsl.rs; webgpu_postprocessing (ungraded) |
@@ -822,7 +822,7 @@ Graded examples: 87 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ### Supplementary: `examples/jsm/tsl/display/*.js`
 
-These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 20 Present, 1 Partial, 27 Absent.
+These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 21 Present, 1 Partial, 26 Absent.
 
 | file | status | three-rs port and check |
 |---|---|---|
@@ -831,13 +831,13 @@ These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) an
 | `BilateralBlurNode.js` | Present | bilateral_blur/BilateralBlurNode (src/nodes/display/bilateral_blur.rs:50); tests/nodes_display_wgsl.rs (horizontal and vertical gates); webgpu_postprocessing_godrays (graded); two materials instead of one with a swapped texture; no dispose() |
 | `BleachBypass.js` | Absent | — |
 | `BloomNode.js` | Present | bloom/BloomNode; webgpu_postprocessing_bloom, _bloom_emissive, _bloom_selective, _anamorphic |
-| `boxBlur.js` | Present | box_blur; tests/nodes_display_wgsl.rs (WGSL gate only, no graded rung) |
+| `boxBlur.js` | Present | box_blur; tests/nodes_display_wgsl.rs; webgpu_postprocessing_dof_basic (graded) |
 | `ChromaticAberrationNode.js` | Present | chromatic_aberration; webgpu_postprocessing_ca |
 | `CRT.js` | Absent | — |
 | `DenoiseNode.js` | Absent | — |
 | `depthAwareBlend.js` | Present | depth_aware_blend (src/nodes/display/depth_aware_blend.rs:96); tests/nodes_display_wgsl.rs; webgpu_postprocessing_godrays (graded); perspective camera only, as in three; a baseNode with its own uvNode is not ported |
 | `depthAwareBlur.js` | Absent | — |
-| `DepthOfFieldNode.js` | Absent | — |
+| `DepthOfFieldNode.js` | Present | dof/DepthOfFieldNode; tests/nodes_display_wgsl.rs (`dof_*`: all seven distinct quad shaders); webgpu_postprocessing_dof (ported, ungraded: three's own e2e exception list) |
 | `DotScreenNode.js` | Present | dot_screen; tests/nodes_display_wgsl.rs; webgpu_postprocessing (ported, ungraded) |
 | `FilmNode.js` | Absent | — |
 | `FSR1Node.js` | Absent | — |
@@ -1374,15 +1374,15 @@ Partial: `tangentViewFrame`, `bitangentViewFrame`, `builtin`, `cameraViewport`, 
 
 ### display/postprocessing
 
-61 of 75 applicable present (7 Partial, 7 Absent, 0 N.A.).
+62 of 75 applicable present (7 Partial, 6 Absent, 0 N.A.).
 
-Missing (Absent): `outputStruct`, `getScreenPositionFromClip`, `workingToColorSpace`, `convertColorSpace`, `viewportMipTexture`, `viewportOpaqueMipTexture`, `depth`.
+Missing (Absent): `getScreenPositionFromClip`, `workingToColorSpace`, `convertColorSpace`, `viewportMipTexture`, `viewportOpaqueMipTexture`, `depth`.
 
 Partial: `colorSpaceToWorking`, `negateOnBackSide`, `viewportTexture`, `viewportDepthTexture`, `linearDepth`, `viewportLinearDepth`, `passTexture`.
 
 | three.js name | verdict | three-rs symbol | verified by | note |
 |---|---|---|---|---|
-| `outputStruct` | Absent | — | — |  |
+| `outputStruct` | Present | output_struct (src/nodes/tsl.rs:558) | tests/nodes_display_wgsl.rs (`dof_coc_matches_three`) |  |
 | `getTextureIndex` | Present | get_texture_index (src/nodes/mrt.rs:209) | tests/nodes_tsl_batch.rs (get_texture_index_finds_attachments) | CPU helper over attachment names; Option for -1 |
 | `mrt` | Present | mrt (src/nodes/mrt.rs:79) | tests/renderer_mrt.rs, webgpu_deferred (graded) |  |
 | `viewportSafeUV` | Present | viewport_safe_uv (src/nodes/display/viewport_texture.rs:200) | webgpu_backdrop (graded) |  |
@@ -1674,7 +1674,7 @@ Every graded example passes, so graded examples cannot rank the gaps. The rankin
 
 The first refresh of this matrix closed the previous top five. Velocity and TRAA (`velocity`, `positionPrevious`, `VelocityNode`, `TRAANode`, `MotionBlur`), the screen reads (`viewportSharedTexture`, `viewportTexture`, `viewportDepthTexture`, `viewportLinearDepth`, `linearDepth`, `viewportSafeUV`), `SkyMesh`, `CubeCamera` with a layered `CubeRenderTarget`, and the light probes (`LightProbe`, `LightProbeGenerator`, `LightProbeNode`, `LightProbeHelperGPU`, `getShIrradianceAt`) are Present. So is `transformNormalToView` (6 pages), with the rest of the accessors batch; `webgpu_tsl_raging_sea` now calls it. Of the screen reads only the shared copy has a graded page behind it; `viewportTexture`, `viewportDepthTexture`, `viewportLinearDepth` and `linearDepth` are defined but no gate or graded example renders them yet, so they stay Partial until a depth-reading page is ported.
 
-1. **The screen-space effect nodes** (`SSRNode`, `SSGINode`, `SSSNode`, `DenoiseNode`, `DepthOfFieldNode`; `ssr()` 2 pages, `ssgi()` 2, `sss()` 1, `dof()` 1, `denoise` 6). `GTAONode` and `builtinAOContext` are Present now (`webgpu_postprocessing_ao`, ungraded: it is on three's e2e exception list). Each of the rest needs a velocity target and a temporal resolve, and both now exist; these pages are the direct payoff of the velocity work. Porting them also gives the depth reads (`viewportDepthTexture`, `linearDepth`, `getViewPosition`) their first graded consumer.
+1. **The screen-space effect nodes** (`SSRNode`, `SSGINode`, `SSSNode`, `DenoiseNode`; `ssr()` 2 pages, `ssgi()` 2, `sss()` 1, `denoise` 6). `GTAONode` and `builtinAOContext` are Present now (`webgpu_postprocessing_ao`, ungraded: it is on three's e2e exception list), and so is `DepthOfFieldNode` (`webgpu_postprocessing_dof`, ungraded for the same reason). Each of the rest needs a velocity target and a temporal resolve, and both now exist; these pages are the direct payoff of the velocity work. Porting them also gives the depth reads (`viewportDepthTexture`, `linearDepth`, `getViewPosition`) their first graded consumer.
 2. **EventDispatcher** (issues 153, 159). 8 pages subscribe to `change` or `finished` events. In ordinary use these are render-on-demand behind OrbitControls and chaining animation clips when one ends, and neither works in the port today. `AnimationMixer` and `AnimationAction` fire nothing.
 3. **The TransformControls pages** (`webgpu_modifier_curve`, `webgpu_shadowmap_progressive`, `webgpu_tsl_compute_attractors_particles`). `FirstPersonControls` (8 pages), `FlyControls` (1) and now `TransformControls` are ported and gated against three's classes (`docs/controls.md`). What is left is wiring the gizmo into the pages: `webgpu_modifier_curve`'s port still leaves it out, and the viewer's controls hook is typed for `OrbitControls`.
 4. **`WaterMesh`** (2 pages) and the remaining display files (`OutlineNode`, `SMAANode`, `Lut3DNode`, `FilmNode`, 1 to 2 pages each). Small, self-contained, and each unlocks one page.

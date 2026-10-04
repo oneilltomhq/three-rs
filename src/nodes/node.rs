@@ -1944,6 +1944,19 @@ pub enum Node {
         /// One value per member.
         values: Vec<NodeRef>,
     },
+    /// `outputStruct( ...members )` — `OutputStructNode`, a fragment stage's
+    /// whole result as one `@location( i )` member per value, each of its own
+    /// type. It is only ever a material's `outputNode`
+    /// (`DepthOfFieldNode`'s CoC pass writes its near and far fields this
+    /// way); the builder turns it into the `OutputType` struct and its
+    /// `output.mN = …` lines, as it does an [`MrtNode`]'s members, and it
+    /// has no value of its own.
+    ///
+    /// [`MrtNode`]: crate::nodes::MrtNode
+    OutputStruct {
+        /// The members, by location.
+        members: Vec<NodeRef>,
+    },
     /// `structNode.get( name )` — `MemberNode` over a [`Node::StructNew`]
     /// (or over a block or `Fn()` whose result is one): `{ var }.{ member }`.
     StructGet {
@@ -2038,7 +2051,7 @@ impl NodeRef {
                 node.ty()
             }
             Node::Expression { ty, .. } => *ty,
-            Node::StructNew { .. } => Type::Void,
+            Node::StructNew { .. } | Node::OutputStruct { .. } => Type::Void,
             Node::StructGet { layout, member, .. } => layout.members[*member].ty,
         }
     }

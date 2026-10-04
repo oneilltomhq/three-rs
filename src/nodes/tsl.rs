@@ -552,6 +552,13 @@ pub fn to_varying(name: Option<&'static str>, value: NodeRef) -> NodeRef {
     })))
 }
 
+/// `outputStruct( ...members )` — `OutputStructNode`, for a material's
+/// `outputNode`: the fragment stage writes `members[ i ]` to `@location( i )`,
+/// each as its own type. See [`Node::OutputStruct`].
+pub fn output_struct(members: Vec<NodeRef>) -> NodeRef {
+    NodeRef::new(Node::OutputStruct { members })
+}
+
 /// `property( type, name )`.
 pub fn property(name: &'static str, ty: Type) -> NodeRef {
     NodeRef::new(Node::Property { name, ty })
@@ -1910,6 +1917,14 @@ fn whole(ty: Type) -> &'static str {
 fn swizzle(node: NodeRef, components: &'static str) -> NodeRef {
     if components == whole(node.ty()) {
         return node;
+    }
+    // `SplitNode.generate()` on a `float` / `int` / `uint`: "ignore
+    // .components if .node returns float/integer" — the scalar is built at
+    // the swizzle's own type, which `builder.format()` widens by splatting
+    // (`vec3<f32>( s )`). `.y` on a scalar is the scalar itself.
+    if node.ty().components() == 1 {
+        let ty = Type::vector_of(node.ty().component_type(), components.len());
+        return node.to(ty);
     }
     let ty = Type::vector_of(node.ty().component_type(), components.len());
     NodeRef::new(Node::Swizzle {
@@ -4228,13 +4243,41 @@ pub fn texture_store(
 /// `NodeUtils.getTextureType( texture )`'s component count: an `RGFormat`
 /// map (the DFG LUT, VSM's moment targets) is a `vec2` node, so the builder
 /// caches `textureSample( … ).xy` in a `vec2<f32>` var rather than keeping
-/// the whole `vec4`. Only the two-channel case is ported; red-only formats
-/// stay `vec4` until a rung needs three's `float` typing.
+/// the whole `vec4`; a `RedFormat` map (`DepthOfFieldNode`'s CoC targets, a
+/// toon gradient ramp) is a `float` node read as `textureSample( … ).x`.
+///
+/// A [`Texture`] carries only its wgpu format, not three's `format` / `type`
+/// pair, so the decision is made from the wgpu format with three's mapping
+/// spelled out: a depth format is `float` (`isDepthTexture`,
+/// `DepthFormat`, `DepthStencilFormat`); every block-compressed format is
+/// `vec4`, because three names them by their own compressed formats
+/// (`RED_RGTC1_Format`, `R11_EAC_Format`, …) and never `RedFormat` /
+/// `RGFormat`, even though BC4 / BC5 / EAC are one- or two-channel in wgpu;
+/// and an integer format takes three's `uint` / `int` component type
+/// (`UnsignedIntType` / `IntType`).
 fn texture_type_for(map: &Texture) -> Type {
-    match map.format().components() {
-        2 => Type::Vec2,
-        _ => Type::Vec4,
+    texture_type_for_format(map.format())
+}
+
+fn texture_type_for_format(format: wgpu::TextureFormat) -> Type {
+    use wgpu::TextureSampleType as S;
+    if format.has_depth_aspect() {
+        return Type::F32;
     }
+    if format.is_compressed() {
+        return Type::Vec4;
+    }
+    let component = match format.sample_type(None, None) {
+        Some(S::Uint) => Type::U32,
+        Some(S::Sint) => Type::I32,
+        _ => Type::F32,
+    };
+    let length = match format.components() {
+        1 => 1,
+        2 => 2,
+        _ => 4,
+    };
+    Type::vector_of(component, length)
 }
 
 /// `WGSLNodeBuilder.generateTextureSample`'s choice for a colour texture:
@@ -5422,6 +5465,22 @@ pub fn uniform_array_vec3(values: &[[f64; 3]]) -> UniformArray {
     }))
 }
 
+/// `uniformArray( [ Vector2, … ] )` — each element padded to a `vec4` and
+/// read back as its `.xy` (`UniformArrayElementNode.generate()`):
+/// `DepthOfFieldNode`'s two bokeh kernels.
+pub fn uniform_array_vec2(values: &[[f64; 2]]) -> UniformArray {
+    let mut padded = Vec::with_capacity(values.len() * 4);
+    for v in values {
+        padded.extend([v[0] as f32, v[1] as f32, 0.0, 0.0]);
+    }
+    UniformArray(Rc::new(BufferNode {
+        id: crate::nodes::node::BufferId::next(),
+        source: BufferSource::UniformArray(Rc::new(padded)),
+        element_ty: Type::Vec4,
+        count: values.len(),
+    }))
+}
+
 /// `uniformArray( [ 1.0, 1.5, … ] )` — an array of floats, each padded to a
 /// `vec4` and read back as its `.x` (`UniformArrayElementNode.generate()`).
 pub fn uniform_array_f32(values: &[f64]) -> UniformArray {
@@ -5445,6 +5504,16 @@ impl UniformArray {
             index: constant(Type::U32, vec![index as f64]),
         })
         .xyz()
+    }
+
+    /// `.element( i )` on a `Vector2` array — `NodeBuffer_N.value[ i ].xy`,
+    /// the index a node (a loop's `i`).
+    pub fn element_xy(&self, index: NodeRef) -> NodeRef {
+        NodeRef::new(Node::BufferElement {
+            buffer: self.0.clone(),
+            index,
+        })
+        .xy()
     }
 
     /// `.element( i )` on a `Vector3` array with a node index (a loop's `i`)
@@ -6940,4 +7009,50 @@ pub fn neutral_tone_mapping(color: NodeRef, exposure: NodeRef) -> NodeRef {
         })
     });
     call(&def, vec![color, exposure])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn texture_type_follows_threes_format_mapping() {
+        use wgpu::TextureFormat as F;
+        let cases = [
+            (F::R8Unorm, Type::F32),
+            (F::R16Float, Type::F32),
+            (F::R32Float, Type::F32),
+            (F::R32Uint, Type::U32),
+            (F::R32Sint, Type::I32),
+            (F::Rg16Float, Type::Vec2),
+            (F::Rg32Uint, Type::UVec2),
+            (F::Rgba8Unorm, Type::Vec4),
+            (F::Rgba16Uint, Type::UVec4),
+            (F::Depth32Float, Type::F32),
+            (F::Depth24PlusStencil8, Type::F32),
+            // One- and two-channel in wgpu, `vec4` in three.
+            (F::Bc4RUnorm, Type::Vec4),
+            (F::Bc4RSnorm, Type::Vec4),
+            (F::Bc5RgUnorm, Type::Vec4),
+            (F::EacR11Unorm, Type::Vec4),
+            (F::EacR11Snorm, Type::Vec4),
+            (F::EacRg11Unorm, Type::Vec4),
+        ];
+        for (format, ty) in cases {
+            assert_eq!(texture_type_for_format(format), ty, "{format:?}");
+        }
+    }
+
+    #[test]
+    fn a_swizzle_of_a_scalar_splats_it() {
+        let s = float(0.5);
+        // `.x` / `.y` on a float is the float: three ignores the components.
+        assert!(matches!(s.x().node(), Node::Const { .. }));
+        assert_eq!(s.y().ty(), Type::F32);
+        assert!(matches!(s.y().node(), Node::Const { .. }));
+        // `.xyz` is the float widened to a vec3 — a cast, never `s.xyz`.
+        let v = s.xyz();
+        assert_eq!(v.ty(), Type::Vec3);
+        assert!(matches!(v.node(), Node::Cast { ty: Type::Vec3, .. }));
+    }
 }

@@ -102,6 +102,12 @@ pub struct Scene {
     ///
     /// [`MeshBasicNodeMaterial::set_needs_update`]: crate::materials::MeshBasicNodeMaterial::set_needs_update
     pub environment: Option<crate::materials::environment::PmremHandle>,
+    /// `scene.environmentRotation` — the rotation `materialEnvRotation` applies
+    /// to [`Scene::environment`] (or [`Scene::environment_node`]) on every
+    /// material that has no `envMap` of its own. Three's uniform is
+    /// `makeRotationFromEuler( rotation ).transpose()`, an object-group `mat4`,
+    /// so changing it is a uniform write, not a new program.
+    pub environment_rotation: crate::math::Euler,
     /// `scene.environmentNode` set by hand to a graph of `pmremTexture()`s.
     /// `NodeManager.getEnvironmentNode()` returns it ahead of the node it would
     /// make from [`Scene::environment`], so it wins when both are set. The same
@@ -138,6 +144,7 @@ impl Default for Scene {
             background_intensity: 1.0,
             environment_intensity: 1.0,
             environment: None,
+            environment_rotation: crate::math::Euler::default(),
             environment_node: None,
             fog: None,
             fog_node: None,

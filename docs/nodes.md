@@ -6101,8 +6101,104 @@ material's beauty at the contact and nowhere else.
 - `SSAONode`, the page's other `aoType`, and its `aoOnly` view.
 - `scenePass.options.samples`. The pass takes the renderer's sample count,
   which is 0 here.
-Sections 65, 66, 69 and 71 to 73 are reserved for the display-node ports on
-sibling branches. They are numbered as those branches land.
+
+## 66. `DepthOfFieldNode` and `outputStruct()` (`webgpu_postprocessing_dof`, `webgpu_postprocessing_dof_basic`)
+
+### 66.1 What three does
+
+`dof( textureNode, viewZNode, focusDistance, focalLength, bokehScale )`
+(each of the last three defaulting to `1`) is a plain `Node` (`extends
+Node`, `super( 'vec4' )`) with `updateBeforeType = FRAME`. It owns six
+render targets:
+
+- `_CoCRT`: full size, two `RedFormat` half-float attachments, the near and
+  far circle of confusion;
+- `_CoCBlurredRT`: half size, red, the near field after a Gaussian;
+- `_blur64RT`, `_blur16NearRT`, `_blur16FarRT`: half size, RGBA half float;
+- `_compositeRT`: full size.
+
+Its texture node is `texture( this._compositeRT.texture )`, a plain texture
+node rather than a `passTexture()`.
+`updateBefore()` clears to transparent black and draws nine quads:
+
+1. the CoC, whose `outputNode` is `outputStruct( near, far )`;
+2. `gaussianBlur( near, 1, 2 )`, horizontal then vertical;
+3. that blur, copied into `_CoCBlurredRT`;
+4. `blur64` (64 Vogel-disc taps scaled by the CoC) then `blur16` (a 16-tap
+   max), for the near field;
+5. step 4 again for the far field, with `_CoCTextureNode.value` swapped to
+   the far attachment;
+6. the composite: the input, then the far field, then the near field, each
+   mixed in by its CoC.
+
+The two kernels are 80 Vogel points (golden angle `2.39996323`). Every fifth
+goes to the 16-point kernel. They ride `uniformArray( Vector2[] )`.
+
+### 66.2 The port
+
+`nodes::display::dof` builds the same nine draws, from seven distinct quad
+shaders (blur64 and blur16 each serve both fields). All seven are gated against three's dump (`dof_*` in
+`tests/nodes_display_wgsl.rs`). `DofState` implements `NodeUpdate` and is
+registered as the updater of the composite texture, as TRAA's state is
+(§63.2). It asks for the input's pass first.
+
+Four pieces were new:
+
+- **`outputStruct()`.** `Node::OutputStruct` is `OutputStructNode` standing
+  as a material's `outputNode`. `materials::setup()` unpacks it into the
+  flow's MRT members and sets `MaterialFlow::mrt_typed`. An `MRTNode`'s
+  members are wrapped in `vec4()` by `MRTNode.setup()`; a bare
+  `outputStruct()`'s keep their own types. So the CoC pass's `OutputType`
+  has two `f32` members, as three's dump shows. Anywhere else the node
+  panics, because it has no value of its own.
+- **Red targets.** `RenderTarget::set_red_format()` is
+  `{ format: RedFormat }`: `R16Float` for a half-float target, `R8Unorm`
+  otherwise. Call it before `set_count()`, because the extra attachments copy
+  the first one's format. `NodeUtils.getTextureType()`'s one-channel case is
+  now ported: a texture node over a red map is a `float` node, and its fetch
+  is cut to `.x`. A program drawn into a red target writes an `f32`
+  (`with_output_components( 1 )`), and its `Output` property is an `f32` too.
+- **`uniformArray( Vector2[] )`.** `tsl::uniform_array_vec2` pads each
+  element to a `vec4`, as three's backend does, and
+  `UniformArray::element_xy` reads `.xy` back.
+- **The CoC Gaussian.** three's taps of `_CoCTextureNode` go through that
+  `texture()` node's shared uv matrix, and `directionNode = 1` folds to
+  `vec2( 1.0, 1.0 )`. `GaussianBlurNode::with_uv_matrix` builds the
+  horizontal pass that way; the vertical pass samples the port's own
+  target, with no matrix, as before. The weighted sum is now built as a
+  `vec4` var, whatever the map's channel count, because three's
+  `sampleTexture( uv ).mul( c )` is splatted into `vec4` before the loop
+  adds to it.
+
+**One `blur64` material per field.** three swaps `_CoCTextureNode.value`
+between the near and far draws, so one material serves both. In the port's
+graphs a texture is an identity, so there are two `blur64` materials, one
+per CoC attachment, with identical WGSL. `blur16` reads `_blur64RT` for both
+fields, so it stays one material drawn twice.
+
+**The materials are built in `DepthOfFieldNode::new`**, not in a `setup()`
+under the builder's shared context. Each quad is its own build either way.
+
+### 66.3 `webgpu_postprocessing_dof_basic`
+
+That page does not use `DepthOfFieldNode`. It mixes the beauty and a
+`boxBlur` by a view-space distance from a focus point. It needed three
+things that are not nodes:
+
+- `Scene::environment_rotation` (`scene.environmentRotation`). It reaches
+  `materialEnvRotation` on every material that reads the scene's
+  environment rather than an `envMap` of its own.
+- glTF `alphaMode: MASK`, which becomes `alpha_test = alphaCutoff`.
+- The F32 typing above.
+
+### 66.4 Not ported
+
+- An orthographic camera: the CoC uses perspective view-space depth.
+- Changing `focusDistance`, `focalLength` or `bokehScale` from a GUI. They
+  are ordinary uniforms, so a host can set them, but no page here does.
+
+Sections 65, 69, 71 to 73, 76, 77 and 79 to 83 are reserved for the ports
+on sibling branches. They are numbered as those branches land.
 
 ## 67. TSL sweep 2: the accessors batch
 

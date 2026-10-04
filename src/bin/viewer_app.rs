@@ -286,7 +286,9 @@ PostprocessingMotionBlur, webgpu_postprocessing_motion_blur, "../../examples/web
 PostprocessingTraa, webgpu_postprocessing_traa, "../../examples/webgpu_postprocessing_traa.rs";
 PostprocessingAo, webgpu_postprocessing_ao, "../../examples/webgpu_postprocessing_ao.rs";
 PostprocessingGodrays, webgpu_postprocessing_godrays, "../../examples/webgpu_postprocessing_godrays.rs";
-PostprocessingLensflare, webgpu_postprocessing_lensflare, "../../examples/webgpu_postprocessing_lensflare.rs";}
+PostprocessingLensflare, webgpu_postprocessing_lensflare, "../../examples/webgpu_postprocessing_lensflare.rs";
+PostprocessingDofBasic, webgpu_postprocessing_dof_basic, "../../examples/webgpu_postprocessing_dof_basic.rs";
+PostprocessingDof, webgpu_postprocessing_dof, "../../examples/webgpu_postprocessing_dof.rs";}
 
 impl Which {
     /// The name with or without its `webgpu_` prefix, or its 1-based index in

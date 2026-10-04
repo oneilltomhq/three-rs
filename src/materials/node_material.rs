@@ -810,6 +810,16 @@ fn setup_inner(
         .output_node
         .as_ref()
         .map(crate::nodes::tsl::resolve_fn_call);
+    // `material.outputNode = outputStruct( … )`: the struct *is* the fragment
+    // stage's result, written member by member as an MRT's is, but with each
+    // member's own type (see `MaterialFlow::mrt_typed`).
+    let (mrt, mrt_typed, material_output) = match material_output {
+        Some(node) => match node.node() {
+            crate::nodes::Node::OutputStruct { members } => (Some(members.clone()), true, None),
+            _ => (mrt, false, Some(node)),
+        },
+        None => (mrt, false, None),
+    };
     let (output_assign, output_node) = match &ctx.output {
         Some(context) => (
             Some(material_output.unwrap_or_else(|| output.clone())),
@@ -833,6 +843,7 @@ fn setup_inner(
         output_assign,
         output_node,
         mrt,
+        mrt_typed,
         emit_output_property: material.fragment_node.is_none(),
         vertex_statements: Vec::new(),
         position,
@@ -1867,8 +1878,11 @@ mod tests {
         let hasher = RandomState::new();
         let ao = ao_context();
         let with = hasher.hash_one(lit(Some(ao.clone())));
-        assert_eq!(with, hasher.hash_one(lit(Some(ao))));
+        assert_eq!(with, hasher.hash_one(lit(Some(ao.clone()))));
         assert_ne!(with, hasher.hash_one(lit(None)));
+        // `ao` stays alive to here: the key is the node's address, and a
+        // fresh node allocated after `ao` was dropped can reuse it.
         assert_ne!(with, hasher.hash_one(lit(Some(ao_context()))));
+        drop(ao);
     }
 }

@@ -2039,19 +2039,17 @@ impl GltfLoader {
         // `alphaMode`. `BLEND` is the pair three.js writes together — a
         // transparent material that does *not* write depth, which is what puts
         // `HoloFillDark` in the render list's transparent half and lets the
-        // opaque geometry behind it through.
-        //
-        // `MASK` is deliberately not wired: it is `materialParams.alphaTest =
-        // alphaCutoff`, and this crate has only `alphaTestNode` (see
-        // `MeshBasicNodeMaterial::alpha_test_node`), whose WGSL is a literal
-        // where three's is the `materialAlphaTest` uniform. Nothing on the
-        // ladder is `MASK`; guessing the shader here would be a silent
-        // divergence rather than an API.
+        // opaque geometry behind it through. `MASK` is `materialParams.alphaTest
+        // = alphaCutoff`, the `materialAlphaTest` discard (`bath_day.glb`'s
+        // foliage and rug fringe).
         if material.alpha_mode == "BLEND" {
             out.transparent = true;
             out.depth_write = false;
         } else {
             out.transparent = false;
+            if material.alpha_mode == "MASK" {
+                out.alpha_test = material.alpha_cutoff;
+            }
         }
 
         // `materialParams.emissive = new Color().setRGB( ..., LinearSRGBColorSpace )`
