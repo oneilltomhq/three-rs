@@ -361,8 +361,7 @@ fn refraction_backdrop_matches_three() {
 fn gltf_transmission_gold_leaf_alpha_test_matches_three() {
     let fixture_name = "webgpu_loader_gltf_transmission_m12_gold_leaf.wgsl";
     let gltf = three_rs::loaders::GltfLoader::load(
-        three_rs::testing::three_js_dir()
-            .join("examples/models/gltf/IridescentDishWithOlives.glb"),
+        three_rs::testing::three_js_dir().join("examples/models/gltf/IridescentDishWithOlives.glb"),
     )
     .expect("IridescentDishWithOlives.glb");
     let node = gltf
