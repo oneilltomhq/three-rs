@@ -227,6 +227,7 @@ fn main() {
             has_tangent_attribute: false,
             instanced_attributes: Vec::new(),
             array_cameras: 0,
+            ambient_occlusion: None,
         },
     );
 

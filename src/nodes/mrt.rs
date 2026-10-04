@@ -186,7 +186,7 @@ impl MrtNode {
     pub(crate) fn members(&self, attachments: &[String]) -> Vec<NodeRef> {
         let mut members: Vec<Option<NodeRef>> = vec![None; attachments.len()];
         for (name, value) in &self.outputs {
-            if let Some(index) = attachments.iter().position(|a| a == name) {
+            if let Some(index) = get_texture_index(attachments, name) {
                 members[index] = Some(value.resolve());
             }
         }
@@ -198,6 +198,16 @@ impl MrtNode {
             .map(|m| m.expect("three-rs: an MRT member index below the last is always filled"))
             .collect()
     }
+}
+
+/// `getTextureIndex( textures, name )` — `MRTNode.js`: the position of the
+/// attachment called `name` among a render target's textures, which is the
+/// `@location` an MRT output of that name is written to. Three takes the
+/// textures and compares their `.name`; the port's attachments are named by
+/// the target (`renderTarget.textures.map( t => t.name )`), so this takes the
+/// names. `None` is three's `-1`.
+pub fn get_texture_index<S: AsRef<str>>(names: &[S], name: &str) -> Option<usize> {
+    names.iter().position(|n| n.as_ref() == name)
 }
 
 /// By name and node identity, the way [`FogNode`](super::tsl::FogNode) hashes:

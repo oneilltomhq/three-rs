@@ -350,6 +350,61 @@ fn traa_flicker_reduction_matches_three() {
 }
 
 #[test]
+fn gtao_matches_three() {
+    check("gtao", Region::Body);
+}
+
+#[test]
+fn gtao_screen_position_from_clip_matches_three() {
+    check("gtao", Region::Function("getScreenPositionFromClip"));
+}
+
+#[test]
+fn godrays_matches_three() {
+    check("godrays", Region::Body);
+}
+
+#[test]
+fn bilateral_blur_horizontal_matches_three() {
+    check("bilateral_blur_horizontal", Region::Body);
+}
+
+#[test]
+fn bilateral_blur_vertical_matches_three() {
+    check("bilateral_blur_vertical", Region::Body);
+}
+
+#[test]
+fn depth_aware_blend_matches_three() {
+    check("depth_aware_blend", Region::Body);
+}
+
+#[test]
+fn rtt_matches_three() {
+    check("rtt", Region::Body);
+}
+
+#[test]
+fn lensflare_matches_three() {
+    check("lensflare", Region::Body);
+}
+
+#[test]
+fn lensflare_gaussian_blur_horizontal_matches_three() {
+    check("lensflare_gaussian_blur_horizontal", Region::Body);
+}
+
+#[test]
+fn lensflare_gaussian_blur_vertical_matches_three() {
+    check("lensflare_gaussian_blur_vertical", Region::Body);
+}
+
+#[test]
+fn lensflare_composite_matches_three() {
+    check("lensflare_composite", Region::Body);
+}
+
+#[test]
 fn dof_coc_matches_three() {
     check("dof_coc", Region::Body);
 }
