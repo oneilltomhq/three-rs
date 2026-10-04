@@ -14,7 +14,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 /// `three.js/src/constants.js` texture mappings.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum Mapping {
     /// `CubeReflectionMapping`.

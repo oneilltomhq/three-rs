@@ -252,6 +252,9 @@ pub enum MaterialKind {
 /// - `side`, `depth_test`, `depth_write`, `color_write`, the `stencil_*`
 ///   fields and the blend factors are pipeline state, keyed per draw, and need
 ///   nothing either.
+/// - a map's (or `env_map`'s) filters and wrap modes need nothing: they are
+///   part of the program's cache key, read off the textures at every draw, as
+///   three's WebGPU backend reads them in `getMaterialCacheKey()`.
 #[derive(Clone, Debug)]
 pub struct MeshBasicNodeMaterial {
     /// `Material.id`. Read-only in spirit; see [`MaterialId`] for why a clone
@@ -948,6 +951,14 @@ impl MeshBasicNodeMaterial {
         self.version += 1;
     }
 
+    /// The sampler half of `RenderObject.getMaterialCacheKey()` on the WebGPU
+    /// backend: for every texture-valued property, its `magFilter`,
+    /// `minFilter`, `wrapS` and `wrapT` (`wrapR` and `mapping` where the
+    /// texture type has them). See [`TextureSamplerKey`].
+    pub(crate) fn texture_sampler_key(&self) -> TextureSamplerKey<'_> {
+        TextureSamplerKey(self)
+    }
+
     /// The blending fields `WebGPUPipelineUtils._getBlending()` reads, gathered
     /// into the struct the table takes.
     pub(crate) fn blend_mode(&self) -> BlendMode {
@@ -1222,3 +1233,80 @@ pub type Line2NodeMaterial = MeshBasicNodeMaterial;
 /// three.js' name for the `NodeMaterial` a `Line` / `LineSegments` draws with.
 /// It carries no state of its own — see [`MeshBasicNodeMaterial::line`].
 pub type LineBasicNodeMaterial = MeshBasicNodeMaterial;
+
+/// What [`MeshBasicNodeMaterial::texture_sampler_key`] hashes: the sampler
+/// state of every texture the material holds as a property, which is what
+/// `RenderObject.getMaterialCacheKey()` appends for each `value.isTexture`
+/// when `renderer.backend.isWebGPUBackend`:
+///
+/// ```js
+/// valueKey += value.mapping;
+/// valueKey += value.magFilter;
+/// valueKey += value.minFilter;
+/// valueKey += value.wrapS;
+/// valueKey += value.wrapT;
+/// valueKey += value.wrapR;
+/// ```
+///
+/// They reach the generated WGSL. `NearestFilter` on both filters makes a map
+/// unfilterable (`isUnfilterable()`): bound `non-filtering`, no sampler, every
+/// tap a `textureLoad`. And that `textureLoad` wraps its coordinate through
+/// `generateWrapFunction()`'s `tsl_coord_<s>S_<t>T_2d`, named after the wrap
+/// pair. A program built before the change is the wrong program after it
+/// (issue #276).
+///
+/// The renderer hashes this into the dynamic half of a draw's cache key at
+/// every draw, rather than having the `Texture` setters bump
+/// [`version`](MeshBasicNodeMaterial::version), for three reasons. A texture
+/// is a shared handle with no way back to the materials that hold it, so a
+/// setter has no material to bump. It is what three does: the state is read
+/// off the texture when the key is computed, never pushed into the material.
+/// And a key keeps both programs: a map toggled between `Linear` and
+/// `Nearest` finds each in the cache after the first time, where a version
+/// bump would throw the material's programs away on every toggle.
+///
+/// Like three's, it covers the material's own texture properties only, not a
+/// `texture()` node inside `color_node` or another graph: those are values
+/// of the node, not of the material. Each property is hashed as `None` or
+/// its state, so the key is positional, as three's comma-joined string is.
+pub(crate) struct TextureSamplerKey<'a>(&'a MeshBasicNodeMaterial);
+
+impl std::hash::Hash for TextureSamplerKey<'_> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let m = self.0;
+        m.env_map
+            .as_ref()
+            .map(|t| {
+                let t = t.borrow();
+                (t.mapping, t.mag_filter, t.min_filter)
+            })
+            .hash(state);
+        for map in [
+            &m.alpha_map,
+            &m.map,
+            &m.roughness_map,
+            &m.metalness_map,
+            &m.emissive_map,
+            &m.gradient_map,
+            &m.ao_map,
+            &m.light_map,
+            &m.specular_map,
+            &m.bump_map,
+            &m.clearcoat_map,
+            &m.clearcoat_roughness_map,
+            &m.normal_map,
+            &m.specular_color_map,
+            &m.anisotropy_map,
+            &m.clearcoat_normal_map,
+            &m.transmission_map,
+            &m.thickness_map,
+        ] {
+            map.as_ref()
+                .map(|t| {
+                    let t = t.borrow();
+                    (t.mag_filter, t.min_filter, t.wrap_s, t.wrap_t)
+                })
+                .hash(state);
+        }
+    }
+}
