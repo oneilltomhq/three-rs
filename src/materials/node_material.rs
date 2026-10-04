@@ -138,6 +138,13 @@ pub struct SetupContext {
     /// which every non-transparent material drawn by that pass multiplies into
     /// its `AmbientOcclusion`. See [`AoContext`].
     pub ambient_occlusion: Option<AoContext>,
+    /// `builder.clippingContext` — the planes of the `ClippingGroup`s above
+    /// the object. Its plane *counts* and whether the device clips in
+    /// hardware change the generated WGSL; the plane values do not, and stay
+    /// out of the key (see [`ClippingContext`]'s `Hash`).
+    ///
+    /// [`ClippingContext`]: crate::nodes::clipping::ClippingContext
+    pub clipping: Option<std::rc::Rc<crate::nodes::clipping::ClippingContext>>,
 }
 
 /// `builtinAOContext( aoNode )` — the `getAO` hook a pass installs on the

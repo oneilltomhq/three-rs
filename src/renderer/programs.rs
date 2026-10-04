@@ -545,6 +545,10 @@ pub struct UniformContext<'a> {
     /// drawn — see [`crate::nodes::NodeFrame`]. `None` outside a scene pass
     /// and before a query has resolved.
     pub occluded: Option<&'a std::collections::HashSet<u32>>,
+    /// `renderObject.clippingContext` — the planes the clipping buffers
+    /// ([`BufferSource::ClippingIntersection`] / [`BufferSource::ClippingUnion`])
+    /// hold for this draw.
+    pub clipping: Option<&'a crate::nodes::clipping::ClippingContext>,
     pub camera_projection: Matrix4,
     pub camera_view: Matrix4,
     pub camera_world: Matrix4,
@@ -755,6 +759,7 @@ impl Default for UniformContext<'_> {
             camera_id: 0,
             object: None,
             occluded: None,
+            clipping: None,
         }
     }
 }

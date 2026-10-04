@@ -820,6 +820,10 @@ pub struct Renderer {
     samples: u32,
     /// `Renderer.stencil` — [`RendererParameters::stencil`].
     stencil: bool,
+    /// `backend.hasFeature( 'clip-distances' )` on this device — what
+    /// `builder.isAvailable( 'clipDistance' )` answers, so whether a
+    /// `ClippingGroup`'s union planes clip in the vertex stage or by discard.
+    clip_distances: bool,
     pixel_ratio: f64,
     width: f64,
     height: f64,
@@ -1315,8 +1319,13 @@ impl Renderer {
         // way and which the subgroup TSL functions need
         // (`WGSLNodeBuilder.enableSubGroups()`). An adapter without it only
         // costs those kernels: `compute()` logs three's error and skips them.
+        //
+        // `CLIP_DISTANCES` is WebGPU's `clip-distances`, which
+        // `NodeMaterial.setupHardwareClipping()` uses for a `ClippingGroup`'s
+        // union planes. Without it the planes discard in the fragment stage.
         let wanted = wgpu::Features::FLOAT32_FILTERABLE
             | wgpu::Features::RG11B10UFLOAT_RENDERABLE
+            | wgpu::Features::CLIP_DISTANCES
             | COMPRESSION_FEATURES
             | SUBGROUP_FEATURES;
         let required_features = adapter.features() & wanted;
@@ -1383,6 +1392,7 @@ impl Renderer {
         );
 
         let mipmap_shader = MipmapShader::new(&device);
+        let clip_distances = device.features().contains(wgpu::Features::CLIP_DISTANCES);
 
         Self {
             device,
@@ -1391,6 +1401,7 @@ impl Renderer {
             adapter,
             samples: if parameters.antialias { 4 } else { 0 },
             stencil: parameters.stencil,
+            clip_distances,
             pixel_ratio: 1.0,
             width: 300.0,
             height: 150.0,
@@ -2294,6 +2305,12 @@ impl Renderer {
                     // disabled builds its materials with no lights *and* no
                     // environment (see `SetupContext::lighting_disabled`).
                     lighting_disabled: !self.lighting_enabled,
+                    // `renderItem.clippingContext`, on this device's
+                    // `clip-distances` support.
+                    clipping: item
+                        .clipping
+                        .as_ref()
+                        .map(|c| c.with_hardware(self.clip_distances)),
                     // `builder.context.getAO` from the pass's
                     // `builtinAOContext`; `setupAmbientOcclusion()` applies
                     // it (and skips transparent materials).
@@ -2770,6 +2787,12 @@ impl Renderer {
                         // shadow material is never lit, so three's dead
                         // `AmbientOcclusion` assignment would change nothing.
                         ambient_occlusion: None,
+                        // A `ClippingGroup` with `clipShadows` clips the
+                        // shadow draw too; the walk left the others out.
+                        clipping: item
+                            .clipping
+                            .as_ref()
+                            .map(|c| c.with_hardware(self.clip_distances)),
                         lights: Vec::new(),
                         // The shadow pass does not carry morph targets yet:
                         // nothing in the ladder both morphs and casts a shadow.
@@ -3181,6 +3204,12 @@ impl Renderer {
                         // shadow material is never lit, so three's dead
                         // `AmbientOcclusion` assignment would change nothing.
                         ambient_occlusion: None,
+                        // A `ClippingGroup` with `clipShadows` clips the
+                        // shadow draw too; the walk left the others out.
+                        clipping: item
+                            .clipping
+                            .as_ref()
+                            .map(|c| c.with_hardware(self.clip_distances)),
                         lights: Vec::new(),
                         morph: None,
                         skin: None,
@@ -3682,6 +3711,7 @@ impl Renderer {
                 viewport_size: Vector2::new(target.width as f64, target.height as f64),
                 viewport: target.viewport.to_vector4(),
                 screen_dpr: self.pixel_ratio,
+                clipping: item.setup.clipping.as_deref(),
                 ..camera_uniforms
             };
 
@@ -5298,6 +5328,26 @@ impl Renderer {
                 wgpu::BufferUsages::UNIFORM,
             );
         }
+        // `ClippingNode`'s planes, from this draw's clipping context: the
+        // buffer's `count` is the context's plane count, which is in the
+        // program key, so the two always agree.
+        if let BufferSource::ClippingIntersection | BufferSource::ClippingUnion = source {
+            let planes = match (source, uniforms.clipping) {
+                (BufferSource::ClippingIntersection, Some(c)) => c.intersection.as_slice(),
+                (_, Some(c)) => c.union.as_slice(),
+                (_, None) => &[],
+            };
+            let mut data = vec![0f32; count * 4];
+            for (out, plane) in data.chunks_exact_mut(4).zip(planes) {
+                out.copy_from_slice(plane);
+            }
+            return self.slot_buffer(
+                slot,
+                "three-rs clipping planes",
+                bytemuck::cast_slice(&data),
+                wgpu::BufferUsages::UNIFORM,
+            );
+        }
         if let BufferSource::BoneMatrices | BufferSource::PreviousBoneMatrices = source {
             let (matrices, label) = match source {
                 BufferSource::BoneMatrices => (uniforms.bone_matrices, "three-rs boneMatrices"),
@@ -5517,6 +5567,8 @@ impl Renderer {
             | BufferSource::PreviousBoneMatrices
             | BufferSource::CameraViewMatrices
             | BufferSource::CameraProjectionMatrices
+            | BufferSource::ClippingIntersection
+            | BufferSource::ClippingUnion
             | BufferSource::Storage
             | BufferSource::AtomicStorage
             | BufferSource::Struct { .. }
