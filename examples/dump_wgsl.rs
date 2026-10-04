@@ -444,6 +444,7 @@ fn main() {
                     ("bloomIntensity", float(0.0)),
                 ]),
                 attachments: vec!["output".to_string(), "bloomIntensity".to_string()],
+                output_types: Vec::new(),
             }),
             ..SetupContext::default()
         },
@@ -1756,6 +1757,7 @@ fn main() {
             ),
         ]),
         attachments: vec!["output".to_string(), "emissive".to_string()],
+        output_types: Vec::new(),
     };
 
     // `CubeRenderTarget.fromEquirectangularTexture`'s box material: an unnamed
@@ -1960,6 +1962,7 @@ fn main() {
             "diffuse".to_string(),
             "emissive".to_string(),
         ],
+        output_types: Vec::new(),
     };
     show(
         "mrt_background",
@@ -2057,6 +2060,8 @@ fn main() {
     dump_tsl_halftone();
     dump_tsl_earth();
     dump_sky();
+    dump_water();
+    dump_water2();
     dump_materials_alphahash();
     dump_diffuse_roughness();
     dump_cubemap_mix();
@@ -2261,6 +2266,7 @@ fn dump_deferred() {
             "position".to_string(),
             "normal".to_string(),
         ],
+        output_types: Vec::new(),
     };
 
     // `new THREE.MeshStandardMaterial( { color: 0x333333, roughness: 0.2,
@@ -2862,6 +2868,7 @@ fn dump_shadowmap_opacity() {
                     node
                 },
                 attachments: vec!["output".to_string(), "normal".to_string()],
+                output_types: Vec::new(),
             }),
             ..SetupContext::default()
         },
@@ -3113,4 +3120,49 @@ fn dump_sky() {
     let sky = three_rs::addons::objects::SkyMesh::new();
     let material = sky.mesh.borrow().mesh().unwrap().material.clone().unwrap();
     show("sky", &material, SetupContext::default());
+}
+
+/// `webgpu_ocean`: `WaterMesh`'s material against three's `m09` / `m10`.
+/// `tests/nodes_water_wgsl.rs` gates the same two stages.
+fn dump_water() {
+    let normals = three_rs::Texture::new(4, 4, Some(vec![0; 64]));
+    let water = three_rs::addons::objects::WaterMesh::new(
+        std::rc::Rc::new(three_rs::geometries::plane_geometry(10000.0, 10000.0, 1, 1)),
+        three_rs::addons::objects::WaterMeshOptions::new(normals),
+    );
+    let material = water
+        .mesh
+        .borrow()
+        .mesh()
+        .unwrap()
+        .material
+        .clone()
+        .unwrap();
+    show("water", &material, SetupContext::default());
+}
+
+/// `webgpu_water`: `Water2Mesh`'s material against three's `m18` / `m19`, and
+/// with a flow map against `tools/dump-pages/water2_flow_map.html`'s `m03` /
+/// `m04`. `tests/nodes_water_wgsl.rs` gates the same stages.
+fn dump_water2() {
+    for (name, flow_map) in [("water2", false), ("water2_flow_map", true)] {
+        let map = || three_rs::Texture::new(4, 4, Some(vec![0; 64]));
+        let mut options = three_rs::addons::objects::Water2MeshOptions::new(map(), map());
+        if flow_map {
+            options.flow_map = Some(map());
+        }
+        let water = three_rs::addons::objects::Water2Mesh::new(
+            std::rc::Rc::new(three_rs::geometries::plane_geometry(30.0, 40.0, 1, 1)),
+            options,
+        );
+        let material = water
+            .mesh
+            .borrow()
+            .mesh()
+            .unwrap()
+            .material
+            .clone()
+            .unwrap();
+        show(name, &material, SetupContext::default());
+    }
 }

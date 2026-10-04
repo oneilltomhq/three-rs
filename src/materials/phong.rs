@@ -127,6 +127,15 @@ pub enum ShadowMap {
         map: Box<ShadowMap>,
         color: crate::textures::Texture,
     },
+    /// `builtinShadowContext( shadow, light )` on the pass drawing the
+    /// receiver, for this light: `getShadow` returns `shadowColorNode.mul(
+    /// shadow )`, so the light's colour is multiplied by `map`'s factor and
+    /// then by `shadow`. The renderer wraps only a light's own map in it,
+    /// never another `Context`.
+    Context {
+        map: Box<ShadowMap>,
+        shadow: NodeRef,
+    },
 }
 
 /// By identity, as a texture contributes its `uuid` to `Node.getCacheKey()`:
@@ -145,6 +154,10 @@ impl std::hash::Hash for ShadowMap {
             ShadowMap::Transmitted { map, color } => {
                 map.hash(state);
                 color.id().hash(state);
+            }
+            ShadowMap::Context { map, shadow } => {
+                map.hash(state);
+                shadow.key().hash(state);
             }
         }
     }
@@ -203,6 +216,9 @@ pub(crate) fn shadow_node(
             _ => unreachable!("three-rs: only a planar shadow map carries a colour target"),
         },
         ShadowMap::Node(_) => unreachable!("three-rs: returned above"),
+        ShadowMap::Context { .. } => {
+            unreachable!("three-rs: `setup_light` unwraps the shadow context")
+        }
     }
 }
 
@@ -253,7 +269,16 @@ pub(crate) fn setup_light(
     // — before the light's own attenuation.
     let mut color = light_color_intensity(index);
     if let Some(map) = &light.shadow_map {
+        let (map, context) = match map {
+            ShadowMap::Context { map, shadow } => (&**map, Some(shadow)),
+            map => (map, None),
+        };
         color = color.mul(shadow_node(index, map, received_shadow_position, out));
+        // `builder.context.getShadow( this, builder )` —
+        // `builtinShadowContext`'s `shadowColorNode.mul( shadowNode )`.
+        if let Some(shadow) = context {
+            color = color.mul(shadow.clone());
+        }
     }
 
     Some(match light.kind {

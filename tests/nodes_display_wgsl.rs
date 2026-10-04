@@ -1,15 +1,17 @@
 //! #144's dump gate: the fragment WGSL each ported display node generates,
 //! against three.js r187dev's own dump of the page that uses it
 //! (`tests/fixtures/nodes_display/`, copied verbatim from
-//! `tools/dump-webgpu.mjs` output).
+//! `tools/dump-webgpu.mjs` output). One gate, the 3dlut page's smoke, is
+//! over a vertex `main()` instead.
 //!
 //! The comparison is structural, not byte-for-byte. r187dev spells a
 //! single-use value `let nodeConstN = …;` where the port declares a
 //! `nodeVarN` (see `docs/nodes.md`), and counters that have run for the whole
 //! page number three's uniforms, so names and declaration style cannot be
 //! compared. What is compared, over the `main()` body — or, for the two nodes
-//! three only dumps inside a larger material, over the node's loop — is what
-//! decides the pixels:
+//! three only dumps inside a larger material, over the node's loop, and for
+//! the OIT pass's lit materials over the tail of `main()` past the lighting —
+//! is what decides the pixels:
 //!
 //! - every built-in call, as a multiset (`textureSample` ×9, `dot` ×9, …),
 //!   so a missed or duplicated tap or a different function shows;
@@ -20,6 +22,9 @@
 
 #[path = "display/materials.rs"]
 mod materials;
+#[path = "../examples/webgpu_postprocessing_3dlut.rs"]
+#[allow(dead_code)]
+mod webgpu_postprocessing_3dlut;
 #[path = "../examples/webgpu_refraction.rs"]
 #[allow(dead_code)]
 mod webgpu_refraction;
@@ -41,6 +46,13 @@ enum Region {
     /// The body of the named WGSL `fn`, through its `return` — for a node
     /// that is one `Fn()` with a layout, where `main()` is only the call.
     Function(&'static str),
+    /// `main()` from the first statement containing the text to `return
+    /// output;` — the tail of a lit material, past the lighting.
+    From(&'static str),
+    /// The one statement in `main()` containing the text.
+    Statement(&'static str),
+    /// `// code` to `return varyings;` in the vertex `main()`.
+    Vertex,
 }
 
 fn region(wgsl: &str, which: Region) -> String {
@@ -65,12 +77,29 @@ fn region(wgsl: &str, which: Region) -> String {
         }
         panic!("fn {name} is not closed");
     }
+    if let Region::Vertex = which {
+        let main = &wgsl[wgsl.find("@vertex").expect("a vertex entry point")..];
+        let body = &main[main.find("// code").expect("a code section")..];
+        return body[..body.find("return varyings;").expect("a return")].to_string();
+    }
     let main = &wgsl[wgsl.find("@fragment").expect("a fragment entry point")..];
     let body = &main[main.find("// code").expect("a code section")..];
     let body = &body[..body.find("return output;").expect("a return")];
     match which {
         Region::Body => body.to_string(),
-        Region::Function(_) => unreachable!(),
+        Region::Function(_) | Region::Vertex => unreachable!(),
+        Region::From(text) => {
+            let start = body
+                .find(text)
+                .unwrap_or_else(|| panic!("no {text:?} in main()"));
+            let start = body[..start].rfind('\n').map_or(0, |i| i + 1);
+            body[start..].to_string()
+        }
+        Region::Statement(text) => body
+            .lines()
+            .find(|line| line.contains(text))
+            .unwrap_or_else(|| panic!("no {text:?} in main()"))
+            .to_string(),
         Region::Loop => {
             let start = body.find("for (").expect("a loop");
             let mut depth = 0i32;
@@ -197,7 +226,7 @@ fn fingerprint(wgsl: &str, which: Region) -> Fingerprint {
         }
     }
 
-    if matches!(which, Region::Body) {
+    if matches!(which, Region::Body | Region::From(_)) {
         let mut bindings: Vec<String> = wgsl
             .lines()
             .filter(|line| line.contains("var nodeUniform") || line.contains("var<uniform>"))
@@ -347,6 +376,148 @@ fn traa_clip_aabb_matches_three() {
 #[test]
 fn traa_flicker_reduction_matches_three() {
     check("traa", Region::Function("flickerReduction"));
+}
+
+#[test]
+fn anaglyph_matches_three() {
+    check("anaglyph", Region::Body);
+}
+
+#[test]
+fn parallax_barrier_matches_three() {
+    check("parallax_barrier", Region::Body);
+}
+
+#[test]
+fn lut_3d_matches_three() {
+    check("lut_3d", Region::Body);
+}
+
+#[test]
+fn outline_depth_matches_three() {
+    check("outline_depth", Region::Body);
+}
+
+#[test]
+fn outline_prepare_mask_matches_three() {
+    check("outline_prepare_mask", Region::Body);
+}
+
+#[test]
+fn outline_copy_matches_three() {
+    check("outline_copy", Region::Body);
+}
+
+#[test]
+fn outline_edge_detection_matches_three() {
+    check("outline_edge_detection", Region::Body);
+}
+
+#[test]
+fn outline_separable_blur_matches_three() {
+    check("outline_separable_blur", Region::Body);
+}
+
+#[test]
+fn outline_separable_blur2_matches_three() {
+    check("outline_separable_blur2", Region::Body);
+}
+
+#[test]
+fn outline_composite_matches_three() {
+    check("outline_composite", Region::Body);
+}
+
+#[test]
+fn outline_output_matches_three() {
+    check("outline_output", Region::Body);
+}
+
+/// The one vertex-stage gate: webgpu_postprocessing_3dlut's smoke
+/// (`m03`), whose `positionNode` twists and bends the plane by three plain
+/// texture samples. Outside the fragment stage three's builder emits them as
+/// `textureSampleLevel( …, 0 )`, and so must the port.
+#[test]
+fn lut_3d_smoke_vertex_matches_three() {
+    let material = webgpu_postprocessing_3dlut::smoke_material();
+    let program = NodeBuilder::new().build(&setup(&material, &SetupContext::default(), None));
+    let ours = fingerprint(&program.vertex_wgsl, Region::Vertex);
+    let three = fingerprint(
+        &fixture("webgpu_postprocessing_3dlut_m03_smoke_vertex.wgsl"),
+        Region::Vertex,
+    );
+    assert_eq!(
+        ours.calls.get("textureSampleLevel"),
+        Some(&3),
+        "\n{}",
+        program.vertex_wgsl
+    );
+    assert_eq!(ours, three, "\n{}", program.vertex_wgsl);
+}
+
+#[test]
+fn sss_matches_three() {
+    check("sss", Region::Body);
+}
+
+/// The page's ground in the scene pass: a Phong floor under a hemisphere
+/// light and the shadow-casting directional light, in linear fog, with
+/// `builtinShadowContext( sss.r, dirLight )` multiplied into the directional
+/// light's colour after its shadow-map factor.
+#[test]
+fn sss_shadow_context_matches_three() {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    use three_rs::materials::phong::ShadowMap;
+    use three_rs::nodes::display::sss;
+    use three_rs::nodes::tsl::screen_uv;
+    use three_rs::textures::DepthTexture;
+    use three_rs::{Color, Fog, MeshPhongNodeMaterial, PerspectiveCamera, SceneFog};
+
+    let mut material = MeshPhongNodeMaterial::phong(Color::from_hex(0xcbcbcb));
+    material.depth_write = false;
+    let light = three_rs::DirectionalLight::new(Color::from_hex(0xffffff), 3.0);
+    let sss_node = sss(
+        &DepthTexture::new(),
+        Rc::new(RefCell::new(PerspectiveCamera::new(45.0, 1.0, 0.1, 100.0))),
+        &light,
+    );
+    let ctx = SetupContext {
+        lights: vec![
+            LightDesc {
+                index: 0,
+                kind: LightKind::Hemisphere,
+                shadow_map: None,
+            },
+            LightDesc {
+                index: 1,
+                kind: LightKind::Directional,
+                shadow_map: Some(ShadowMap::Context {
+                    map: Box::new(ShadowMap::Planar(DepthTexture::new())),
+                    shadow: sss_node.sample(screen_uv()).x(),
+                }),
+            },
+        ],
+        ..SetupContext::default()
+    };
+    let fog = SceneFog::Linear(Fog::new(Color::from_hex(0xa0a0a0), 10.0, 50.0)).node();
+    let program = NodeBuilder::new().build(&setup(&material, &ctx, Some(&fog)));
+    // The port's Phong flow emits each accumulator's zero twice in a row:
+    // `irradiance`, `directDiffuse`, `directSpecular` and `indirectDiffuse =
+    // vec3<f32>( 0.0, 0.0, 0.0 );`, once from the var's lazy initialiser and
+    // once from the flow's explicit zero assign (`src/materials/
+    // node_material.rs`). three's dump has each once. It happens on main too,
+    // with or without the shadow context: issue #281. Only an adjacent repeat
+    // of the same line is dropped, so a missing or extra light term still
+    // shows.
+    let mut lines: Vec<&str> = program.fragment_wgsl.lines().collect();
+    lines.dedup();
+    let ours = fingerprint(&lines.join("\n"), Region::Body);
+    let three = fingerprint(
+        &fixture("webgpu_postprocessing_sss_m12_ground.wgsl"),
+        Region::Body,
+    );
+    assert_eq!(ours, three, "\n{}", program.fragment_wgsl);
 }
 
 #[test]
@@ -792,4 +963,157 @@ fn ssgi_composite_matches_three() {
 #[test]
 fn ssgi_traa_resolve_matches_three() {
     check("ssgi_traa", Region::Body);
+}
+
+/// webgpu_oit `m06`: `vec4( mix( accum.rgb / max( accum.a, 1e-5 ),
+/// beauty.rgb, revealage.r ), beauty.a )` under the pipeline's output
+/// transform — three taps, two of them through a `mat3x3` uv matrix.
+#[test]
+fn oit_composite_matches_three() {
+    check("oit_composite", Region::Body);
+}
+
+/// webgpu_oit's two lights, in scene order: the `HemisphereLight`, then the
+/// `DirectionalLight`.
+fn oit_lights() -> Vec<LightDesc> {
+    [LightKind::Hemisphere, LightKind::Directional]
+        .into_iter()
+        .enumerate()
+        .map(|(index, kind)| LightDesc {
+            index,
+            kind,
+            shadow_map: None,
+        })
+        .collect()
+}
+
+/// One of webgpu_oit's `MeshStandardMaterial`s, built and fingerprinted
+/// over `which` against three's module `fixture_name`.
+///
+/// The OIT gates take the tail of `main()`, from `outgoingLight` on: the
+/// `Output` and the MRT members, which is everything the pass changes. The
+/// lighting above it is the ordinary lit standard material, and differs from
+/// the dump in the ways `docs/nodes.md` §8 lists (hoisted accumulator zeros,
+/// named lighting temps, the indirect-diffuse block's position) — none of
+/// them OIT's.
+fn check_oit_material(
+    material: &three_rs::MeshBasicNodeMaterial,
+    mrt: Option<three_rs::materials::MrtContext>,
+    fixture_name: &str,
+    which: Region,
+) -> String {
+    let ctx = SetupContext {
+        lights: oit_lights(),
+        mrt,
+        ..SetupContext::default()
+    };
+    let program = NodeBuilder::new().build(&setup(material, &ctx, None));
+    let ours = fingerprint(&program.fragment_wgsl, which);
+    let three = fingerprint(&fixture(fixture_name), which);
+    assert_eq!(ours, three, "\n{}", program.fragment_wgsl);
+    program.fragment_wgsl
+}
+
+/// The `revealage` member, line for line from three's `m03` / `m04`: the
+/// fingerprint leaves out the output struct and what each member is assigned
+/// to, and these two lines are where `getOutputType( 1 )` — `RedFormat` —
+/// shows.
+const OIT_REVEALAGE_LINES: [&str; 2] = ["\t@location( 1 ) m1 : f32,", "\toutput.m1 = Output.w;"];
+
+/// Each of `lines` is a line of three's `fixture_name`, and of `ours`.
+fn check_three_lines(ours: &str, fixture_name: &str, lines: &[&str]) {
+    let three = fixture(fixture_name);
+    for line in lines {
+        assert!(
+            three.lines().any(|l| l == *line),
+            "{line:?} is not a line of {fixture_name}"
+        );
+        assert!(
+            ours.lines().any(|l| l == *line),
+            "{line:?} missing:\n{ours}"
+        );
+    }
+}
+
+/// The material tail the OIT gates compare: see [`check_oit_material`].
+const OIT_TAIL: Region = Region::From("outgoingLight =");
+
+/// The OIT pass's MRT over a transparent material, as the renderer hands it
+/// to the build: resolved against the pass's own accumulation target, so
+/// `accum` (`rgba16float`) is a `vec4` and `revealage` (`r8unorm`) an `f32`
+/// by the renderer's attachment → type mapping.
+fn oit_mrt() -> three_rs::materials::MrtContext {
+    let oit = three_rs::nodes::display::oit_pass(
+        std::rc::Rc::new(std::cell::RefCell::new(three_rs::Scene::new())),
+        std::rc::Rc::new(std::cell::RefCell::new(three_rs::PerspectiveCamera::new(
+            45.0, 1.6, 0.1, 100.0,
+        ))),
+    );
+    let mrt = oit.mrt_context();
+    assert_eq!(mrt.attachments, ["accum", "revealage"]);
+    assert_eq!(
+        mrt.output_types,
+        [three_rs::nodes::Type::Vec4, three_rs::nodes::Type::F32]
+    );
+    mrt
+}
+
+fn oit_transparent(color: u32, roughness: f64) -> three_rs::MeshBasicNodeMaterial {
+    let mut material =
+        three_rs::MeshBasicNodeMaterial::standard(three_rs::Color::from_hex(color), roughness, 0.0);
+    material.transparent = true;
+    material.opacity = 0.5;
+    material
+}
+
+/// webgpu_oit `m01`: the knot in the default pass — a plain lit standard
+/// material, no MRT (`PassNode._mrt` is null).
+#[test]
+fn oit_default_pass_matches_three() {
+    let knot =
+        three_rs::MeshBasicNodeMaterial::standard(three_rs::Color::from_hex(0xffffff), 0.2, 0.0);
+    check_oit_material(&knot, None, "webgpu_oit_m01_opaque.wgsl", OIT_TAIL);
+}
+
+/// webgpu_oit `m03`: a transparent sphere (or a plane's front half) in the
+/// OIT pass — the `accum` / `revealage` MRT with equation (9)'s weight
+/// over `positionView.z`.
+#[test]
+fn oit_accumulate_matches_three() {
+    let sphere = oit_transparent(0xffc020, 0.3);
+    let ours = check_oit_material(
+        &sphere,
+        Some(oit_mrt()),
+        "webgpu_oit_m03_accumulate.wgsl",
+        OIT_TAIL,
+    );
+    check_three_lines(
+        &ours,
+        "webgpu_oit_m03_accumulate.wgsl",
+        &OIT_REVEALAGE_LINES,
+    );
+}
+
+/// webgpu_oit `m04`: a `DoubleSide` plane's back half in the OIT pass, whose
+/// only difference from `m03` is the flipped geometry normal.
+#[test]
+fn oit_accumulate_back_side_matches_three() {
+    let mut plane = oit_transparent(0xff4030, 0.5);
+    plane.side = three_rs::materials::Side::Back;
+    for which in [
+        OIT_TAIL,
+        Region::Statement("( normalViewGeometry * vec3<f32>( -1.0 ) )"),
+    ] {
+        let ours = check_oit_material(
+            &plane,
+            Some(oit_mrt()),
+            "webgpu_oit_m04_accumulate_back.wgsl",
+            which,
+        );
+        check_three_lines(
+            &ours,
+            "webgpu_oit_m04_accumulate_back.wgsl",
+            &OIT_REVEALAGE_LINES,
+        );
+    }
 }

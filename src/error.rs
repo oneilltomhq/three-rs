@@ -57,6 +57,15 @@ pub enum Error {
         /// The decoder's message.
         reason: String,
     },
+    /// A colour lookup table `LUTCubeLoader`, `LUT3dlLoader` or
+    /// `LUTImageLoader` rejected. `loader` is the three.js class name and
+    /// `reason` its own message, less the `THREE.<loader>: ` prefix.
+    Lut {
+        /// The three.js loader class, e.g. `"LUTCubeLoader"`.
+        loader: &'static str,
+        /// The loader's message.
+        reason: String,
+    },
     /// A file names a type, format or encoding this port does not implement.
     /// `what` says which field it was read from.
     UnsupportedFormat {
@@ -215,6 +224,7 @@ impl fmt::Display for Error {
             }
             Self::Rgbe { reason } => write!(f, "THREE.HDRLoader: {reason}"),
             Self::Ktx2 { reason } => write!(f, "THREE.KTX2Loader: {reason}"),
+            Self::Lut { loader, reason } => write!(f, "THREE.{loader}: {reason}"),
             Self::UnsupportedFormat { what, value } => {
                 write!(f, "unsupported {what}: {value}")
             }

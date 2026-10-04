@@ -407,6 +407,49 @@ const VARIANT_BACK_SIDE: u64 = 4;
 const VARIANT_TOON_OUTLINE: u64 = 6;
 const VARIANT_FRONT_SIDE: u64 = 5;
 
+/// The two render-object functions `OutlineNode.updateBefore()` installs
+/// around its scene renders, together with the
+/// `resetRendererAndSceneState()` they run under (`docs/nodes.md` §72):
+///
+/// ```js
+/// renderer.setRenderObjectFunction( ( object, …, material, … ) => {
+///     if ( this._selectionCache.has( object ) === draw_selected ) {
+///         const overrideMaterial = object.isSprite ? spriteMaterial : material;
+///         renderer.renderObject( object, …, overrideMaterial, … );
+///     }
+/// } );
+/// ```
+///
+/// Every object whose membership in `selected` differs from `draw_selected`
+/// is skipped, and every other one is drawn with `material` (`sprite_material`
+/// for a sprite) in place of its own. `resetSceneState()`'s `scene.background
+/// = null` is the skybox and colour background being ignored for the
+/// render. The shadow maps are not rendered either: three renders them from
+/// `ShadowNode.updateBefore()`, which only a lit material's program reaches,
+/// and both outline materials are unlit.
+pub(crate) struct OutlineSelection {
+    /// `this._selectionCache`, by `Object3D.id`.
+    pub(crate) selected: Rc<HashSet<u32>>,
+    /// `true` for the selected-objects pass, `false` for the depth pass of
+    /// everything else.
+    pub(crate) draw_selected: bool,
+    pub(crate) material: Rc<MeshBasicNodeMaterial>,
+    pub(crate) sprite_material: Rc<MeshBasicNodeMaterial>,
+}
+
+impl OutlineSelection {
+    /// The material `object` is drawn with, or `None` when this pass skips it.
+    fn material_for(&self, object: &crate::core::Object3D) -> Option<&MeshBasicNodeMaterial> {
+        (self.selected.contains(&object.id) == self.draw_selected).then(|| {
+            if object.payload.is_sprite() {
+                &*self.sprite_material
+            } else {
+                &*self.material
+            }
+        })
+    }
+}
+
 /// One entry of `Renderer::programs`: the compiled program, and the last
 /// frame a material state named it.
 struct ProgramEntry {
@@ -597,6 +640,16 @@ struct PassTarget {
     /// `mrtNode.setBlendMode( name, ... )` gives it a blend state of its own;
     /// the pipeline descriptor carries one `ColorTargetState` per attachment.
     extra_color_targets: Vec<ExtraColorTarget>,
+    /// Attachment 0's blend state when the MRT decides it rather than the
+    /// material: `MRTNode.getBlendMode( textures[ 0 ].name )` is
+    /// `MaterialBlending` only for an attachment named `output`, so a target
+    /// whose first attachment has another name — `OITPassNode`'s `accum` —
+    /// gets the MRT's own blend mode, or none. `None` here is the material's.
+    color_blend: Option<Option<wgpu::BlendState>>,
+    /// `renderContext.mrt.getClearColor( textures[ i ].name )` per colour
+    /// attachment, attachment 0 first: a value the pass clears that
+    /// attachment to in place of its default. Empty without an MRT.
+    clear_colors: Vec<Option<[f64; 4]>>,
     resolve: Option<wgpu::TextureView>,
     /// The single-sampled colour texture itself — the resolve target under
     /// MSAA and the attachment otherwise. `copyFramebufferToTexture()` copies
@@ -790,6 +843,12 @@ pub struct Renderer {
     /// carries only the flag, because nothing on the ladder uses a `Lighting`
     /// for anything else.
     pub lighting_enabled: bool,
+    /// `renderer.contextNode`'s `getShadow` — the `builtinShadowContext` of
+    /// the pass being rendered, which `PassNode.updateBefore()` merges into
+    /// the renderer's context for the duration of its render. Every scene
+    /// draw that receives the named light's shadow carries it in that
+    /// light's [`ShadowMap`]. `None` outside such a pass.
+    pub(crate) context_shadow: Option<pass::ShadowContext>,
     /// `renderer.contextNode`'s `getAO` — the ambient-occlusion node of the
     /// pass being rendered, which `PassNode.updateBefore()` merges into the
     /// renderer's context for the duration of its render
@@ -803,6 +862,16 @@ pub struct Renderer {
     /// render-object function. See
     /// [`ToonOutlinePassNode`](crate::nodes::display::ToonOutlinePassNode).
     pub(crate) toon_outline: Option<Rc<MeshBasicNodeMaterial>>,
+    /// `renderer.setRenderObjectFunction()` as `OITPassNode` sets it for each
+    /// of its two renders: which half of the scene the pass draws, and with
+    /// `depthWrite` forced off for the accumulation half. `None` is three's
+    /// default render-object function. See
+    /// [`OitPassNode`](crate::nodes::display::OitPassNode).
+    pub(crate) oit: Option<crate::nodes::display::OitRenderObjects>,
+    /// `renderer.setRenderObjectFunction()` as `OutlineNode.updateBefore()`
+    /// sets it for its two scene renders. `None` is three's default
+    /// render-object function. See [`OutlineSelection`].
+    pub(crate) outline_selection: Option<OutlineSelection>,
     /// `PassNode.updateBefore()`'s `camera.layers.mask = this._layers.mask` —
     /// the layer mask `_projectObject()` tests against for the duration of one
     /// pass. `None` leaves the camera's own mask alone.
@@ -1302,8 +1371,11 @@ impl Renderer {
             opaque: true,
             transparent: true,
             lighting_enabled: true,
+            context_shadow: None,
             context_ao: None,
             toon_outline: None,
+            oit: None,
+            outline_selection: None,
             camera_layers: None,
             sort_objects: true,
             canvas: None,
@@ -1780,10 +1852,9 @@ impl Renderer {
         // flag, which the port has no field for.)
         let needs_previous_data = self.mrt.as_ref().is_some_and(|mrt| mrt.has("velocity"));
         let mrt_context = match (&self.render_target, &self.mrt) {
-            (Some(render_target), Some(node)) => Some(MrtContext {
-                node: node.clone(),
-                attachments: render_target.attachment_names(),
-            }),
+            (Some(render_target), Some(node)) => {
+                Some(MrtContext::for_target(node.clone(), render_target))
+            }
             _ => None,
         };
 
@@ -1791,7 +1862,11 @@ impl Renderer {
         // What `Background.update()` builds the material's `colorNode` from is
         // the material's variant in the program cache: the cube map by
         // identity, a colour node by its value (it is baked as a constant).
-        let background = match scene.background.clone() {
+        let scene_background = scene
+            .background
+            .clone()
+            .filter(|_| self.outline_selection.is_none());
+        let background = match scene_background.clone() {
             Some(Background::CubeTexture(background)) => Some((
                 materials::background_color_node(&background),
                 hash_of(&("cube", background.id())),
@@ -1885,7 +1960,9 @@ impl Renderer {
         // scene from its own camera before the main pass builds any material,
         // because `LightDesc.shadow_map` is what decides whether a Phong
         // program carries the filter at all.
-        self.render_shadows(scene, &render_list, camera);
+        if self.outline_selection.is_none() {
+            self.render_shadows(scene, &render_list, camera);
+        }
 
         // `LightsNode`'s list, as the materials see it: the kind decides which
         // `AnalyticLightNode` subclass generates, and the shadow map (present
@@ -1902,6 +1979,17 @@ impl Renderer {
                 (light.kind, object.cast_shadow && light.shadow.is_some())
             })
             .collect();
+
+        // `builtinShadowContext( shadow, light )` of the pass being rendered,
+        // resolved to the light's index in the list: its `getShadow` hook
+        // matches the light by identity.
+        let context_shadow = self.context_shadow.as_ref().and_then(|context| {
+            render_list
+                .lights
+                .iter()
+                .position(|light| Node::ptr_eq(light, &context.light))
+                .map(|index| (index, context.shadow.clone()))
+        });
 
         // `NodeManager.getFogNode( scene )`, once per render: `scene.fogNode`
         // if set, else the node `updateFog()` builds for `scene.fog` — which
@@ -1981,11 +2069,17 @@ impl Renderer {
         if self.transparent {
             for item in &render_list.transparent {
                 let object = item.node.borrow();
-                let material = scene
-                    .override_material
-                    .as_ref()
-                    .or(item.material(&object))
-                    .unwrap_or(&self.default_material);
+                let material = match &self.outline_selection {
+                    Some(selection) => match selection.material_for(&object) {
+                        Some(material) => material,
+                        None => continue,
+                    },
+                    None => scene
+                        .override_material
+                        .as_ref()
+                        .or(item.material(&object))
+                        .unwrap_or(&self.default_material),
+                };
                 // `material.transparent === true && material.side ===
                 // DoubleSide && material.forceSinglePass === false`.
                 let split = material.transparent
@@ -1999,6 +2093,21 @@ impl Renderer {
                     draws.push((item, None));
                 }
             }
+        }
+
+        // `OITPassNode`'s two render-object functions, which three calls per
+        // render item *before* `renderObject()` splits a `DoubleSide`
+        // material in two — so both halves go, or neither.
+        if let Some(oit) = self.oit {
+            draws.retain(|(item, _)| {
+                let object = item.node.borrow();
+                let material = scene
+                    .override_material
+                    .as_ref()
+                    .or(item.material(&object))
+                    .unwrap_or(&self.default_material);
+                oit.draws(material)
+            });
         }
 
         for (item, side) in draws {
@@ -2016,11 +2125,22 @@ impl Renderer {
             // `new Mesh( geometry )` with no material gets
             // `new MeshBasicMaterial()`, which under `WebGPURenderer` is a
             // `MeshBasicNodeMaterial`: white, opaque, front side, depth on.
-            let material: &MeshBasicNodeMaterial = scene
-                .override_material
-                .as_ref()
-                .or(item.material(&object))
-                .unwrap_or(&self.default_material);
+            //
+            // `OutlineNode`'s render-object functions skip the objects on the
+            // other side of the selection and draw the rest with the pass's
+            // own material (`resetSceneState()` has cleared
+            // `scene.overrideMaterial` for them).
+            let material: &MeshBasicNodeMaterial = match &self.outline_selection {
+                Some(selection) => match selection.material_for(&object) {
+                    Some(material) => material,
+                    None => continue,
+                },
+                None => scene
+                    .override_material
+                    .as_ref()
+                    .or(item.material(&object))
+                    .unwrap_or(&self.default_material),
+            };
 
             let primitive = Primitive::of(&object, &geometry, material.wireframe);
 
@@ -2120,6 +2240,11 @@ impl Renderer {
             if let Some(side) = side {
                 material.side = side;
             }
+            // `_oitRenderObjectFunction`'s `material.depthWrite = false`
+            // around the draw: a pipeline-state change, not a program one.
+            if self.oit == Some(crate::nodes::display::OitRenderObjects::Accumulate) {
+                material.depth_write = false;
+            }
             // `viewportOpaqueMipTexture()` — one texture for the whole pass,
             // handed to whichever materials transmit.
             let item_opaque_frame = (material.transmission > 0.0)
@@ -2173,7 +2298,19 @@ impl Renderer {
                                 && object.receive_shadow
                                 && self.shadow_map_enabled)
                                 .then(|| self.shadow_maps.get(&index).cloned())
-                                .flatten(),
+                                .flatten()
+                                // `AnalyticLightNode.setupShadow()`'s
+                                // `builder.context.getShadow( this, builder )`,
+                                // which runs only where the shadow does.
+                                .map(|map| match &context_shadow {
+                                    Some((light, shadow)) if *light == index => {
+                                        ShadowMap::Context {
+                                            map: Box::new(map),
+                                            shadow: shadow.clone(),
+                                        }
+                                    }
+                                    _ => map,
+                                }),
                         })
                         .collect(),
                     morph: morph.clone(),
@@ -2258,7 +2395,7 @@ impl Renderer {
         // `Background.update()`'s `forceClear`: a `Color` background clears
         // even with `autoClear` off (`if ( renderer.autoClear === true ||
         // forceClear === true )`); anything else clears only when it is on.
-        let (clear_color, force_clear) = match &scene.background {
+        let (clear_color, force_clear) = match &scene_background {
             Some(Background::Color(Color { r, g, b })) => ([*r, *g, *b, 1.0], true),
             _ => (self.clear_color, false),
         };
@@ -3076,6 +3213,8 @@ impl Renderer {
                 color: color_view,
                 extra_colors: Vec::new(),
                 extra_color_targets: Vec::new(),
+                color_blend: None,
+                clear_colors: Vec::new(),
                 resolve: None,
                 color_texture: None,
                 depth: Some(depth_view),
@@ -3389,7 +3528,9 @@ impl Renderer {
                 depth_write: item.material.depth_write,
                 depth_func: item.material.depth_func,
                 alpha_to_coverage: item.material.alpha_to_coverage,
-                blend: item.material.blend_state(),
+                blend: target
+                    .color_blend
+                    .unwrap_or_else(|| item.material.blend_state()),
                 topology: item.primitive.topology,
                 strip_index_format: item.primitive.strip_index_format,
             };
@@ -3717,23 +3858,32 @@ impl Renderer {
         clear: ClearOps,
         occlusion_query_set: Option<&wgpu::QuerySet>,
     ) {
-        let load = match clear.color {
-            Some(color) => wgpu::LoadOp::Clear(wgpu::Color {
-                r: color[0],
-                g: color[1],
-                b: color[2],
-                a: color[3],
-            }),
-            None => wgpu::LoadOp::Load,
-        };
-
         // One attachment per `renderTarget.textures` entry. They share the
         // pass's load op but not its clear *value*: `WebGPUBackend.beginRender()`
         // clears attachment 0 to `renderContext.clearColorValue` and every
-        // other one to `( 0, 0, 0, 1 )`. (`MRTNode.clearColors` is three's
-        // per-output override and nothing on this ladder sets one.)
-        // `webgpu_multiple_rendertargets` shows it: its `normal` half is black
-        // where the knot is not, not the scene's `0x222222`.
+        // other one to `( 0, 0, 0, 1 )`, unless the MRT has a clear colour of
+        // its own for that attachment's name (`mrt.getClearColor( name )`,
+        // which `OITPassNode` sets on both of its targets).
+        // `webgpu_multiple_rendertargets` shows the default: its `normal` half
+        // is black where the knot is not, not the scene's `0x222222`.
+        let load_for = |index: usize, default: [f64; 4]| match clear.color {
+            Some(_) => {
+                let color = target
+                    .clear_colors
+                    .get(index)
+                    .copied()
+                    .flatten()
+                    .unwrap_or(default);
+                wgpu::LoadOp::Clear(wgpu::Color {
+                    r: color[0],
+                    g: color[1],
+                    b: color[2],
+                    a: color[3],
+                })
+            }
+            None => wgpu::LoadOp::Load,
+        };
+        let load = load_for(0, clear.color.unwrap_or_default());
         let mut color_attachments = vec![Some(wgpu::RenderPassColorAttachment {
             view: &target.color,
             depth_slice: None,
@@ -3743,22 +3893,13 @@ impl Renderer {
                 store: wgpu::StoreOp::Store,
             },
         })];
-        let extra_load = match clear.color {
-            Some(_) => wgpu::LoadOp::Clear(wgpu::Color {
-                r: 0.0,
-                g: 0.0,
-                b: 0.0,
-                a: 1.0,
-            }),
-            None => wgpu::LoadOp::Load,
-        };
-        for (view, resolve) in &target.extra_colors {
+        for (index, (view, resolve)) in target.extra_colors.iter().enumerate() {
             color_attachments.push(Some(wgpu::RenderPassColorAttachment {
                 view,
                 depth_slice: None,
                 resolve_target: resolve.as_ref(),
                 ops: wgpu::Operations {
-                    load: extra_load,
+                    load: load_for(index + 1, [0.0, 0.0, 0.0, 1.0]),
                     store: wgpu::StoreOp::Store,
                 },
             }));
@@ -7348,14 +7489,30 @@ impl Renderer {
                     .mrt
                     .as_ref()
                     .and_then(|mrt| mrt.blend_mode(name))
-                    .and_then(|blending| {
-                        materials::blending::blending(&materials::BlendMode {
-                            blending,
-                            ..Default::default()
-                        })
-                    }),
+                    .and_then(|mode| materials::blending::blending(&mode)),
             })
             .collect();
+        // Attachment 0 goes through the same `getBlendMode( texture.name )`:
+        // an unset `output` is the `MaterialBlending` seed (the material's
+        // own state), and any other unset name is `_noBlending`.
+        let name0 = inner
+            .texture_name
+            .clone()
+            .unwrap_or_else(|| OUTPUT_ATTACHMENT.to_string());
+        let color_blend = self
+            .mrt
+            .as_ref()
+            .and_then(|mrt| match mrt.blend_mode(&name0) {
+                Some(mode) => Some(materials::blending::blending(&mode)),
+                None => (name0 != OUTPUT_ATTACHMENT).then_some(None),
+            });
+        let clear_colors: Vec<Option<[f64; 4]>> = match &self.mrt {
+            Some(mrt) => std::iter::once(name0.as_str())
+                .chain(inner.extra_textures.iter().map(|(name, _)| name.as_str()))
+                .map(|name| mrt.clear_color(name))
+                .collect(),
+            None => Vec::new(),
+        };
 
         let (depth_texture, depth_format) = match (&inner.depth_texture, &inner.depth) {
             (Some(depth_texture), _) => (
@@ -7380,6 +7537,8 @@ impl Renderer {
             color,
             extra_colors,
             extra_color_targets,
+            color_blend,
+            clear_colors,
             resolve,
             color_texture: Some(inner.texture.with_gpu(|gpu| gpu.clone())),
             depth,
@@ -7441,6 +7600,8 @@ impl Renderer {
             color,
             extra_colors: Vec::new(),
             extra_color_targets: Vec::new(),
+            color_blend: None,
+            clear_colors: Vec::new(),
             resolve,
             color_texture: Some(canvas.color.clone()),
             depth: depth.clone(),

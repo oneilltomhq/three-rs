@@ -725,6 +725,14 @@ differences, each verified to be pixel-neutral.
   says `three-rs`.
   `tests/nodes_compute_indirect_wgsl.rs::canonical()` drops it, as
   `tests/nodes_compute_wgsl.rs` drops r186's.
+* **`screenUV` read more than once is a var.** Three's `ScreenNode` is not
+  cacheable (`isCacheable()` returns `false`), so each read writes
+  `( fragCoord.xy / render.nodeUniformN )` inline. The port's `screen_uv()`
+  is an operator node, and a second read promotes it to a `nodeVarN`
+  assigned once. The value is the same. `Water2Mesh` reads it three times
+  (§83.2); `tests/nodes_water_wgsl.rs` puts the expression back at each read
+  before comparing (`inline_screen_uv`). Issue #287 tracks making it
+  non-cacheable, as three's is.
 
 ### `LineBasicNodeMaterial` adds no divergence class
 
@@ -923,6 +931,7 @@ more (`docs/webgpu_tsl_raging_sea-progress.md`):
   three's `varyings.positionLocal = ( varyings.positionLocal + … )` in
   place: the text differs, but the value the fragment reads is the same. A
   varying that was only read keeps its old form.
+
 ### Shadow filters add no new class
 
 The VSM and point-light-alpha modules differ from three's dumps only in the
@@ -6110,8 +6119,6 @@ material's beauty at the contact and nowhere else.
 
 ## 65. `SSRNode` and `SMAANode` (`webgpu_postprocessing_ssr`)
 
-§64 is reserved for the GTAO and denoise nodes, whose branch is not merged.
-
 ### 65.1 What three does
 
 `ssr( colorNode, depthNode, normalNode, { metalnessNode, roughnessNode,
@@ -6272,9 +6279,10 @@ Four pieces were new:
 
 - **`outputStruct()`.** `Node::OutputStruct` is `OutputStructNode` standing
   as a material's `outputNode`. `materials::setup()` unpacks it into the
-  flow's MRT members and sets `MaterialFlow::mrt_typed`. An `MRTNode`'s
-  members are wrapped in `vec4()` by `MRTNode.setup()`; a bare
-  `outputStruct()`'s keep their own types. So the CoC pass's `OutputType`
+  flow's MRT members, each paired with its own type. An `MRTNode`'s
+  members take their attachment's type (`MRTNode.setup()`'s
+  `getOutputType( index )`, §82.1); a bare `outputStruct()`'s keep their
+  own types. So the CoC pass's `OutputType`
   has two `f32` members, as three's dump shows. Anywhere else the node
   panics, because it has no value of its own.
 - **Red targets.** `RenderTarget::set_red_format()` is
@@ -6323,8 +6331,7 @@ things that are not nodes:
 - Changing `focusDistance`, `focalLength` or `bokehScale` from a GUI. They
   are ordinary uniforms, so a host can set them, but no page here does.
 
-Sections 71 to 73, 76, 77 and 79 to 83 are reserved for the ports on
-sibling branches. They are numbered as those branches land.
+Sections 77, 79 and 80 are reserved for the ports on sibling branches. They are numbered as those branches land.
 
 ## 67. TSL sweep 2: the accessors batch
 
@@ -6813,6 +6820,330 @@ sampled from there. That costs an extra pass and resolves the callback at the
 target's size. A caller holding a `SampleNode` can call its `sample( uv )`
 instead. The `sample` and `SampleNode` rows are Partial for this.
 
+## 71. `SSSNode` and `builtinShadowContext` (`webgpu_postprocessing_sss`)
+
+### 71.1 What three does
+
+`sss( depthNode, camera, mainLight )` is a plain `Node` (it `extends Node`)
+with `updateBeforeType = FRAME`. It owns one `RedFormat` / `UnsignedByteType`
+render target, sized `round( resolutionScale × drawing-buffer size )`, and
+its texture node is `passTexture( this, target.texture )`.
+
+- **`updateBefore()`.** It does four things: it sets the target's size,
+  sets `temporalOffset` to `_spatialOffsets[ frameId % 4 ]` (0, 0.5, 0.25,
+  0.75) and stores `frame.frameId` in `this._frameId` under temporal
+  filtering (both 0 without it), and draws the quad into the target,
+  cleared to white. Nothing else is written there. The camera's view,
+  projection and inverse projection are `uniform( camera.matrix… )`, which
+  read the camera's own matrices; near and far are `reference()` nodes on
+  the camera; and the light's and its target's positions come from
+  `lightPosition( light )` and `lightTargetPosition( light )`, which are
+  render-group uniforms with their own `onRenderUpdate`.
+- **The quad.** For each pixel with depth below 1 it rebuilds the view
+  position and marches from it towards the light. The ray runs from
+  `fragCoord` to the screen position of `rayStart + lightDirection ×
+  maxDistance`, one step per `1 / quality` pixels along the longer axis.
+  Each step is offset by interleaved gradient noise, `temporalOffset` and
+  `rand( uv + frameId )`. At each step it compares the ray's view depth
+  with the depth buffer's. A surface in front of the ray by less than
+  `thickness` sets the occlusion to `shadowIntensity` and ends the loop.
+  The output is `1 − occlusion`.
+- **The frame id is a literal.** The constructor makes `_frameId` a uniform,
+  but `updateBefore()` replaces the property with a plain number before the
+  quad's `Fn()` runs. So the shader holds `rand( uv + vec2( N ) )` for the
+  frame the material was last built on (`vec2( 2.0 )` in the page's dump).
+- **The quad is rebuilt.** `setup()` runs again in every builder that sets
+  up a material reading the SSS texture: `PassTextureNode.setup()` puts the
+  `SSSNode` in that builder's node properties. Each run assigns a fresh
+  `fragmentNode = sss()` and sets `needsUpdate`, so the quad's cache key
+  changes and the next `updateBefore()` rebuilds it with that frame's id.
+  On the page that happens in the first frame (the statue's and the
+  ground's scene materials), again when the glTF arrives, and again when
+  the GUI's output switch makes a scene material set up again.
+- **`builtinShadowContext( shadow, light )`.** This is a context whose
+  `getShadow( lightNode )` returns `lightNode.shadowColorNode.mul( shadow )`
+  for that light alone. `AnalyticLightNode.setupShadow()` calls it only
+  where a shadow map applies: the light casts, the object receives and the
+  renderer's shadow map is on. The page sets the context as
+  `scenePass.contextNode`, so every receiver in the scene pass multiplies
+  the directional light's colour by its shadow-map factor and then by the
+  SSS sample.
+
+### 71.2 The port
+
+`nodes::display::sss` builds the same graph. Its fragment body is gated
+against three's dump by `sss_matches_three` (`tests/nodes_display_wgsl.rs`,
+fixture `webgpu_postprocessing_sss_m08_sss.wgsl`). `maxDistance`,
+`thickness`, `shadowIntensity` and `quality` are public `SettableValue`s.
+`set_resolution_scale` and `set_use_temporal_filtering` stand in for
+three's two properties.
+
+**The frame id.** `SssState` builds the quad material on its first
+`update_before()`, with the frame id three would have baked then: the
+frame's id under temporal filtering, else 0. It keeps that material, so it
+bakes the first frame's id for good. Three rebuilds the quad whenever a
+consumer material sets up again (§71.1) and so re-bakes a later frame's id;
+the difference is the phase of the `rand()` noise only. Turning temporal
+filtering on or off later changes the `temporalOffset` uniform in both,
+which is the same. `SssNode::quad_material( frame_id )` (hidden from the
+docs) is what the gate builds, with three's 2.
+
+**Order within a frame.** `update_before()` asks for the pre-pass first,
+through `frame::texture_update( depth )`, as TRAA does. While it does so it
+lifts the renderer's shadow context, so the pre-pass never draws with the
+context of the pass that triggered it.
+
+**The shadow context.** `PassNode::set_context_shadow( shadow, &light )` is
+`scenePass.contextNode = builtinShadowContext( shadow, light )`, and
+`clear_context_shadow()` sets it back to `null`. The pass hands the context
+to the renderer for the length of its render, the same shape as
+`builtinAOContext`'s `set_context_ao` (§64); the two hooks are separate
+fields and compose.
+The renderer finds the light's index in the render list by node
+identity. For every draw where that light's shadow map applies, it wraps the
+map in `ShadowMap::Context { map, shadow }`. `setup_light` then multiplies
+the light's colour by the map's factor and by `shadow`, which is three's
+`( color × shadowFactor ) × shadow`. The context rides in `ShadowMap` rather
+than in a new `SetupContext` field. It is part of `ShadowMap`'s hash, so it
+is part of the program key, and a draw without a shadow map never sees it,
+which is the same condition three's `setupShadow()` applies.
+`sss_shadow_context_matches_three` gates the page's ground material (Phong,
+hemisphere and directional light, PCF shadow map, linear fog, context)
+against fixture `webgpu_postprocessing_sss_m12_ground.wgsl`.
+
+**Divergences.**
+
+- **No `RedFormat`.** The port has no one-channel render target, so the
+  target is `rgba8unorm` and the quad's `OutputStruct` member is a `vec4`
+  splat of three's `f32`. Consumers read `.x`, where three reads `.r`. The
+  gate's fingerprint does not see the output type.
+- **`getScreenPosition`** (`PostProcessingUtils.js`) is a private helper in
+  `sss.rs` and not a public `tsl` function.
+
+### 71.3 Not ported
+
+- An `OrthographicCamera`. The node takes a `PerspectiveCamera`, so
+  `getViewZ`'s orthographic branch never applies.
+- A logarithmic depth buffer (`sampleDepth`'s `logarithmicDepthToViewZ` →
+  `viewZToPerspectiveDepth`).
+- `this._material.contextNode = context( builder.getSharedContext() )`. The
+  quad builds with an empty context. On the page `setup()` runs in the scene
+  materials' builders, where the SSS read sits inside `getShadow`, and
+  `getSharedContext()` strips the material and the `getShadow`, `getAO`,
+  `getGI`, `getUV` and `getOutput` hooks from that context. Nothing left in
+  it is read by the quad's fragment graph, so the result is still
+  effectively empty.
+- `resetRendererState()`'s `setRenderObjectFunction( null )`, as in
+  `rtt.rs` and `after_image.rs`: `Renderer::render_quad` never goes through
+  the render-object function.
+
+## 72. `OutlineNode` (`webgpu_postprocessing_outline`)
+
+### 72.1 What three does
+
+`outline( scene, camera, { selectedObjects, edgeThickness, edgeGlow,
+downSampleRatio } )` is a `TempNode` with `updateBeforeType = FRAME`. Its
+value is `passTexture( this, composite.texture )`: red where the outline of a
+selected object is visible, green where it is hidden behind something else.
+The page adds `( visibleEdge * visibleEdgeColor + hiddenEdge *
+hiddenEdgeColor ) * edgeStrength`, times an `oscSine` pulse when
+`pulsePeriod > 0`, to the scene pass.
+
+`updateBefore()` builds a selection cache (every `Mesh` and `Sprite` under
+the selected objects). If it is empty it skips everything, and on the frame
+the selection *becomes* empty it clears the composite to transparent black
+once. Otherwise, under `resetRendererAndSceneState()`, with a white clear:
+
+1. It renders the scene into a target with a `FloatType` `DepthTexture`,
+   through a render-object function that draws only the objects *not*
+   selected, with a black depth-only material.
+2. It renders the scene again into the mask, drawing only the selected
+   objects with `prepareMask`: `vec3( 0, depthTest, 1 )`, where
+   `depthTest` is `positionView.z <= viewZ` of the step-1 depth (turned back
+   into view z, perspective or orthographic, chosen at `setup()`). It is 1
+   where the fragment is behind something not selected, and 0 where it is
+   in front. Outside the selection the white clear leaves 1 in every channel.
+3. It copies the mask into `maskDownSample` at `1 / downSampleRatio` of the
+   drawing buffer, `Math.round`ed.
+4. Edge detection: four taps one texel apart, `d` the length of the two
+   central differences of the mask's red channel, and the result is
+   `vec4( edgeColor, 1 ) * d`. `edgeColor` is red (`_visibleEdgeColor`)
+   when `1 - visibilityFactor > 0.001` and green (`_hiddenEdgeColor`)
+   otherwise, where `visibilityFactor` is the smallest of the four taps'
+   green. So `.r` (the visible edge) is set where any tap is visible and
+   `.g` (the hidden edge) where all of them are hidden.
+5. A separable Gaussian of radius `edgeThickness` (`MAX_RADIUS = 4` taps a
+   side, the offsets scaled by `kernelRadius / MAX_RADIUS`), X then Y, at
+   that resolution.
+6. The same blur at radius 4 at half that resolution again.
+7. The composite: `mask.r * ( edge1 + edge2 * edgeGlow )`, at full size.
+   `mask.r` is 1 outside the selection and 0 on it, which is why the ring
+   sits *outside* the silhouette.
+
+### 72.2 The port
+
+`nodes::display::outline` builds the same eleven materials in three's order
+and draws them in three's order. `OutlineNode::materials()` (doc-hidden)
+lists them for the WGSL gates. The page's own graded frame never builds the
+quad materials, because nothing is selected until the pointer moves. So
+`tools/dump-pages/outline_selected.html` is the page with
+`selectedObjects.push( torus )` added, and `tests/nodes_display_wgsl.rs`
+gates the depth and mask materials and the five quad shaders against that
+dump, plus the page's output shader against the page's own dump.
+
+**The render-object functions.** Three installs two closures with
+`renderer.setRenderObjectFunction()`. The port has no per-object callback,
+so it has a hook that does the same: `Renderer.outline_selection`, an
+`OutlineSelection { selected, draw_selected, material, sprite_material }`
+(`src/renderer/mod.rs`). While it is set, the opaque and transparent loops
+skip every object whose membership in `selected` differs from
+`draw_selected`, and draw the rest with the pass's material in place of
+their own. It is `pub(crate)` and set only for the length of
+`render_selection()`, the same scoping as `toon_outline` for
+`ToonOutlinePassNode`.
+
+**What `resetSceneState()` turns off.** Three nulls `scene.background` and
+`scene.overrideMaterial` for the two renders. The hook ignores both: the
+background is neither drawn nor used as a force-clear colour, and the
+selection's material wins over an override. The renderer also skips the
+shadow maps while the hook is set. In three they render from
+`ShadowNode.updateBefore()`, which only a lit program reaches, and both
+outline materials are unlit, so three draws none there either.
+
+**`cameraNear` / `cameraFar`.** Three uses `reference( 'near', 'float',
+camera )`, refreshed per object. The port has settable uniforms, written
+from the camera at the top of `update_before()`. The values the shader sees
+are the same.
+
+**The blur materials.** Three has one material per resolution and rewrites
+its colour texture and `_blurDirection` between the X and Y draws. Here
+each draw has its own material, with its source texture bound and its
+direction a constant `uniform`, as `bloom` already does for
+`UnrealBloomPass`. The four programs come from the same two `Fn()` bodies,
+and the two shapes are the ones gated.
+
+**The empty composite.** The page's output samples the composite on every
+frame, including the first, when nothing has drawn into it. Three's
+`Textures.updateTexture()` gives a render target texture its GPU texture
+when it is first bound, so it reads a zeroed 1×1 target. The port has no
+lazy creation at bind time, so `update_before()` calls
+`Renderer::init_render_target( composite )` first. That call is idempotent.
+
+**Gates.**
+
+- The e2e rung grades the page at 15 of 100000 pixels. It has an empty
+  selection, so this frame tests that the node costs nothing and adds
+  nothing.
+- The WGSL gates (`tests/nodes_display_wgsl.rs`, eight of them) cover the
+  depth and mask scene materials, the copy, edge-detection, X-blur and
+  composite quads, and the page's output. Not gated: the sprite depth and
+  mask materials (the page has no sprites, so three's dump has none) and the
+  two Y-blur materials (three draws X and Y with one module; the port's Y
+  materials differ from the gated X ones only in the texture and the baked
+  direction).
+- `tests/outline_frames.rs` draws a selection on the GPU. It checks that a
+  selected box gets a red ring outside its silhouette and no green, that a
+  blocker in front turns the ring green, that `edgeGlow = 1` adds outline
+  without reaching inside the selection, that a plain render after the
+  outline frame is unchanged (the selection hook is put back), that
+  deselecting clears the composite and it stays clear, and that an
+  orthographic camera also gets a ring.
+
+**The example.** `tree.obj` is loaded synchronously by the new `ObjLoader`.
+The page's `onPointerMove()` and `checkIntersection()` are `pointer_move(
+app, x, y, width, height )`: the nearest hit becomes the one selected
+object, and a miss keeps the selection, as in the page. The viewer routes
+the pointer to `OrbitControls` only, as it does for
+`webgpu_lines_fat_raycasting`, so selecting there needs a host that calls
+`pointer_move`. `tests/outline_frames.rs` covers what selecting draws.
+
+### 72.3 Not ported
+
+- `dispose()`.
+- Reassigning `downSampleRatio`, `edgeThicknessNode` or `edgeGlowNode` after
+  construction. Three picks a new node up at the next `setup()`; the port
+  builds its materials once.
+- `getTextureNode()` as a separate object. `OutlineNode::node()` *is* the
+  composite tap.
+- Renaming the scene (`Outline [ Depth ]`, `Outline [ Mask ]`) and the quad
+  for the two renders. In three these names only label the passes in the
+  inspector.
+
+## 73. `Lut3DNode` and the LUT loaders (`webgpu_postprocessing_3dlut`)
+
+### 73.1 What three does
+
+`lut3D( input, texture3D( lut ), size, intensity )` is
+`mix( base, vec4( lut.sample( uvw ).rgb, base.a ), intensity )`, with
+`uvw = 0.5 / size + base.rgb * ( 1 - 1 / size )`, so that the table's edge
+texels are sampled at their centres. `size` is a `uniform`. The page puts it
+over `renderOutput( pass( scene, camera ) )`, with `outputColorTransform =
+false`, and loads nine tables through three loaders:
+
+- five `.CUBE` files (`LUTCubeLoader`);
+- one `.3dl` (`LUT3dlLoader`);
+- three PNG strips (`LUTImageLoader`).
+
+### 73.2 The port
+
+`nodes::display::lut_3d` is the same graph, gated against the page's dump.
+`Lut3DNode::size()` is the settable `size` uniform. The rung grades it at 0
+of 100000 pixels. `tests/lut_3d_frames.rs` checks the arithmetic on the GPU
+with two-texel identity and inversion tables: the inversion maps `c` to
+`1 - c` exactly, intensity 0 returns the input, and swapping tables changes
+the next frame.
+
+The lookup is `texture_3d_sampled( &table )`: `texture3D( texture )` with no
+level, which emits `textureSample` like three. The existing `texture_3d`
+always takes a level, for a raymarch loop. In the same change, a plain
+sample built outside the fragment stage now emits `textureSampleLevel( …,
+0 )`, as three's `_generateTextureSample()` does. The page's smoke samples
+its noise texture in `positionNode`, and WGSL has no implicit derivatives in
+a vertex shader. Before this change the builder emitted a `textureSample`
+there, which no graded page had hit. `tests/nodes_display_wgsl.rs` gates
+the smoke's vertex `main()` against three's dump (`m03`), the one
+vertex-stage gate there.
+
+**The loaders** are in `three_rs::loaders`. Each is synchronous: `load(
+path )` returns the table, and `parse()` takes the bytes or text. All three
+are byte-checked against three's own loaders by `tests/loaders_lut.rs`.
+`tests/lut/gen.mjs` runs `LUTCubeLoader` and `LUT3dlLoader` under node, and
+`LUTImageLoader` in Chrome, and writes `tests/lut/oracle.json`.
+
+- `LutCubeLoader` and `Lut3dlLoader` reproduce the loaders' regular
+  expressions by hand (`lut_text.rs`), because the crate has no regex
+  engine. That includes the `m` flag's line ends and JavaScript `Number()`.
+  The quirks are kept: the `Uint8Array` store truncates and wraps rather
+  than clamping, `.cube` domains are parsed but never applied, a size-3
+  `.3dl` reads its grid line as a row, and an all-zero `.3dl` comes out NaN
+  (stored as 0).
+- `LutImageLoader` does the canvas copies on the decoded RGBA8 texels. That
+  includes `flip = true` with `_horz2Vert`'s off-by-one, which loses slice 0.
+  The canvas round-trip is exact for the vendor PNGs, which are opaque and
+  carry no colour profile.
+
+### 73.3 Not ported
+
+- Swapping the table under a built node. The page writes
+  `lutPass.lutNode.value = lut.texture3D` every frame. A texture is an
+  identity in the port's graph, as `TransitionNode`'s textures are, so a
+  page that changes the table builds a new `Lut3DNode`. The example does
+  this. The graded frame never changes table, so `tests/lut_3d_frames.rs`
+  checks the swap.
+- `setType()` with anything but `UnsignedByteType` or `FloatType`. Three
+  fills a `Float32Array` for any other type but sets `texture3D.type` to the
+  type it was given, so the texture is mislabelled; the port returns an
+  error.
+- An image that does not hold exactly `size` slices of `size²` texels. Three
+  builds a mismatched `Data3DTexture`; its upload writes each layer from its
+  own offset, so a longer buffer still works (the texels past `size³` are
+  never read) and only a shorter one fails, at the upload. The port keeps the
+  first `size³` texels of a longer one and returns `Error::Lut` from `load()`
+  for a shorter one.
+- From `Loader`: `manager`, `path`, `crossOrigin`, and the callback form of
+  `load()`.
+- `LUT_1D_SIZE` tables, which three does not read either.
+
 ## 74. `GodraysNode`, `bilateralBlur()` and `depthAwareBlend()` (`webgpu_postprocessing_godrays`)
 
 ### 74.1 What three does
@@ -6988,6 +7319,97 @@ Faithful quirks:
 - WGSL: `rtt_matches_three`, `lensflare_matches_three`,
   `lensflare_gaussian_blur_{horizontal,vertical}_matches_three` and
   `lensflare_composite_matches_three`.
+## 76. `WaterMesh` (`webgpu_ocean`)
+
+`WaterMesh` (`addons::objects`) is `examples/jsm/objects/WaterMesh.js` node
+for node. A `MeshBasicNodeMaterial` (upstream's bare `NodeMaterial`, unlit and
+with no `colorNode` of its own) is made `transparent`, with `opacityNode` the
+`alpha` uniform. `receivedShadowPositionNode` is `positionWorld` plus the
+distortion. Its `colorNode` mixes, by a Schlick Fresnel term, the sun's
+diffuse light plus the water colour's scatter with a planar reflection
+(`reflector()`) plus the sun's specular highlight. The reflection is read at
+`screenUV.flipX()`, offset by the distortion. The surface normal comes from
+the inline `getNoise()`, which is four taps of one normal map at different
+scales, each scrolling with `time` at its own rate. The port writes it as a
+Rust function that builds the same nodes. The six uniforms are public
+`SettableValue`s on the struct, which also holds the mesh's scene node.
+`tests/nodes_water_wgsl.rs` gates both stages against three's dump of the
+page (`m09`, `m10`, committed verbatim as `tests/fixtures/webgpu_ocean/`).
+
+### 76.1 When the mirror's target joins the mesh
+
+Upstream builds the whole `colorNode` inside a `Fn( () => { … } )()`. That
+body runs when the material is first built, during the first render. The
+first render runs after `scene.updateMatrixWorld()`, and it creates the
+`reflector()`, sets its `resolutionScale` and calls
+`this.add( mirrorSampler.target )`. On the first frame, then, the target has
+never had its world matrix updated. `ReflectorBaseNode.updateBefore()` reads
+an identity `matrixWorld` and mirrors the scene in the plane `z = 0`, facing
++Z, which is a vertical wall through the origin, not the water. In three's
+graded frame of `webgpu_ocean` (its first) the water is accordingly dark,
+with no sun glint and no reflected cube. A probe of three's page that
+renders a second frame after `nodeFrame.update()` shows the bright,
+reflecting water every later frame has.
+
+The port has no build-time hook on a material's graph. `WaterMesh::new`
+therefore creates the reflector and sets its resolution scale at
+construction. Setting `water.resolutionScale` after construction is ignored
+here, while three would honour it up to the first render. The add keeps its
+timing: `ReflectorNode::add_target_on_setup( object )` records the parent
+weakly. `Renderer::update_reflectors` (§55.2) adds the target to it just
+before the reflector's first `updateBefore()`, after this frame's world
+matrices were computed. The first frame mirrors about `z = 0` exactly as
+three's does, and the next frame's `updateMatrixWorld()` places the target
+on the water. Adding the target at construction instead gave the correct
+mirror on frame 1 and graded 19.9 % different.
+
+### 76.2 WGSL
+
+Both stages match three's statement for statement through the opacity
+multiply. Every difference is an existing class, and the fixture test
+applies it:
+
+* **`screenUV.flipX()`** is parenthesised, `( 1.0 - nodeVarN.x )` (§55.3).
+* **Usage-promoted temps.** Three emits `let nodeConstN` for each temp read
+  twice: `getNoise`'s argument, the surface normal, `worldToEye` and
+  `eyeDirection`. The port asks for each with `to_const`. The material
+  tail's output clamp is three's `let` and the port's `var` (§8). The test
+  checks only that it is present.
+* **`getNoise`'s four `toVar()`s** are `to_var`s declared in a `block`
+  before any tap reads them, in upstream's order.
+* **`noise.xzy.mul( 1.5, 1.0, 1.5 )`** is `OperatorNode`'s variadic `mul`,
+  three scalar multiplications, not a multiplication by a `vec3`. Three
+  emits it that way, and so does the port.
+* **The `VERTEX_` sub-build** and the **render-struct member order**, as in
+  every rung.
+
+### 76.3 The page
+
+`webgpu_ocean` calls `updateSun()` from `renderer.init().then(…)`. The port
+runs it at the end of `init()`. `updateSun()` moves the sky into a scene of
+its own for `PMREMGenerator.fromScene()` and back, so the sky ends up after
+the cube among the scene's children. The e2e rung asserts that order. The
+page sets `water.rotation.x` and the cube's `rotation`. The port's `rotation`
+has no `onChange` into the quaternion, so the page goes through
+`set_rotation`.
+
+### 76.4 Not ported
+
+- `Water2Mesh` and `webgpu_water` were not part of this section. They are
+  ported in §83.
+- `water.resolutionScale` as a field read at first build (§76.1).
+- `waterNormals: null`. A `texture( null )` tap has nothing to sample, so
+  `WaterMeshOptions::new` requires the map.
+- Rebuilds. Three re-runs the `colorNode` `Fn()` on every material rebuild,
+  making a new `reflector()` and adding another target to the water (the old
+  one stays a child; the rebuild frame mirrors `z = 0` again). The port keeps
+  one reflector for life.
+- A swappable `waterNormals`. Three's is a `TextureNode` whose `.value` can be
+  replaced; the port stores a `Texture`, so the image can change but not the
+  texture.
+- The `isWaterMesh` flag (`SkyMesh`'s is not ported either).
+- The page's `Inspector` panel.
+
 ## 78. TSL sweep 5: the lighting and material batch
 
 Eight names from the lighting and material family. Seven of them are
@@ -7105,6 +7527,404 @@ parameters are called `v1` and `v2`. The two renamings now share
 The `ltc` probe evaluates the quad `( ±1, ±1, 2 )` with
 `mInv = mat3( modelWorldMatrix )`. The matrix only needs to be some mat3 that
 three cannot fold into a constant.
+
+## 81. The stereo display passes (`webgpu_display_stereo`)
+
+### 81.1 What three does
+
+`webgpu_display_stereo` renders the same scene through one of three passes:
+
+- **`stereoPass( scene, camera )`** is a `PassNode` that overrides
+  `updateBefore()`. It updates a `StereoCamera` (`aspect = 0.5`) from the
+  camera, then renders the scene twice into its own target: the left eye
+  into the left half's viewport and the right eye into the right half's. It
+  has no quad of its own, so the page's only quad is `RenderPipeline`'s.
+- **`StereoCompositePassNode`** is the abstract base of the other two. It
+  renders each eye into its own half-float target, `_renderTargetL` and
+  `_renderTargetR`, at the full drawing-buffer size, then draws a quad that
+  combines them into the pass's target. Both renders are bracketed by
+  `RendererUtils.resetRendererState()` and `restoreRendererState()`.
+- **`anaglyphPass`** overrides `updateStereoCamera()`. Instead of
+  `StereoCamera.update()`, it places each eye `eyeSep / 2` along the camera's
+  right axis. Through `CameraUtils.frameCorners()`, it frames a virtual
+  screen `planeDistance` in front of the camera from each eye, so anything on
+  that plane has zero parallax. The quad is
+  `vec4( clamp( Mₗ · L.rgb + Mᵣ · R.rgb ), max( L.a, R.a ) )`. `Mₗ` and `Mᵣ`
+  come from a table of seven algorithms (True, Grey, Colour, Half-Colour,
+  Dubois, Optimised, Compromise), each in three colour modes (red/cyan,
+  magenta/cyan, magenta/green).
+- **`parallaxBarrierPass`** draws a quad that takes the left eye where
+  `mod( screenCoordinate.y, 2 ) > 1` and the right eye elsewhere: alternate
+  rows.
+
+`StereoCamera.update()` caches the seven inputs of the eye projections. On a
+miss it rebuilds both eye projections as off-axis frusta, writing elements
+`[0]` and `[8]` of a copy of the camera's projection matrix. On every call it
+sets each eye's `matrixWorld` to the camera's, translated by `∓eyeSep / 2`.
+
+### 81.2 The port
+
+| three.js | port |
+|---|---|
+| `StereoCamera` | `cameras::StereoCamera` |
+| `CameraUtils.frameCorners` | `addons::camera_utils::frame_corners` |
+| `stereoPass` / `StereoPassNode` | `nodes::display::stereo_pass` / `StereoPassNode` |
+| `StereoCompositePassNode` | `CompositeState`, crate-private |
+| `anaglyphPass`, `AnaglyphAlgorithm`, `AnaglyphColorMode` | the same names in `nodes::display`, plus `anaglyph_matrices()` |
+| `parallaxBarrierPass` / `ParallaxBarrierPassNode` | `nodes::display::parallax_barrier_pass` / `ParallaxBarrierPassNode` |
+
+**The passes hold a `PassNode`.** Three subclasses `PassNode`; the port
+keeps one as a field, for its render target, its texture nodes and
+`renderTarget.samples = renderer.samples`. The pass's entry in the
+update-before registry (`register_texture_update`) is then pointed at the
+stereo node's own state, so the eyes are rendered where
+`PassNode.updateBefore()` would have rendered the scene once.
+
+`StereoPassNode` reuses the pass's own render bracket through
+`PassNode::render_with`, which is crate-private and new. That bracket sizes
+the target, sets samples, toggles previous textures, sets `cameraNear` /
+`cameraFar`, and saves and restores the target and MRT. It also applies the
+pass's `auto_clear_depth`, opaque / transparent, lighting and
+`camera_layers` settings, and restores them after. Three's
+`StereoPassNode.updateBefore()` applies none of these, but they are all
+inert at their defaults, which a stereo pass never changes. Inside the
+bracket, the pass clears colour and depth once (three's `renderer.clear()`
+also clears stencil, which the port does not allocate), then renders each
+eye with `render_nested` into its half's viewport.
+
+**The anaglyph eyes keep their world matrices.** `frame_corners` writes the
+eye's quaternion. The port then composes `matrix_world` from position,
+quaternion and scale, and inverts it, as three's override does. The eyes have
+`matrixAutoUpdate` off, so the render does not overwrite them.
+`tests/cameras_stereo_camera.rs` checks this through a full render update.
+
+**The colour matrices** are a 21-entry table, transcribed from three's
+`ANAGLYPH_MATRICES` and passed through the same row-major to column-major
+`createMatrixPair()`. The entries three sums in JavaScript are summed in the
+same order in `f64`. Changing `algorithm` or `colorMode` writes the two
+`mat3` uniforms, but only when the value changes, as three's setters do.
+
+### 81.3 Divergences
+
+- **The eyes' projections are WebGPU-style.** The port's `PerspectiveCamera`
+  defaults to a `[0, 1]` depth projection. On this page, three's camera keeps
+  the WebGL-style matrix its constructor built, and `StereoCamera.update()`
+  copies it. Under WebGPU's `[0, 1]` clip, that matrix maps view depth `d`
+  to `((f + n) d - 2fn) / ((f - n) d)`, which is `0` at `d = 2fn / (f + n)`.
+  So three's stereo and parallax eyes clip near at about twice `near`
+  (`0.1998` for the page's `0.1` / `100`), while the port's clip at `near`.
+  The spheres orbit at radius 5 and `OrbitControls` allows a distance of 1
+  to 25, so a sphere can enter that band, but nothing in the graded frame
+  comes that close.
+  `frame_corners` writes three's WebGL-style matrix whatever the coordinate
+  system, as three does, so the anaglyph eyes are the same in both.
+- **The source camera's world matrix is brought up to date first.** Three
+  never updates it inside a stereo pass, so on the page its eyes trail
+  `OrbitControls` by one update. The port's `look_at` does not touch the
+  world matrix at all, so the passes call `update_matrix_world` on the camera
+  before reading it. At rest, which is the graded frame, the two agree.
+- **No scissor.** `StereoPassNode` sets `renderTarget.scissorTest` and two
+  scissor rectangles, but `WebGPURenderer` reads the scissor test from the
+  canvas target only. In three they have no effect, while the port's
+  renderer would honour them. The viewports alone confine each eye, as in
+  three.
+- **The eye offset is per `StereoCamera`.** Three's `_eyeLeft` / `_eyeRight`
+  are module-scoped, so two stereo cameras with different `eyeSep` can read
+  each other's offset on a cache hit. Nothing in three's examples does this.
+- **`StereoCamera` is not `Clone`.** A `PerspectiveCamera` clone shares its
+  scene-graph node, so a clone would move the original's eyes.
+
+### 81.4 Gates
+
+- **CPU, against three's numbers.** `tools/stereo_camera_reference.mjs` runs
+  three r187dev's `StereoCamera`, `frameCorners` and `AnaglyphPassNode` in
+  node and asserts `REVISION`. Its output is
+  `tests/fixtures/stereo_camera/three_r187dev.json`.
+  `tests/cameras_stereo_camera.rs` checks against it, to 1e-12 relative:
+  - the page camera's eye projections and world matrices;
+  - the projection cache, through a sequence of updates;
+  - `frameCorners`;
+  - all 21 matrix pairs;
+  - the anaglyph eyes.
+- **WGSL.** `tests/nodes_display_wgsl.rs` checks the anaglyph and parallax
+  barrier quads against three's `m06` dumps of the page, set to each effect
+  (`tools/dump-pages/display_stereo_*.html`). The two `main()` bodies are
+  also byte-identical to three's (checked with `cmp` on the extracted
+  region). The parallax barrier's entry point lists `fragCoord` before the
+  varying, where three lists it after. `stereoPass` has no quad, and its
+  `RenderPipeline` output quad is the same module three builds for every
+  effect.
+- **GPU.** `tests/stereo_frames.rs` gives each eye its own colour through
+  layers 1 and 2, then checks every pixel:
+  - `stereoPass` puts the left eye in the left half and the right eye in the
+    right half;
+  - `parallaxBarrierPass` alternates rows, with the left eye on odd rows
+    from the top;
+  - `anaglyphPass` writes `clamp( Mₗ·L + Mᵣ·R )` with both eyes, with each
+    eye alone, and after a change of algorithm and colour mode.
+- **The rung** grades `webgpu_display_stereo` (the stereo effect, which is
+  the page's default) against three's screenshot.
+
+### 81.5 Not ported
+
+- The inspector GUI. The example exposes the GUI's `onChange` handlers as
+  `set_effect`, `set_eye_sep`, `set_anaglyph_algorithm`,
+  `set_anaglyph_color_mode` and `set_plane_distance`, and the binary takes an
+  `anaglyph` or `parallax_barrier` argument.
+- `material.contextNode = context( builder.getSharedContext() )` on the
+  composite quads. The port's quad materials build in their own context, as
+  every other display node's do.
+- The full `resetRendererState()`. The port saves and restores only what a
+  stereo pass changes: the render target, MRT, render-object function, clear
+  colour and alpha, and `autoClear`.
+- `dispose()`. The targets and materials are dropped with the node.
+
+## 82. `OITPassNode` (`webgpu_oit`)
+
+`oit_pass( scene, camera )` ports `examples/jsm/tsl/display/OITPassNode.js`,
+McGuire and Bavoil's weighted blended order-independent transparency. The
+code is `src/nodes/display/oit_pass.rs` and the page is
+`examples/webgpu_oit.rs`. Three subclasses `PassNode`. The port wraps one
+and renders through its `render_with`, so the default pass saves and restores
+exactly what `PassNode.updateBefore()` does. Inside it come two renders:
+
+1. **The default pass**, into the pass's own target. It draws everything
+   `isOITCapable()` rejects.
+2. **The OIT pass**, into a second target with `count: 2` that shares the
+   pass's depth texture. It draws only what qualifies, with `depthWrite` off,
+   `autoClearDepth` off, `opaque` off and the scene's background taken away.
+   The MRT is `accum: vec4( output.rgb * alpha, alpha ) * weight` into
+   `rgba16float` with `One` / `One`, and `revealage: alpha` into `r8unorm`
+   with `Zero` / `OneMinusSrcColor`. They clear to `( 0, 0, 0, 0 )` and
+   `( 1, 1, 1, 1 )`. The default weight is equation (9): `alpha * clamp(
+   0.03 / ( ( -z / 200 )^4 + 1e-5 ), 1e-2, 3e3 )`.
+
+The node's value is the composite `vec4( mix( accum.rgb / max( accum.a, 1e-5
+), beauty.rgb, revealage.r ), beauty.a )`.
+
+### 82.1 What the renderer gained
+
+- **The render-object function.** Three swaps
+  `renderer.setRenderObjectFunction()` for each render. The port has no
+  render-object hook, so it sets `Renderer.oit` (`OitRenderObjects::Default`
+  or `Accumulate`). Three calls the function once per render item, before
+  `renderObject()` splits a `DoubleSide` material into its back and front
+  halves. The port's render loop filters *after* that split
+  (`src/renderer/mod.rs`, the `self.oit` filter below the side split), but
+  both halves carry the same material, so both go or neither does, as in
+  three.
+  `Accumulate` also forces `depth_write = false` on the draw's material copy.
+- **MRT blend modes are `BlendMode`s.** `MRTNode.setBlendMode()` takes a full
+  `BlendMode` in three. `BlendMode` is now public, with `BlendMode::new()` and
+  `From<Blending>`, and `MrtNode::set_blend_mode` takes either one.
+- **Attachment 0 under an MRT.** It goes through `getBlendMode(
+  textures[ 0 ].name )`, as in three. A target's first attachment answers to
+  `output` unless `RenderTarget::set_texture_name( 0, … )` names it
+  otherwise; the OIT target names it `accum`. An unset `output` keeps the
+  material's blending (three's `MaterialBlending` seed), and any other unset
+  name gets none (`_noBlending`).
+- **Per-attachment clear colours.** `MrtNode::set_clear_color` is
+  `setClearColor()`. The render pass clears each attachment to the MRT's
+  value for its name, and otherwise to the old defaults: the renderer's
+  clear colour for attachment 0, `( 0, 0, 0, 1 )` for the rest.
+- **Typed MRT members.** `getOutputType( index )` gives a member the
+  attachment's channel count, and an integer format's `u32` / `i32`
+  component (`getTextureType()`, `RenderTarget::output_types`). The `r8unorm` `revealage` is an `f32`
+  `@location( 1 )` in three's dump (`output.m1 = Output.w;`), and now in the
+  port too. `MrtContext.output_types` carries the types from the renderer to
+  the builder.
+
+### 82.2 Against three's dump
+
+The page dumps seven modules (`m00`–`m06`) and four render pipelines. The
+port builds the same four: the opaque knot, the OIT front and back sides (the
+same blend states, `depthWriteEnabled: false`) and the composite.
+
+- **The composite is built at each read, not into a var.** `renderOutput()`
+  reads the pass node as `.rgb` and `.a`. Three's `PassNode.isCacheable()` is
+  `false`, so the join comes out inline twice, `max` and `mix` included. The
+  port returns the composite through a `CustomNode` whose `is_cacheable()` is
+  `false` for the same reason. The bare join would be counted twice and
+  hoisted into a `nodeVar`.
+- **The lit materials.** `m01`, `m03` and `m04` are ordinary
+  `MeshStandardMaterial`s above `outgoingLight`. They differ there only in
+  ways §8 already lists (hoisted accumulator zeros, named lighting temps,
+  where the indirect-diffuse block sits). The gates compare from
+  `outgoingLight` on, which is the `Output` and both MRT members. The one
+  OIT-specific line above it, the back side's `normalViewGeometry * -1.0`, is
+  compared on its own. The `accum` member is written straight into
+  `output.m0` rather than through `let nodeConst16`, per §8's "MRT member
+  values are not promoted to a var".
+
+### 82.3 The first frame
+
+The OIT target is a render target of its own. On its first render,
+`Renderer._renderScene()`'s "make sure a new render target has correct
+default depth values" clears the depth it shares with the pass, just as on
+`webgpu_deferred` (§27). So on the graded first frame the knot does not hide
+the transparent planes and spheres. Three's reference shows the same, and
+the port reproduces it. From the second frame on, the transparents are
+depth-tested against the opaque depth. `tests/oit_frames.rs` asserts both.
+
+### 82.4 Gates
+
+- The `webgpu_oit` e2e rung: 0 of 100000 pixels. It also has a
+  `steady_frame_builds_nothing` entry.
+- `tests/nodes_display_wgsl.rs`:
+  - `oit_composite_matches_three` against `m06`;
+  - `oit_default_pass_matches_three` against `m01`;
+  - `oit_accumulate_matches_three` against `m03`;
+  - `oit_accumulate_back_side_matches_three` against `m04`.
+- `tests/oit_frames.rs` uses two overlapping half-transparent quads and an
+  opaque one, with `renderOrder` forcing each draw order in turn:
+  - the overlap is the order-free average in the painter's-wrong order;
+  - the OIT frame is byte-identical in both orders;
+  - a plain `pass()` of the same scene changes with the order.
+
+### 82.5 Not ported
+
+- The WebGL backend's `renderTarget.samples = 0` branch of `setup()`. Only
+  the WebGPU branch exists here: the OIT target takes the pass target's
+  sample count.
+- `isOITCapable()`'s `transmissionNode` clause, because the port's materials
+  have no `transmissionNode`. Its `backdropNode` clause *is* ported:
+  `is_oit_capable()` checks `material.backdrop_node`
+  (`src/nodes/display/oit_pass.rs`).
+- `PassNode`'s `autoClear` / `autoClearColor` / `autoClearStencil` copies.
+  The port's `PassNode` carries `autoClearDepth` only. Three's defaults, all
+  `true`, are what the renderer already has.
+- `setMRT()` on the OIT pass node, which three applies to the default pass
+  only.
+- `dispose()`. The targets are freed when the last handle drops.
+- The page's Inspector GUI. The example keeps `oit` and `opacity` as fields,
+  with `set_oit()` and `set_opacity()`.
+
+## 83. `Water2Mesh` (`webgpu_water`)
+
+`Water2Mesh` (`addons::objects`) is `examples/jsm/objects/Water2Mesh.js`.
+Upstream exports its `Mesh` subclass as `WaterMesh`, and the crate already
+has a `WaterMesh` (§76), so the port takes the file's name, as three's own
+docs do for the module. A `transparent` `MeshBasicNodeMaterial` (upstream's
+bare `NodeMaterial`) has as its `colorNode` the private `WaterNode`. Two
+normal maps are scrolled along a flow, either `flowDirection` or a flow
+map's `rg * 2 - 1`. They are cross-faded on a half cycle so that neither
+visibly resets. A Schlick Fresnel term then mixes a refraction with a planar
+reflection, and the result is tinted by `color`. The six uniforms are public
+`SettableValue`s on the struct, and `flowConfig` is one of them.
+
+### 83.1 `WaterNode`
+
+`WaterNode` is a `CustomNode` with `updateBeforeType = RENDER`. Its
+`updateBefore( frame )` is `updateFlow( frame.deltaTime )`, which the port
+also exposes as `Water2Mesh::update_flow`. `flowConfig.x` advances by
+`flowSpeed * delta`, and `.y` stays half a cycle (0.075) ahead of it. When
+`.x` reaches the cycle (0.15), both reset. When `.y` reaches it, `.y` wraps.
+`.z` is the half cycle. The renderer's `NodeFrame` (§57) reports a
+`deltaTime` of 0 on the first frame, so the graded frame has `flowConfig =
+( 0, 0.075, 0.075 )` in both three and the port.
+`tests/water2_frames.rs` steps the flow through a wrap and a reset with
+pinned time.
+
+The refraction is not a second render. It is `viewportSharedTexture(
+viewportSafeUV( screenUV + offset ) )`, the pass drawn so far (§61). The
+renderer splits the pass and copies the framebuffer just before the water's
+draw, which is why the page gives the water `renderOrder = Infinity`.
+`viewportSafeUV` falls back to the unoffset `screenUV` where the offset uv
+lands on something nearer than the water.
+
+The reflection is `reflector()`, offset by the same `normal.xz * 0.05`.
+Upstream calls `this.waterBody.add( reflectionSampler.target )` inside
+`setup()`, at the first build. As in §76.1, the port builds the graph at
+construction and keeps the add's timing with `add_target_on_setup`. On the
+first frame the target's world matrix is the identity, and the reflector
+mirrors about `z = 0`. In `webgpu_water` that plane is culled, so three's
+dump of the graded frame has no reflector pass, the reflection is black, and
+the water is the tinted refraction. The port's first frame is the same.
+
+### 83.2 WGSL
+
+`tests/nodes_water_wgsl.rs` compares both branches of `WaterNode` with
+three's dumps, which are committed verbatim:
+
+* the `flowDirection` branch, `m18` / `m19` of `webgpu_water`, in
+  `tests/fixtures/webgpu_water/water.*.wgsl`;
+* the flow-map branch, which no example builds. It is `m03` / `m04` of
+  `tools/dump-pages/water2_flow_map.html`, in
+  `tests/fixtures/webgpu_water/water_flow_map.*.wgsl`.
+
+The vertex stage matches statement for statement after the `VERTEX_`
+sub-build is undone. The fragment matches from `// flow` to the opacity
+multiply. Its uniform structs match by membership. Its texture and sampler
+bindings match by their sorted types; their binding indices are not compared.
+Every difference is an existing class:
+
+* **`screenUV`** is read three times: by the refraction uv, by
+  `viewportSafeUV`'s fallback, and by the reflector's `flipX()`. The port
+  assigns it to a var once (§8). The test inlines it.
+* **`screenUV.flipX()`** is parenthesised (§55.3).
+* **The output clamp** is three's `let` and the port's `var` (§8). It is
+  checked only for being present.
+
+`webgpu_water`'s scene pass has an MRT, so the dump's tail also writes
+`output.m0` / `output.m1`. The gate builds the material without one. That
+changes nothing before the tail.
+
+### 83.3 The page
+
+`examples/webgpu_water.rs` follows the page. Its post-processing is an MRT
+scene pass of `output` and `emissive`, then `bloom( emissive, 2 )` added to
+the beauty, then `renderOutput()`, then `fxaa()`. The other shaders on the
+page (the standard and physical materials, bloom, FXAA, the background and
+the PMREM) are existing crate code. The new tests gate none of them except
+the `Clutter` material's transmission term, below.
+
+There are three ordering differences:
+
+* The Ultra HDR environment is loaded synchronously, before the first frame.
+  Upstream's `load()` callback can land after it.
+* The renderer is created at the top of `init()`, not after the floors,
+  because the background cube and the PMREM need it.
+* The first render adds the mirror's target, as above.
+
+The pool (`models/gltf/pool.glb`) needed two glTF loader fixes:
+
+* **`transmissionTexture`.** The `Clutter` material is `transmission: 1`
+  times a texture whose red channel is 0 almost everywhere. Only the light
+  beams and circles transmit. The loader now reads the texture into the
+  material's new `transmission_map`, and the node material multiplies its
+  red channel into `transmission` as three's `transmissionMap` does.
+  `tests/nodes_water_wgsl.rs` (`clutter_transmission_map_matches_three`)
+  gates that term, the map's sample and `Transmission = ( <factor> *
+  <sample>.x );`, line for line against three's `m17`, the `Clutter`
+  material in the transmission pass. That dump is committed verbatim as
+  `tests/fixtures/webgpu_water/clutter.fragment.wgsl`. The rest of the
+  material is not gated: a full-fixture gate would need the page's lights
+  and environment.
+* **`occlusionTexture.strength`.** `SPWallsFloorStairs` sets it to 0, which
+  three applies as `aoMapIntensity = 0`. The loader ignored it, so the AO map
+  darkened the pool's interior and, through the refraction, the water. The
+  water's mean colour was (18, 20, 19) against three's (62, 70, 63).
+  `ao_map_intensity` now takes the strength.
+
+Three's e2e skips the page (`'webgpu_water', // 1 min` in its exception
+list), so it has no rung. Its first frame, scored informally with
+`three_rs::testing::compare` (three's comparator, 0.1 % threshold), differs
+from `examples/screenshots/webgpu_water.jpg` in 6 pixels (0.006 %). It
+differs from a local dump of three's page in 0 pixels.
+
+### 83.4 Not ported
+
+- The page's `Inspector` panel. Its four controls are methods on the
+  example: `set_color`, `set_scale`, `set_flow_x` and `set_flow_y`.
+- Rebuilds. Three re-runs `setup()` on every material rebuild, which makes a
+  new `reflector()` and adds another target. The port keeps one reflector
+  for life.
+- Swappable maps. Three's `normalMap0`, `normalMap1` and `flowMap` are
+  `TextureNode`s whose `.value` can be replaced. The port stores `Texture`s.
+- Missing normal maps. `Water2MeshOptions::new` requires both.
+- `color` as a number or a CSS string. The option is a `Color`;
+  `Color::from_hex` converts the page's `'#99e0ff'`.
+- The `isWater` flag.
 
 ## 84. TSL sweep 6: the compute, storage and subgroup batch
 

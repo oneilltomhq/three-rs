@@ -12,6 +12,7 @@
 //! [`SsaaPassNode`](crate::renderer::SsaaPassNode) does.
 
 mod after_image;
+mod anaglyph_pass;
 mod bilateral_blur;
 mod bloom;
 mod box_blur;
@@ -25,7 +26,11 @@ mod godrays;
 mod gtao;
 mod hash_blur;
 mod lensflare;
+mod lut_3d;
 mod motion_blur;
+mod oit_pass;
+mod outline;
+mod parallax_barrier_pass;
 mod pixelation_pass;
 mod radial_blur;
 mod rgb_shift;
@@ -34,12 +39,18 @@ mod smaa;
 mod sobel;
 mod ssgi;
 mod ssr;
+mod sss;
+mod stereo_composite_pass;
+mod stereo_pass;
 mod toon_outline_pass;
 mod traa;
 mod transition;
 mod viewport_texture;
 
 pub use after_image::{after_image, AfterImageNode};
+pub use anaglyph_pass::{
+    anaglyph_matrices, anaglyph_pass, AnaglyphAlgorithm, AnaglyphColorMode, AnaglyphPassNode,
+};
 pub use bilateral_blur::{bilateral_blur, BilateralBlurNode};
 pub use bloom::{bloom, luminosity_high_pass, BloomNode, HighPassInput};
 pub use box_blur::{box_blur, BoxBlurOptions};
@@ -53,7 +64,11 @@ pub use godrays::{godrays, GodraysNode};
 pub use gtao::{ao, GtaoNode};
 pub use hash_blur::{hash_blur, hash_blur_with, HashBlurOptions};
 pub use lensflare::{lensflare, LensflareNode, LensflareParams};
+pub use lut_3d::{lut_3d, Lut3DNode};
 pub use motion_blur::motion_blur;
+pub use oit_pass::{is_oit_capable, oit_pass, OitPassNode, OitRenderObjects};
+pub use outline::{outline, OutlineNode, OutlineParams, OutlineState};
+pub use parallax_barrier_pass::{parallax_barrier_pass, ParallaxBarrierPassNode};
 pub use pixelation_pass::{pixelation_pass, PixelationPassNode};
 pub use radial_blur::{radial_blur, RadialBlurOptions};
 pub use rgb_shift::rgb_shift;
@@ -62,6 +77,8 @@ pub use smaa::{smaa, SmaaNode};
 pub use sobel::{sobel, SobelOperatorNode};
 pub use ssgi::{ssgi, SsgiNode};
 pub use ssr::{ssr, SampleFn, SsrNode, SsrOptions};
+pub use sss::{sss, SssNode};
+pub use stereo_pass::{stereo_pass, StereoPassNode};
 pub use toon_outline_pass::{toon_outline_pass, ToonOutlinePassNode};
 pub use traa::{traa, TraaNode};
 pub use transition::transition;

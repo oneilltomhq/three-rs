@@ -709,6 +709,43 @@ three's dump, and on `tests/traa_frames.rs`, which checks over sixteen frames
 that the silhouette blends while the inside and the background hold. The
 example is in the native viewer (`viewer traa`).
 
+## Screen-space shadows (`webgpu_postprocessing_sss`)
+
+SSS marches from each pixel towards one light through a depth pre-pass, for
+the contact shadows a shadow map is too coarse to resolve. The scene pass
+multiplies the result into that light's colour:
+
+```rust
+let mut pre_pass = pass(scene.clone(), camera.clone());
+pre_pass.set_transparent(false);
+pre_pass.set_mrt(mrt(vec![("output", velocity())]));
+let _ = pre_pass.texture_node("depth");
+
+let scene_pass = pass(scene.clone(), camera.clone());
+
+let sss_node = sss(&pre_pass.depth_texture(), camera.clone(), &dir_light);
+sss_node.max_distance.set(vec![0.2]);
+sss_node.set_use_temporal_filtering(true);
+
+// `scenePass.contextNode = builtinShadowContext( sss.r, dirLight )`.
+scene_pass.set_context_shadow(sss_node.sample(screen_uv()).x(), &dir_light);
+```
+
+The page then resolves the scene pass with TRAA, reading the pre-pass's
+depth and velocity. The SSS node renders the pre-pass itself before its own
+quad. The context reaches only the draws where `dir_light`'s shadow map
+applies: the light casts shadows, the object receives them, and
+`renderer.shadow_map_enabled` is on. Anywhere else the SSS has nothing to
+multiply into, as in three. `clear_context_shadow()` is the page's "Scene
+with Shadow Maps" mode. The target is `rgba8unorm`, not three's
+`RedFormat`, so the sample is read with `.x()`. `docs/nodes.md` §71 has the
+rest.
+
+**There is no rung.** three lists `webgpu_postprocessing_sss` in its e2e
+exception list ("Black screen"). The port is gated on the SSS quad and the
+ground's shadow context against three's dump, and on
+`tests/sss_frames.rs`, which renders a box on a floor with the light
+behind it. The example is in the native viewer (`viewer postprocessing_sss`).
 ## Screen space global illumination (`webgpu_postprocessing_ssgi`)
 
 `ssgi()` reads the scene pass's colour, depth and packed normals. It writes
@@ -801,6 +838,71 @@ shaders are gated against three's dump instead (`dof_*` in
 `webgpu_postprocessing_dof_basic` is graded, but it does not use this node.
 Its depth of field is a `boxBlur` of the pass, mixed in by
 `smoothstep( min, max, | viewZ - focus.z | )`.
+
+## Selection outlines (`webgpu_postprocessing_outline`)
+
+`outline()` takes the scene and camera itself, because it renders them
+again:
+
+```rust
+let outline_pass = outline(
+    scene.clone(),
+    camera.clone(),
+    OutlineParams {
+        selected_objects: vec![],
+        edge_thickness: edge_thickness_node,
+        edge_glow: edge_glow_node,
+        ..OutlineParams::default()
+    },
+);
+let outline_color = outline_pass
+    .visible_edge()
+    .mul(visible_edge_color)
+    .add(outline_pass.hidden_edge().mul(hidden_edge_color))
+    .mul(edge_strength);
+// The page also pulses `outline_color` with `osc_sine` when
+// `pulsePeriod > 0`.
+render_pipeline.output_node = Some(outline_color.add(scene_pass.node()));
+// later, from a raycast:
+outline_pass.set_selected_objects(vec![hit.object.clone()]);
+```
+
+Each frame with a selection, the node renders the scene twice. The first
+render draws everything not selected, for depth. The second draws only the
+selection, testing it against that depth. Then come seven quads, ending in
+a composite whose red channel is the visible edge and whose green channel
+is the hidden edge. With nothing selected it draws nothing.
+
+The two scene renders need three's `setRenderObjectFunction()`, which the
+port does not have. The renderer has a crate-private hook in its place,
+`Renderer.outline_selection`, set only for the length of those two renders.
+`docs/nodes.md` §72 has the details.
+
+The rung grades the page as three's harness sees it, at 15 pixels, the
+same as three's own frame. The pointer never moves there, so nothing is
+selected. The selected passes are gated on their shaders against three's
+dump, and on `tests/outline_frames.rs`.
+
+## Colour grading with a 3D LUT (`webgpu_postprocessing_3dlut`)
+
+```rust
+let lut = LutCubeLoader::new().load(dir.join("Bourbon 64.CUBE"))?;
+let lut_pass = lut_3d(
+    render_output(scene_pass.node(), renderer.tone_mapping),
+    &texture_3d_sampled(&lut.texture_3d),
+    f64::from(lut.size),
+    intensity_node,
+);
+render_pipeline.output_color_transform = false;
+render_pipeline.output_node = Some(lut_pass.node());
+```
+
+`LutCubeLoader`, `Lut3dlLoader` and `LutImageLoader` are the three loaders
+the page uses. Each is checked byte for byte against three's own loader.
+`texture_3d_sampled` is `texture3D( texture )` with no level. The table is
+fixed when the node is built, so to change table, build a new `Lut3DNode`
+and set it as the pipeline's output. Three assigns `lutNode.value` instead.
+See `docs/nodes.md` §73.
 
 ## The display nodes of #144
 
