@@ -1,8 +1,12 @@
-//! Port of `three.js/src/core/BufferGeometry.js` (interleaved-free `f32`
-//! attributes plus a `u16`/`u32` index).
+//! Port of `three.js/src/core/BufferGeometry.js`: named
+//! [`BufferAttribute`]s (typed, possibly interleaved — see
+//! [`buffer_attribute`](super::buffer_attribute)) plus a `u16`/`u32` index.
 
-use std::cell::{Cell, Ref, RefCell, RefMut};
+use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
+use std::rc::Rc;
 
+use super::buffer_attribute::{AttributeDesc, BufferAttribute, InterleavedBuffer};
 use crate::math::{Matrix3, Matrix4, Quaternion, Vector3};
 
 /// `BufferGeometry.id` — three.js' module-level `let _id = 0` counter, handed
@@ -51,280 +55,6 @@ impl Clone for GeometryId {
 impl Default for GeometryId {
     fn default() -> Self {
         Self::next()
-    }
-}
-
-/// `BufferAttribute.id` — three.js' `_id ++` on the attribute class. The same
-/// never-reused counter shape as [`GeometryId`], for the same reason.
-///
-/// The renderer uploads and caches a geometry's attributes a whole geometry
-/// at a time, so for them [`GeometryId`] is the cache unit. An
-/// `InstancedMesh`'s `InstancedBufferAttribute`s are cached one by one, on
-/// this id (issue #89).
-#[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct AttributeId(usize);
-
-impl AttributeId {
-    fn next() -> Self {
-        thread_local! {
-            static ATTRIBUTE_ID: Cell<usize> = const { Cell::new(0) };
-        }
-        ATTRIBUTE_ID.with(|id| {
-            let next = id.get();
-            id.set(next + 1);
-            AttributeId(next)
-        })
-    }
-
-    /// The number itself, for keying on.
-    pub fn get(&self) -> usize {
-        self.0
-    }
-}
-
-/// A fresh id, never a copy — see [`GeometryId`].
-impl Clone for AttributeId {
-    fn clone(&self) -> Self {
-        Self::next()
-    }
-}
-
-impl Default for AttributeId {
-    fn default() -> Self {
-        Self::next()
-    }
-}
-
-/// three.js' `BufferAttribute`: one named vertex attribute, stored as flat
-/// `f32` values, `item_size` of them per vertex.
-#[derive(Clone, Debug)]
-pub struct BufferAttribute {
-    /// `BufferAttribute.id`. Read-only in spirit; see [`AttributeId`].
-    pub id: AttributeId,
-    /// The `Float32Array`. Behind a `RefCell` because a geometry is shared as
-    /// `Rc<BufferGeometry>` and three.js mutates attribute data in place: with
-    /// a plain `Vec` the only route to a changed vertex is a whole new
-    /// geometry (issue #47).
-    array: RefCell<Vec<f32>>,
-    /// `BufferAttribute.itemSize` — the number of values per vertex.
-    pub item_size: usize,
-    /// `BufferAttribute.version` — bumped by
-    /// [`set_needs_update`](Self::set_needs_update), which is three.js'
-    /// `attribute.needsUpdate = true`. The renderer records the version it
-    /// uploaded and re-writes the buffer when this has moved past it; see
-    /// *Changing geometry* in `docs/scene-graph.md`.
-    version: Cell<u32>,
-    /// The attribute's array is an integer `TypedArray` in three.js — a
-    /// `Uint16Array`/`Uint8Array` for `skinIndex`. The port stores every
-    /// attribute as `f32` (`BufferAttribute.getX()` widens the same way
-    /// JavaScript does), so this is what tells the renderer to upload the
-    /// values as `u32` rather than as floats, exactly as
-    /// `WebGPUAttributeUtils.createAttribute()` reads the format off the array
-    /// type.
-    integer: bool,
-    /// `isInstancedBufferAttribute` — `new InstancedBufferAttribute( array,
-    /// itemSize )`: the attribute steps once per instance, not per vertex
-    /// (`WebGPUAttributeUtils.createShaderVertexBuffers()`'s `stepMode`).
-    /// Only meaningful on an instanced geometry; see
-    /// [`BufferGeometry::instance_count`].
-    instanced: bool,
-}
-
-impl BufferAttribute {
-    /// `new BufferAttribute( array, itemSize )`.
-    pub fn new(array: Vec<f32>, item_size: usize) -> Self {
-        Self {
-            id: AttributeId::next(),
-            array: RefCell::new(array),
-            item_size,
-            version: Cell::new(0),
-            integer: false,
-            instanced: false,
-        }
-    }
-
-    /// `new InstancedBufferAttribute( array, itemSize )` — one element per
-    /// instance. See [`is_instanced`](Self::is_instanced).
-    pub fn new_instanced(array: Vec<f32>, item_size: usize) -> Self {
-        Self {
-            instanced: true,
-            ..Self::new(array, item_size)
-        }
-    }
-
-    /// `attribute.isInstancedBufferAttribute`.
-    pub fn is_instanced(&self) -> bool {
-        self.instanced
-    }
-
-    /// An attribute whose values are indices, not numbers: uploaded as `u32`
-    /// and read by the shader as a `vec4<u32>`. three.js' `skinIndex`.
-    pub fn new_integer(array: Vec<f32>, item_size: usize) -> Self {
-        Self {
-            integer: true,
-            ..Self::new(array, item_size)
-        }
-    }
-
-    /// Whether the values are indices; see [`new_integer`](Self::new_integer).
-    pub fn integer(&self) -> bool {
-        self.integer
-    }
-
-    /// `attribute.array`, for reading. A `Ref`, so the borrow has to be held
-    /// for as long as the slice is used.
-    pub fn array(&self) -> Ref<'_, Vec<f32>> {
-        self.array.borrow()
-    }
-
-    /// `attribute.array`, for writing — through a shared `&self`, so it works
-    /// on an attribute of a geometry already handed to a mesh as an `Rc`.
-    ///
-    /// Writing alone changes nothing on screen: follow it with
-    /// [`set_needs_update`](Self::set_needs_update), exactly as three.js needs
-    /// `attribute.needsUpdate = true`.
-    pub fn array_mut(&self) -> RefMut<'_, Vec<f32>> {
-        self.array.borrow_mut()
-    }
-
-    /// `BufferAttribute.version`.
-    pub fn version(&self) -> u32 {
-        self.version.get()
-    }
-
-    /// `attribute.needsUpdate = true` — `version ++`. The next render that
-    /// sees this geometry re-writes this attribute's GPU buffer, and only it.
-    pub fn set_needs_update(&self) {
-        self.version.set(self.version.get() + 1);
-    }
-
-    /// `BufferAttribute.count` — the number of vertices, `array.length / item_size`.
-    pub fn count(&self) -> usize {
-        self.array.borrow().len() / self.item_size
-    }
-
-    /// `BufferAttribute.getX/getY/getZ()` — the stored value is `f32`, widened
-    /// the way JavaScript widens a `Float32Array` read to a number.
-    pub fn get_x(&self, index: usize) -> f64 {
-        self.array.borrow()[index * self.item_size] as f64
-    }
-
-    /// `BufferAttribute.getY()`.
-    pub fn get_y(&self, index: usize) -> f64 {
-        self.array.borrow()[index * self.item_size + 1] as f64
-    }
-
-    /// `BufferAttribute.getZ()`.
-    pub fn get_z(&self, index: usize) -> f64 {
-        self.array.borrow()[index * self.item_size + 2] as f64
-    }
-
-    /// `BufferAttribute.getW()`.
-    pub fn get_w(&self, index: usize) -> f64 {
-        self.array.borrow()[index * self.item_size + 3] as f64
-    }
-
-    /// `BufferAttribute.setX/setY/setZ/setW()`.
-    pub fn set_x(&mut self, index: usize, x: f64) -> &mut Self {
-        self.array.get_mut()[index * self.item_size] = x as f32;
-        self
-    }
-
-    /// `BufferAttribute.setY()`.
-    pub fn set_y(&mut self, index: usize, y: f64) -> &mut Self {
-        self.array.get_mut()[index * self.item_size + 1] = y as f32;
-        self
-    }
-
-    /// `BufferAttribute.setZ()`.
-    pub fn set_z(&mut self, index: usize, z: f64) -> &mut Self {
-        self.array.get_mut()[index * self.item_size + 2] = z as f32;
-        self
-    }
-
-    /// `BufferAttribute.setW()`.
-    pub fn set_w(&mut self, index: usize, w: f64) -> &mut Self {
-        self.array.get_mut()[index * self.item_size + 3] = w as f32;
-        self
-    }
-
-    /// `BufferAttribute.setXY()`.
-    pub fn set_xy(&mut self, index: usize, x: f64, y: f64) -> &mut Self {
-        let offset = index * self.item_size;
-        let array = self.array.get_mut();
-        array[offset] = x as f32;
-        array[offset + 1] = y as f32;
-        self
-    }
-
-    /// `BufferAttribute.setXYZW()`.
-    pub fn set_xyzw(&mut self, index: usize, x: f64, y: f64, z: f64, w: f64) -> &mut Self {
-        let offset = index * self.item_size;
-        let array = self.array.get_mut();
-        array[offset] = x as f32;
-        array[offset + 1] = y as f32;
-        array[offset + 2] = z as f32;
-        array[offset + 3] = w as f32;
-        self
-    }
-
-    /// `BufferAttribute.copyAt()` — copies one item from `attribute`.
-    pub fn copy_at(&mut self, index1: usize, attribute: &Self, index2: usize) -> &mut Self {
-        let index1 = index1 * self.item_size;
-        let index2 = index2 * attribute.item_size;
-
-        let source = attribute.array.borrow();
-        let array = self.array.get_mut();
-        for i in 0..self.item_size {
-            array[index1 + i] = source[index2 + i];
-        }
-
-        self
-    }
-
-    /// `BufferAttribute.copyArray()`.
-    pub fn copy_array(&mut self, array: &[f32]) -> &mut Self {
-        self.array.get_mut().copy_from_slice(array);
-        self
-    }
-
-    /// `BufferAttribute.set( value, offset )`.
-    pub fn set(&mut self, value: &[f32], offset: usize) -> &mut Self {
-        self.array.get_mut()[offset..offset + value.len()].copy_from_slice(value);
-        self
-    }
-
-    /// `BufferAttribute.setXYZ()` — narrows to `f32` on the way in, which is
-    /// where three.js loses precision too.
-    pub fn set_xyz(&mut self, index: usize, x: f64, y: f64, z: f64) {
-        let offset = index * self.item_size;
-        let array = self.array.get_mut();
-        array[offset] = x as f32;
-        array[offset + 1] = y as f32;
-        array[offset + 2] = z as f32;
-    }
-
-    /// `Vector3.fromBufferAttribute( attribute, index )`.
-    pub fn get_vector3(&self, index: usize) -> Vector3 {
-        Vector3::new(self.get_x(index), self.get_y(index), self.get_z(index))
-    }
-
-    /// `BufferAttribute.applyMatrix4()`.
-    pub fn apply_matrix4(&mut self, m: &Matrix4) {
-        for i in 0..self.count() {
-            let mut v = self.get_vector3(i);
-            v.apply_matrix4(m);
-            self.set_xyz(i, v.x, v.y, v.z);
-        }
-    }
-
-    /// `BufferAttribute.applyNormalMatrix()`.
-    pub fn apply_normal_matrix(&mut self, m: &Matrix3) {
-        for i in 0..self.count() {
-            let mut v = self.get_vector3(i);
-            v.apply_normal_matrix(m);
-            self.set_xyz(i, v.x, v.y, v.z);
-        }
     }
 }
 
@@ -446,7 +176,8 @@ pub struct DrawRange {
 /// What a cached pair of bounds was computed from: the `position` attribute's
 /// id and version, every `position` morph target's id and version in order,
 /// and `morph_targets_relative`. The ids are the numbers, never an
-/// [`AttributeId`] clone, which would mint a fresh id and never match.
+/// [`AttributeId`](super::AttributeId) clone, which would mint a fresh id and
+/// never match.
 #[derive(Clone, Debug, PartialEq)]
 struct BoundsKey {
     position: (usize, u32),
@@ -499,7 +230,7 @@ struct CachedBounds {
 /// `attributes` is a `Vec` of pairs rather than a `HashMap` because three.js'
 /// `attributes` is a plain object, and `toNonIndexed()` and the renderer both
 /// iterate it in insertion order.
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Default)]
 pub struct BufferGeometry {
     /// `BufferGeometry.id`. Read-only in spirit; see [`GeometryId`] for why a
     /// clone gets a new one, and why the renderer keys on it.
@@ -542,6 +273,43 @@ pub struct BufferGeometry {
     /// `RefCell` because the geometry is shared as `Rc<BufferGeometry>` and
     /// culling asks for its sphere through `&self` every frame (issue #133).
     bounds: RefCell<Option<CachedBounds>>,
+}
+
+/// `BufferGeometry.clone()` — `new this.constructor().copy( this )`, whose
+/// `copy()` clones every attribute and morph attribute through one shared
+/// `data` object, so views of one [`InterleavedBuffer`] still share a single
+/// (cloned) buffer afterwards rather than each de-interleaving. A fresh
+/// [`GeometryId`] and fresh attribute ids, as for any clone.
+impl Clone for BufferGeometry {
+    fn clone(&self) -> Self {
+        let mut buffers: HashMap<usize, Rc<InterleavedBuffer>> = HashMap::new();
+        let attributes = self
+            .attributes
+            .iter()
+            .map(|(name, attribute)| (name.clone(), attribute.clone_with(&mut buffers)))
+            .collect();
+        let morph_attributes = self
+            .morph_attributes
+            .iter()
+            .map(|(name, list)| {
+                let list = list.iter().map(|a| a.clone_with(&mut buffers)).collect();
+                (name.clone(), list)
+            })
+            .collect();
+        Self {
+            id: self.id.clone(),
+            attributes,
+            index: self.index.clone(),
+            morph_attributes,
+            morph_targets_relative: self.morph_targets_relative,
+            groups: self.groups.clone(),
+            draw_range: self.draw_range,
+            bounding_sphere: self.bounding_sphere,
+            instance_count: self.instance_count,
+            indirect: self.indirect.clone(),
+            bounds: self.bounds.clone(),
+        }
+    }
 }
 
 impl BufferGeometry {
@@ -619,6 +387,39 @@ impl BufferGeometry {
         self.attributes
             .iter()
             .map(|(name, attribute)| (name.as_str(), attribute))
+    }
+
+    /// One [`AttributeDesc`] per attribute, in insertion order — what
+    /// `SetupContext::geometry_attributes` carries to the node builder.
+    /// Views of one [`InterleavedBuffer`] share a group number: the position
+    /// of the first of them.
+    ///
+    /// Rebuilt on every call (one `String` per attribute) rather than cached
+    /// on the geometry: an attribute's kind can change behind `&self` —
+    /// [`BufferAttribute::data_mut`] swaps in a new [`TypedArray`](super::TypedArray)
+    /// through a shared borrow, as can the shared array of an interleaved
+    /// view — so no `&mut` geometry path sees every change a cache would
+    /// have to drop.
+    #[doc(hidden)]
+    pub fn attribute_descs(&self) -> Vec<AttributeDesc> {
+        let mut groups: Vec<(usize, usize)> = Vec::new();
+        self.attributes
+            .iter()
+            .enumerate()
+            .map(|(i, (name, attribute))| {
+                let group = match attribute.data_buffer() {
+                    Some(data) => match groups.iter().find(|(id, _)| *id == data.id()) {
+                        Some((_, group)) => *group,
+                        None => {
+                            groups.push((data.id(), i));
+                            i
+                        }
+                    },
+                    None => i,
+                };
+                attribute.desc(name, group)
+            })
+            .collect()
     }
 
     /// `geometry.attributes.position`.
@@ -884,28 +685,35 @@ impl BufferGeometry {
     ///
     /// The accumulation runs through the `normal` attribute itself, so every
     /// partial sum is rounded to `f32` before the next triangle adds to it.
+    /// An existing `normal` of the right count is written in place through
+    /// its setters, whatever its array kind and interleaved or not, and
+    /// marked for re-upload; a missing one (or one of another count) is
+    /// replaced by a new `Float32Array` attribute.
     pub fn compute_vertex_normals(&mut self) {
-        let Some(position) = self.position().cloned() else {
+        let Some(count) = self.position().map(BufferAttribute::count) else {
             return;
         };
 
         let needs_new = match self.normal() {
-            Some(normal) => normal.count() != position.count(),
+            Some(normal) => normal.count() != count,
             None => true,
         };
+        if needs_new {
+            self.set_attribute("normal", BufferAttribute::new(vec![0.0; count * 3], 3));
+        }
 
-        let mut normal = if needs_new {
-            BufferAttribute::new(vec![0.0; position.count() * 3], 3)
-        } else {
-            let mut normal = self
-                .normal()
-                .cloned()
-                .expect("three-rs: !needs_new means the normal attribute is there");
-            for i in 0..normal.count() {
-                normal.set_xyz(i, 0.0, 0.0, 0.0);
-            }
-            normal
+        let position = self.position().expect("three-rs: checked above");
+        let normal = self.normal().expect("three-rs: set above if missing");
+        let set_xyz = |i: usize, v: &Vector3| {
+            normal.store(i, 0, v.x);
+            normal.store(i, 1, v.y);
+            normal.store(i, 2, v.z);
         };
+        if !needs_new {
+            for i in 0..normal.count() {
+                set_xyz(i, &Vector3::ZERO);
+            }
+        }
 
         let mut cb = Vector3::ZERO;
         let mut ab = Vector3::ZERO;
@@ -942,9 +750,9 @@ impl BufferGeometry {
                 n_b.add(&cb);
                 n_c.add(&cb);
 
-                normal.set_xyz(v_a, n_a.x, n_a.y, n_a.z);
-                normal.set_xyz(v_b, n_b.x, n_b.y, n_b.z);
-                normal.set_xyz(v_c, n_c.x, n_c.y, n_c.z);
+                set_xyz(v_a, &n_a);
+                set_xyz(v_b, &n_b);
+                set_xyz(v_c, &n_c);
 
                 i += 3;
             }
@@ -961,17 +769,18 @@ impl BufferGeometry {
                 ab.sub_vectors(&p_a, &p_b);
                 cb.cross(&ab);
 
-                normal.set_xyz(i, cb.x, cb.y, cb.z);
-                normal.set_xyz(i + 1, cb.x, cb.y, cb.z);
-                normal.set_xyz(i + 2, cb.x, cb.y, cb.z);
+                set_xyz(i, &cb);
+                set_xyz(i + 1, &cb);
+                set_xyz(i + 2, &cb);
 
                 i += 3;
             }
         }
 
-        self.set_attribute("normal", normal);
-
         self.normalize_normals();
+        if let Some(normal) = self.normal() {
+            normal.set_needs_update();
+        }
     }
 
     /// `BufferGeometry.normalizeNormals()`.
@@ -1080,17 +889,9 @@ impl BufferGeometry {
             Index::U32(v) => v.iter().map(|&i| i as usize).collect(),
         };
 
-        let convert = |attribute: &BufferAttribute| -> BufferAttribute {
-            let item_size = attribute.item_size;
-            let mut array2 = Vec::with_capacity(indices.len() * item_size);
-
-            for &i in &indices {
-                let index = i * item_size;
-                array2.extend_from_slice(&attribute.array()[index..index + item_size]);
-            }
-
-            BufferAttribute::new(array2, item_size)
-        };
+        // `convertBufferAttribute()`: same kind, item size and `normalized`;
+        // an interleaved view is read through its stride and comes out plain.
+        let convert = |attribute: &BufferAttribute| attribute.gather(&indices);
 
         let mut geometry2 = Self::new();
 

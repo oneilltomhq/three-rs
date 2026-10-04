@@ -130,6 +130,26 @@ not held is freed.
   `math::ColorSpace`, next to `ColorManagement`, re-exported at the crate root.
   `NoColorSpace` is a variant, as `''` is a constant, rather than `None` in an
   `Option`.
+- **One `BufferAttribute`, typed by its array.** three's typed subclasses are
+  constructors on one struct: `BufferAttribute::new( vec, item_size )` is the
+  `Float32BufferAttribute` default, and `int8` / `uint8` / `uint8_clamped` /
+  `int16` / `uint16` / `int32` / `uint32` / `float16( vec, item_size,
+  normalized )` and `from_typed( TypedArray, … )` cover the rest, with
+  `new_instanced` / `from_typed_instanced` for `InstancedBufferAttribute`.
+  `array()` is the `Float32Array` as a `Ref<Vec<f32>>` and panics on any other
+  kind, because nearly every caller wants floats and should not unwrap an
+  enum to get them; `data()` is the `TypedArray` whatever its kind, and the
+  `get_x` … `set_xyzw` accessors read and write `f64` through `normalized`
+  and the typed array's store conversion, as three's do. An interleaved
+  attribute is `BufferAttribute::interleaved( Rc<InterleavedBuffer>,
+  item_size, offset, normalized )`, a view into a buffer that several views
+  share and the renderer uploads once; `data_buffer()` reaches the buffer.
+  `StorageBufferAttribute` is a handle a compute kernel writes through
+  `storage( &attribute, ty, count )` and a geometry draws from after
+  `.into()`, both on the same GPU buffer. The vertex input is declared in the
+  attribute's own type over three's vertex format, so a normalized `Uint8`
+  colour is `unorm8x4` into a `vec4<f32>` and a `Uint32` index a `vec4<u32>`;
+  the table and the reasons are the module note on `core::buffer_attribute`.
 - **`Scene` and the cameras own a `node` field** and are not `Node`s
   themselves. `Scene` adds `background`, `fog_node` and `override_material`;
   a camera adds its projection state. Both forward `add()`, `children()` and
@@ -281,8 +301,8 @@ Loud:
 | `anisotropy` | Physical, lit by a point, spot or directional light | The anisotropic `BRDF_GGX` (`V_GGX_SmithCorrelated_Anisotropic`, `D_GGX_Anisotropic`) is not ported, so the direct highlight would be the isotropic one. The indirect bent normal is ported, which is why an unlit anisotropic page such as `webgpu_loader_gltf_anisotropy` is quiet. |
 
 Not fields, so nothing to be loud about: three.js properties the struct does
-not have at all — the `stencil*` family, `clippingPlanes`,
-`sheenColorMap` / `sheenRoughnessMap`, `iridescence*`, `polygonOffset*`,
+not have at all — `clippingPlanes` (`WebGLRenderer`-only in three; planes
+come from a `ClippingGroup`), `sheenColorMap` / `sheenRoughnessMap`, `iridescence*`, `polygonOffset*`,
 `dithering`. (`wireframe` and the scalar `alpha_test` are fields and are
 honoured; `alpha_test_node` is the node form of the latter.)
 Setting one is a compile error, which is louder than a log line. A field

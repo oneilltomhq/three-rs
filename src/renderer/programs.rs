@@ -37,6 +37,18 @@ pub(crate) struct RenderState {
     pub depth_write: bool,
     /// `Material.depthFunc`, read only while `depth_test` is on.
     pub depth_func: DepthFunc,
+    /// `Material.colorWrite` — every attachment's write mask, all channels or
+    /// none.
+    pub color_write: bool,
+    /// The stencil half of `depthStencil`, set only on a pass whose depth
+    /// format has a stencil aspect (`renderObject.context.stencil`): the
+    /// material's face while `stencilWrite` is on (`None` is WebGPU's default
+    /// face), used for front and back alike.
+    pub stencil_face: Option<wgpu::StencilFaceState>,
+    /// `Material.stencilFuncMask` on a stencil pass, 0 otherwise.
+    pub stencil_read_mask: u32,
+    /// `Material.stencilWriteMask` on a stencil pass, 0 otherwise.
+    pub stencil_write_mask: u32,
     /// `Material.alphaToCoverage`; the pipeline enables it only on a
     /// multisampled target, as `createRenderPipeline()` does.
     pub alpha_to_coverage: bool,
@@ -150,8 +162,8 @@ impl Program {
         });
 
         // `WebGPUAttributeUtils.createShaderVertexBuffers()`: the attributes
-        // grouped into buffers — one per geometry attribute, one per instanced
-        // buffer, in first-use order. The layouts are computed from the same
+        // grouped into buffers — one per geometry attribute or interleaved
+        // buffer, one per instanced buffer, in first-use order. The layouts are computed from the same
         // `AttributeSlot`s the renderer binds from, so a slot and its buffer
         // cannot disagree.
         let vertex_layouts = node
@@ -167,8 +179,8 @@ impl Program {
                 attributes: desc
                     .attributes
                     .iter()
-                    .map(|(location, ty, offset)| wgpu::VertexAttribute {
-                        format: vertex_format(*ty),
+                    .map(|(location, _, offset, format)| wgpu::VertexAttribute {
+                        format: *format,
                         offset: *offset,
                         shader_location: *location,
                     })
@@ -217,7 +229,12 @@ impl Program {
                     // `undefined` for an opaque `NormalBlending` material, which
                     // is every rung up to 9; see `materials::blending`.
                     blend: extra.map_or(state.blend, |extra| extra.blend),
-                    write_mask: wgpu::ColorWrites::ALL,
+                    // `_getColorWriteMask()`, the same on every attachment.
+                    write_mask: if state.color_write {
+                        wgpu::ColorWrites::ALL
+                    } else {
+                        wgpu::ColorWrites::empty()
+                    },
                 })
             })
             .collect();
@@ -279,7 +296,15 @@ impl Program {
                 } else {
                     wgpu::CompareFunction::Always
                 }),
-                stencil: wgpu::StencilState::default(),
+                stencil: {
+                    let face = state.stencil_face.unwrap_or(wgpu::StencilFaceState::IGNORE);
+                    wgpu::StencilState {
+                        front: face,
+                        back: face,
+                        read_mask: state.stencil_read_mask,
+                        write_mask: state.stencil_write_mask,
+                    }
+                },
                 bias: wgpu::DepthBiasState::default(),
             }),
             multisample: wgpu::MultisampleState {
@@ -414,21 +439,6 @@ fn layout_entry(binding: u32, desc: &BindingDesc) -> wgpu::BindGroupLayoutEntry 
     }
 }
 
-fn vertex_format(ty: Type) -> wgpu::VertexFormat {
-    match ty {
-        Type::Vec2 => wgpu::VertexFormat::Float32x2,
-        Type::Vec3 => wgpu::VertexFormat::Float32x3,
-        Type::Vec4 => wgpu::VertexFormat::Float32x4,
-        Type::F32 => wgpu::VertexFormat::Float32,
-        // `WebGPUAttributeUtils.createAttribute()` reads the format off the
-        // attribute's own typed array: `skinIndex` is a `Uint32Array` by the
-        // time it reaches the GPU, so `uvec4` is `uint32x4`, not a float format
-        // the shader casts.
-        Type::UVec4 => wgpu::VertexFormat::Uint32x4,
-        other => panic!("three-rs: {other:?} is not a vertex attribute type"),
-    }
-}
-
 /// Everything a `UniformSource` can be resolved against: the camera of the pass,
 /// the object being drawn, its material, and the renderer's frame state. The
 /// defaults are three.js': an identity model matrix, a white opaque material,
@@ -520,6 +530,10 @@ pub struct UniformContext<'a> {
     /// drawn — see [`crate::nodes::NodeFrame`]. `None` outside a scene pass
     /// and before a query has resolved.
     pub occluded: Option<&'a std::collections::HashSet<u32>>,
+    /// `renderObject.clippingContext` — the planes the clipping buffers
+    /// ([`BufferSource::ClippingIntersection`] / [`BufferSource::ClippingUnion`])
+    /// hold for this draw.
+    pub clipping: Option<&'a crate::nodes::clipping::ClippingContext>,
     pub camera_projection: Matrix4,
     pub camera_view: Matrix4,
     pub camera_world: Matrix4,
@@ -730,6 +744,7 @@ impl Default for UniformContext<'_> {
             camera_id: 0,
             object: None,
             occluded: None,
+            clipping: None,
         }
     }
 }

@@ -1171,6 +1171,107 @@ Measured on Intel Iris Xe.
         );
     }
 
+    /// The README headline is `graded of gradeable (N.A. count)`, and every
+    /// number in it is counted somewhere else: graded is the graded table (and
+    /// `docs/parity.md`'s "Graded examples" line); N.A. is the rows of the page table in
+    /// `docs/parity.md` whose verdict is N.A.; gradeable is three's 231 pages
+    /// less N.A.; and the ignored count is the page table's second table,
+    /// which must name exactly the `#[ignore]`d rungs in `tests/e2e/main.rs`
+    /// (#293). Edit the headline, the tables and the ignore list together.
+    #[test]
+    fn the_readme_headline_is_current() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let readme = fs::read_to_string(root.join("README.md")).expect("README.md");
+        let parity = fs::read_to_string(root.join("docs/parity.md")).expect("docs/parity.md");
+        let e2e = fs::read_to_string(root.join("tests/e2e/main.rs")).expect("tests/e2e/main.rs");
+
+        let headline = readme
+            .lines()
+            .find(|l| l.starts_with("**Status: "))
+            .expect("README.md has a **Status: ...** line");
+        let nums: Vec<usize> = headline
+            .split(|c: char| !c.is_ascii_digit())
+            .filter(|w| !w.is_empty())
+            .map(|w| w.parse().unwrap())
+            .collect();
+        assert_eq!(
+            nums.len(),
+            3,
+            "headline has three numbers, got {headline:?}"
+        );
+        let (graded, gradeable, na) = (nums[0], nums[1], nums[2]);
+
+        let pages = parity
+            .split("### Pages")
+            .nth(1)
+            .expect("docs/parity.md has a ### Pages section");
+        let pages = pages.split("\n## ").next().unwrap();
+        let rows: Vec<Vec<&str>> = pages
+            .lines()
+            .filter(|l| l.starts_with("| `webgpu_"))
+            .map(table_cells)
+            .collect();
+        let verdicts: Vec<&Vec<&str>> = rows.iter().filter(|r| r.len() == 5).collect();
+        let ignored: BTreeSet<String> = rows
+            .iter()
+            .filter(|r| r.len() == 6)
+            .map(|r| r[0].trim_matches('`').to_string())
+            .collect();
+        let na_count = verdicts.iter().filter(|r| r[1] == "N.A.").count();
+        assert_eq!(
+            na, na_count,
+            "headline says {na} N.A. pages, the page table has {na_count}"
+        );
+        assert_eq!(
+            gradeable,
+            231 - na,
+            "gradeable is three's 231 pages less the N.A. ones"
+        );
+
+        let graded_line = parity
+            .lines()
+            .find(|l| l.starts_with("Graded examples: "))
+            .expect("docs/parity.md has a 'Graded examples: N' line");
+        let parity_graded: usize = graded_line["Graded examples: ".len()..]
+            .split(|c: char| !c.is_ascii_digit())
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert_eq!(
+            graded, parity_graded,
+            "headline and docs/parity.md disagree on the graded count"
+        );
+        let table = parse_graded_table(&readme).len();
+        assert_eq!(
+            graded, table,
+            "the graded table has {table} rows; the headline says {graded}"
+        );
+
+        let mut e2e_ignored = BTreeSet::new();
+        let mut pending = false;
+        for line in e2e.lines() {
+            let t = line.trim();
+            if t.starts_with("#[ignore") {
+                pending = true;
+            } else if pending && t.starts_with("fn ") {
+                let name = t["fn ".len()..].split('(').next().unwrap().to_string();
+                e2e_ignored.insert(name);
+                pending = false;
+            }
+        }
+        assert_eq!(
+            ignored, e2e_ignored,
+            "docs/parity.md's ignored-page table and the #[ignore]d rungs in tests/e2e/main.rs differ"
+        );
+        assert!(
+            pages.contains(&format!("{} pages are ignored", ignored.len()))
+                || pages.contains(&format!("{} are ignored", ignored.len())),
+            "the ### Pages prose should state the ignored count ({})",
+            ignored.len()
+        );
+    }
+
     /// The committed README block must be exactly what `--readme-only`
     /// writes. Every rung PR regenerates the block, and git merges two such
     /// regenerations line by line: each grid line holds four examples, so a

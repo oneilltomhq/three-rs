@@ -303,6 +303,12 @@ mod webgpu_loader_gltf_diffuse_roughness;
 #[path = "webgpu_backdrop.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_backdrop;
+#[path = "webgpu_clipping.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_clipping;
+#[path = "webgpu_clipping_stencil.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_clipping_stencil;
 #[path = "webgpu_cubemap_mix.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_cubemap_mix;
@@ -598,6 +604,10 @@ const GRADED: &[(&str, fn())] = &[
         drop(webgpu_postprocessing_outline::init())
     }),
     ("webgpu_oit", || drop(webgpu_oit::init())),
+    ("webgpu_clipping", || drop(webgpu_clipping::init())),
+    ("webgpu_clipping_stencil", || {
+        drop(webgpu_clipping_stencil::init())
+    }),
 ];
 
 /// Where the committed manifests live, one `<example>.json` each.

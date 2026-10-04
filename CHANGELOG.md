@@ -21,6 +21,51 @@ have their own sections after the release they ship with. The format follows [Ke
   fixed on the way: the recurrent denoiser allocates its target before its
   input reads it, a struct-typed var declares its struct, and
   `saturation()` shares its `.rgb` as three does (docs/nodes.md §89).
+- **Typed `BufferAttribute`s** (#294): an attribute's array is a `TypedArray`
+  of any of three's nine kinds (`Int8` to `Float64`, plus `Float16`), with a
+  `normalized` flag, `get`/`set` accessors that decode and encode like
+  three's, and `InterleavedBuffer` / `InterleavedBufferAttribute` views over
+  a shared stride. The vertex-input `format()` follows three's table
+  (`tests/core_vertex_format.rs`, 144 rows), non-normalized 8/16-bit
+  attributes are widened to 32-bit on upload as `createAttribute()` does,
+  and the renderer's program key carries the geometry's attribute layout.
+  `StorageBufferAttribute` backs `storage()` over a typed array.
+  `BufferGeometryLoader` reads typed and interleaved attributes;
+  `LineSegmentsGeometry` carries three's interleaved instanced views, so
+  Line2's vertex inputs match three's fat-lines WGSL. Skinning, `BatchedMesh`
+  and `computeVertexNormals()` read and write through the typed accessors.
+  WGSL dumps are gated in `tests/nodes_typed_attributes.rs`, the GPU path in
+  `tests/renderer_typed_attributes.rs`. See the module doc of
+  `core::buffer_attribute` for the design note.
+- **Clipping planes** through **`ClippingGroup`** (`objects`), a port of
+  `ClippingGroup.js` and `ClippingContext.js`: a group's `clipping_planes`
+  clip every descendant, as a union or, with `clip_intersection`, an
+  intersection, nested groups combine, and `clip_shadows` carries them into
+  the shadow passes. `NodeMaterial.setupClipping()` /
+  `setupHardwareClipping()` push three's `clipping()`, `clippingAlpha()`
+  (alpha-to-coverage edges under MSAA) or `hardwareClipping()` (WGSL
+  `clip_distances`, on an adapter with `CLIP_DISTANCES`). All three modes are
+  gated against three's WGSL in `tests/nodes_clipping_wgsl.rs`. See
+  `docs/nodes.md` §6.
+- **Stencil state on materials**: `stencil_write`, `stencil_func`,
+  `stencil_ref`, `stencil_func_mask`, `stencil_write_mask`, `stencil_fail`,
+  `stencil_z_fail` and `stencil_z_pass` (`StencilFunc`, `StencilOp`), and
+  `color_write`, as pipeline state per draw. They take effect on a renderer
+  created with `RendererParameters::stencil`, whose depth buffer is then
+  `depth24plus-stencil8`.
+- **`webgpu_clipping`** and **`webgpu_clipping_stencil`**, graded green at 17
+  and 0 of 100000 pixels, in the steady-frame strip, the native viewer and
+  the browser shell.
+- **The core helpers** (`helpers`, #300): `AxesHelper`, `ArrowHelper`,
+  `BoxHelper`, `Box3Helper`, `PlaneHelper`, `PolarGridHelper`,
+  `DirectionalLightHelper`, `HemisphereLightHelper`, `PointLightHelper`,
+  `SpotLightHelper` and `SkeletonHelper`, ports of `src/helpers/`. Each
+  keeps three's geometry, material, flags and child transforms, and
+  `tests/helpers_core.rs` compares all of them node for node against
+  three's own classes under node (`tools/helpers_reference.mjs`, 24
+  scenarios). `Box3Helper`, `PlaneHelper` and `SkeletonHelper`'s
+  `updateMatrixWorld` overrides are an explicit `update_matrix_world(force)`
+  the caller runs each frame; see the `helpers` module docs.
 - **`ssr()`'s stochastic path** (`nodes::display`): `SsrOptions` gains
   `stochastic`, `reflect_non_metals`, `environment`,
   `env_importance_sampling`, `diffuse` and `binary_refine`, and `SsrNode`
@@ -538,6 +583,20 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Fixed
 
+- Phong, Lambert and Toon materials zero each lighting accumulator
+  (`irradiance`, `directDiffuse`, `directSpecular`, `indirectDiffuse`, and
+  Lambert's specular pair) once, right above its first use, as three's dumps
+  do (#281). Each accumulator is a var with a zero initialiser, and the flow
+  also assigned the same zero explicitly, so the WGSL had every zero twice in
+  a row. The physical flow keeps its hoisted zeros but emits each once,
+  `clearcoat*`, `radiance` and `iblIrradiance` included.
+  `sss_shadow_context_matches_three` no longer drops repeated lines; it
+  checks the zero count and position against the dump, and
+  `lit_accumulators_are_zeroed_once` covers the other lit flows.
+- A depth-stencil texture is sampled through a depth-only view. With
+  `RendererParameters::stencil` on, `viewportDepthTexture()`'s copy of the
+  `depth24plus-stencil8` canvas depth failed bind-group validation, because
+  the view had both aspects. `tests/renderer_viewport_depth.rs` covers it.
 - The glTF loader applies `occlusionTexture.strength` as `ao_map_intensity`,
   as three's `GLTFLoader` does. It was ignored, so `pool.glb`'s
   `SPWallsFloorStairs`, which sets it to 0, was darkened by its AO map.

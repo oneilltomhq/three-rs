@@ -153,14 +153,16 @@ fn line_geometry_duplicates_interior_points() {
     let segments = geometry.as_segments();
     assert_eq!(segments.instance_count(), instance_count, "instance count");
 
-    let attributes = segments.attributes();
+    let instance_start = segments
+        .geometry()
+        .get_attribute("instanceStart")
+        .expect("instanceStart");
+    let buffer = instance_start.data_buffer().expect("an interleaved view");
+    assert_eq!(buffer.stride(), 6, "xyz xyz per segment");
+    let pairs = buffer.array();
+    assert_eq!(pairs.len(), instance_count * 6, "pair floats");
     assert_eq!(
-        attributes.positions.len(),
-        instance_count * 6,
-        "pair floats"
-    );
-    assert_eq!(
-        attributes.positions.len() * std::mem::size_of::<f32>(),
+        pairs.len() * std::mem::size_of::<f32>(),
         instance_count * 24,
         "instanced buffer bytes"
     );
@@ -169,12 +171,12 @@ fn line_geometry_duplicates_interior_points() {
     for i in 0..instance_count {
         for c in 0..3 {
             assert_eq!(
-                attributes.positions[i * 6 + c],
+                pairs[i * 6 + c],
                 positions[i * 3 + c],
                 "instance {i} start component {c}"
             );
             assert_eq!(
-                attributes.positions[i * 6 + 3 + c],
+                pairs[i * 6 + 3 + c],
                 positions[(i + 1) * 3 + c],
                 "instance {i} end component {c}"
             );

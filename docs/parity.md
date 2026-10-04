@@ -13,21 +13,21 @@ This matrix judges every exported name in three.js revision 5f610f5 (r187) — `
 | animation | 14 | 13 | 1 | 0 | 0 | 93% |
 | cameras | 6 | 6 | 0 | 0 | 0 | 100% |
 | scenes | 3 | 3 | 0 | 0 | 0 | 100% |
-| objects | 14 | 11 | 0 | 2 | 1 | 85% |
+| objects | 14 | 12 | 0 | 1 | 1 | 92% |
 | lights | 11 | 7 | 1 | 3 | 0 | 64% |
-| helpers | 13 | 1 | 1 | 11 | 0 | 8% |
+| helpers | 13 | 9 | 4 | 0 | 0 | 69% |
 | audio | 5 | 0 | 0 | 0 | 5 | — |
 | materials | 36 | 4 | 19 | 11 | 2 | 12% |
 | textures | 18 | 8 | 4 | 1 | 5 | 62% |
 | loaders | 20 | 2 | 2 | 12 | 4 | 12% |
 | renderers | 39 | 10 | 8 | 3 | 18 | 48% |
-| nodes | 141 | 100 | 27 | 9 | 5 | 74% |
-| tsl | 683 | 556 | 52 | 50 | 25 | 84% |
+| nodes | 141 | 101 | 27 | 8 | 5 | 74% |
+| tsl | 683 | 559 | 52 | 47 | 25 | 85% |
 | addons/controls | 11 | 1 | 6 | 4 | 0 | 9% |
 | addons/loaders | 71 | 9 | 3 | 59 | 0 | 13% |
 | addons/postprocessing | 30 | 0 | 0 | 0 | 30 | — |
 | addons/other | 102 | 14 | 4 | 61 | 23 | 18% |
-| **total** | **1317** | **818** | **137** | **239** | **123** | **69%** |
+| **total** | **1317** | **831** | **140** | **223** | **123** | **70%** |
 
 TSL by family:
 
@@ -38,13 +38,57 @@ TSL by family:
 | conditionals/flow | 13 | 9 | 1 | 3 | 0 |
 | textures | 23 | 17 | 1 | 5 | 0 |
 | lighting/material | 121 | 92 | 10 | 19 | 0 |
-| accessors | 95 | 76 | 8 | 10 | 1 |
+| accessors | 95 | 79 | 8 | 7 | 1 |
 | display/postprocessing | 75 | 62 | 7 | 6 | 0 |
 | compute/storage | 53 | 46 | 7 | 0 | 0 |
 | materialx | 49 | 48 | 0 | 1 | 0 |
 | utils | 77 | 47 | 16 | 4 | 10 |
 
-Graded examples: 94 (the README gallery plus `webgpu_textures_2d-array_compressed`, which has a live `rung!` but a hyphen in its name). 13 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
+Graded examples: 96 (the rows of the README's graded table, `webgpu_textures_2d-array_compressed` among them; its `rung!` spells the name with an underscore). 13 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
+
+### Pages
+
+three ships 231 `webgpu_*` pages at 5f610f5. The README headline counts graded pages out of the gradeable ones, and the two tables below are what takes a page out of that denominator or keeps it out of the graded count (#293). A page is **N.A.** when no frame of it can be diffed against three's reference on a headless, session-less, media-less grading machine; the pieces of an N.A. page that are portable are judged as rows above, and the page itself is not a port target. A page is **ignored** when it is ported and its e2e test exists but is `#[ignore]`d because three.js itself fails its own reference screenshot on the grading machine (Intel Iris Xe, Mesa 25.3, Vulkan), so a pass or fail of the port says nothing. Of the 17 pages #293 lists, 16 are N.A. and one (`webgpu_sandbox`) turns out to be an ordinary scene and stays gradeable; 13 pages are ignored; 94 of the 215 gradeable pages are graded.
+
+Three's own `test/e2e/puppeteer.js` still screenshots 13 of the 17 (it excepts only the three TSL editors and `webgpu_compute_audio`), so most have a reference JPEG; the third column says what that JPEG is a picture of and why diffing the port against it would not verify the page.
+
+| page | verdict | why | what three's reference shows | portable pieces |
+|---|---|---|---|---|
+| `webgpu_xr_cubes` | N.A. | needs an immersive XR session (`renderer.xr`, `XRButton`); the page's content is the session's stereo layers and the controller input | the desktop fallback frame: the cube field through a mono camera, no XR | none beyond what the graded cube and instancing pages cover |
+| `webgpu_xr_native_layers` | N.A. | needs a session with `XRWebGLBinding` layers (`renderer.xr`, `VRButton`); the quad, cylinder and equirect layers only exist inside it | the desktop fallback frame without the layers | none; native layers are an XR-only API |
+| `webgpu_xr_rollercoaster` | N.A. | needs a session (`renderer.xr`, `VRButton`); the ride advances on `performance.now()` inside the animation loop | the desktop fallback frame at whatever time the screenshot landed | the `RollerCoaster` geometries are one addon row (Absent) |
+| `webgpu_xr_shadows` | N.A. | needs a session (`renderer.xr`, `VRButton`); the controllers cast the shadows | the desktop fallback frame | shadow maps are graded by the `webgpu_shadowmap*` pages |
+| `webgpu_tsl_editor` | N.A. | a Monaco editor page: the output is the DOM editor and its compiled-shader text, not a renderer frame; three excepts it from its own e2e | not graded by three | the TSL transpiler addon has no row yet; the WGSL text itself is what the port's dump gates compare |
+| `webgpu_tsl_transpiler` | N.A. | a Monaco editor page: GLSL in, TSL out, no renderer frame; three excepts it | not graded by three | the transpiler addon has no row yet |
+| `webgpu_tsl_graph` | N.A. | an `Inspector` TSL-graph panel (`three/addons/inspector`) over a glTF scene, with the panel in the viewport; three excepts it | not graded by three | the scene itself is the ordinary glTF + HDR path the graded loader pages cover; the inspector is DOM |
+| `webgpu_sandbox` | gradeable | #293 lists it among the tooling UIs, but it is a plain scene: a `MeshBasicNodeMaterial` box with a UV texture mixed with `checker()` on a `time`-scrolled UV, a sphere displaced by a texture, a `DataTexture` plane, a KTX2 plane with `oscSine()` emissive and alpha test, a random point cloud and a vertex-coloured line; three grades it, and every ingredient is ported and graded elsewhere | the scene at the harness's frozen time | — (grade it; its random points need the harness's seeded `Math.random`, which the other random-scene rungs already reproduce) |
+| `webgpu_test_memory` | N.A. | a leak test: every frame creates, renders and disposes random spheres and lights, and the point is `renderer.info.memory` after N frames, not any one frame | one frame of random spheres | the `Renderer` row's `info` counters |
+| `webgpu_performance` | N.A. | a frame-time benchmark of `compileAsync` over many materials; the frame is a normal scene but what the page measures is wall-clock | the scene after compilation | `compileAsync` belongs to the `Renderer` row; the materials are graded elsewhere |
+| `webgpu_performance_renderbundle` | N.A. | a benchmark of `BundleGroup` render bundles against plain draws over thousands of random meshes, measured in ms per frame; the frame is the same either way, so a diff would verify the random scene, not the bundle | the random mesh cloud, in one of the two modes | the `BundleGroup` row (Absent) |
+| `webgpu_compile_async` | N.A. | a wall-clock comparison of `compileAsync` against synchronous compilation, written to the DOM on a `setTimeout`; the frame is a plain scene | the scene after compilation | `compileAsync` belongs to the `Renderer` row |
+| `webgpu_video_frame` | N.A. | needs `VideoFrame` objects from WebCodecs on a playing `<video>`; the grading machine has no media pipeline and the port has no decoder | the first decoded video frame | `VideoFrameTexture` is an N.A. texture row; the sampling path is the ordinary 2D texture path |
+| `webgpu_video_panorama` | N.A. | a playing `<video>` on a sphere; the reference frame is whichever frame the browser had decoded when the screenshot landed | one decoded frame of the panorama video | `VideoTexture` is an N.A. texture row; equirect sampling is graded by `webgpu_equirectangular` |
+| `webgpu_multiple_canvas` | N.A. | one renderer drawing into a scrolled list of `<canvas>` elements through `CanvasTarget` and `renderer.setCanvasTarget()`; the output is DOM layout, and each canvas is a separate swap chain | the list of per-canvas views at their page positions | the `CanvasTarget` row (Partial: private) |
+| `webgpu_multiple_elements` | N.A. | one page-sized renderer with `setScissor`/`setViewport` per `<div>` from `getBoundingClientRect`; the output is DOM layout | the scrolled list of per-element views | `setScissor`/`setViewport` are exercised by `webgpu_camera` (ignored, below) |
+| `webgpu_compute_audio` | N.A. | needs an `AudioContext` and a decoded sound buffer; the compute shader processes samples and the frame is a waveform of them; three excepts it from its own e2e | not graded by three | compute storage rows; the `webgpu_compute_*` pages grade the compute path |
+
+Ported, `#[ignore]`d. Each row gives three's own score against its reference JPEG on the grading machine, the port's score against the same JPEG, and the port's frame against three's own frame here (`tools/dump-webgpu.mjs`' `actual_full.png`, max channel difference, pixels over 2 of 255). The limit is 0.1%, 100 of 100000 pixels. #293 offers three resolutions: a looser per-page threshold with the reason recorded; a reference re-captured where three passes; or a decision that the page cannot grade here. Each e2e doc comment and `docs/<page>-progress.md` records that loosening the threshold is forbidden by the ladder's rules, so that resolution is proposed for none of them. What the twelve pixel-identical pages need is a reference that is three's own frame on the grading GPU: the dumper already writes that frame, and a `rung!` variant that grades against `target/dump-webgpu/<page>/actual_full.png` at the same 0.1% when it exists, and skips with a reason when it does not, would turn the "ignored" verdict into "graded against three's local frame". That harness change is the proposed resolution below wherever the table says *local frame*; it is a follow-up, not part of this classification.
+
+| page | three vs its reference | port vs reference | port vs three's local frame | failure mode | proposed resolution |
+|---|---|---|---|---|---|
+| `webgpu_instance_path` | 314 | 314 | identical (0) | the reference GPU's rasterisation of the path's thin triangles | local frame |
+| `webgpu_postprocessing_afterimage` | 521 | 521 | identical (0) | 50000 one-pixel additive sprites; the reference's coverage differs | local frame |
+| `webgpu_postprocessing_retro` | 1503 | 1503 | 4243 over 2 of 255 (max 49), all on the JPEG-textured mug and table | the mug's JPEG texture is decoded by a different decoder than the browser's; the retro quantisation amplifies the last-bit differences | cannot grade here until the texture is fed as PNG to both sides; keep ignored |
+| `webgpu_refraction` | 344 | 336 | 13 over 2 of 255 | the reference GPU's resolve of the normal-mapped backdrop edges | local frame (13 pixels is under the limit) |
+| `webgpu_postprocessing` | 107 | 107 | identical (0) | 7 pixels over the limit on bloom edges | local frame |
+| `webgpu_postprocessing_smaa` | 258 | 258 | identical (0) | the boxes' diagonal wireframe lines rasterise differently from the reference GPU | local frame |
+| `webgpu_postprocessing_pixel` | 405 | 405 | identical (0) | `BasicShadowMap` and the pixelation edges on the reference GPU | local frame |
+| `webgpu_materials_alphahash` | 3782 | 3782 | identical (0) | `fract(10000 * sin(...))` hashed alpha turns a last-bit `sin` difference into a different grain | local frame |
+| `webgpu_materials_arrays` | 251 | 251 | identical (0) | MSAA-resolved silhouette edges | local frame |
+| `webgpu_multisampled_renderbuffers` | 2405 | 2405 | identical (0) | the wireframe `line-list` coverage on the reference GPU | local frame |
+| `webgpu_camera` | 922 | 922 | identical (0) | wireframe lines and the `CameraHelper` lines on the reference GPU | local frame |
+| `webgpu_textures_anisotropy` | 9234 | 9234 | identical (0) | the reference's minified texels come from another GPU's anisotropic sampler, in both halves | local frame |
+| `webgpu_lights_custom` | 416 | 416 | identical (0) | 500000 one-pixel MSAA points; three's frame matches the reference under SwiftShader, so the reference is SwiftShader's coverage | local frame |
 
 ## math
 
@@ -220,7 +264,7 @@ Graded examples: 94 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ## objects
 
-14 rows: 11 Present, 0 Partial, 2 Absent, 1 N.A.
+14 rows: 12 Present, 0 Partial, 1 Absent, 1 N.A.
 
 | three.js name | verdict | three-rs symbol | verified by | note |
 |---|---|---|---|---|
@@ -237,7 +281,7 @@ Graded examples: 94 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `Line` | Present | Line (src/objects/line.rs:26) | tests/objects_line.rs |  |
 | `Points` | Present | Points (src/objects/points.rs:21) | tests/objects_points.rs; webgpu_particles |  |
 | `Group` | Present | Group (src/objects/group.rs:9) | tests/objects_group.rs | raw hit core::Group (geometry groups) is a different thing |
-| `ClippingGroup` | Absent | — | — | no clipping context; comment only: docs/scene-graph.md:456 |
+| `ClippingGroup` | Present | ClippingGroup (src/objects/clipping_group.rs:22) | tests/nodes_clipping_wgsl.rs; webgpu_clipping (graded) | `clippingPlanes`, `clipIntersection` and `clipShadows`; the planes reach each draw as a `ClippingContext` (src/nodes/clipping.rs:34) |
 
 ## lights
 
@@ -259,23 +303,23 @@ Graded examples: 94 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ## helpers
 
-13 rows: 1 Present, 1 Partial, 11 Absent, 0 N.A.
+13 rows: 9 Present, 4 Partial, 0 Absent, 0 N.A.
 
 | three.js name | verdict | three-rs symbol | verified by | note |
 |---|---|---|---|---|
-| `SpotLightHelper` | Absent | — | — | not ported |
-| `SkeletonHelper` | Absent | — | — | not ported |
-| `PointLightHelper` | Absent | — | — | not ported |
-| `HemisphereLightHelper` | Absent | — | — | not ported |
+| `SpotLightHelper` | Present | SpotLightHelper (src/helpers/spot_light_helper.rs:27) | tests/helpers_core.rs (three's class under node via tools/helpers_reference.mjs, 2 scenarios, 1e-9, geometry 1e-6 relative; node for node); tests/helpers.rs | `toneMapped: false` dropped (no tone-mapping switch on the port's materials); dispose() not ported (freed on drop) |
+| `SkeletonHelper` | Partial | SkeletonHelper (src/helpers/skeleton_helper.rs:35) | tests/helpers_core.rs (three's class under node via tools/helpers_reference.mjs, 3 scenarios, 1e-9, geometry 1e-6 relative; node for node); tests/helpers.rs | updateMatrixWorld override is an explicit `update_matrix_world(force)` the caller runs each frame (after the graph update, before render); three's renderer runs it for you, so a scene that only adds the helper and renders draws it with its construction-time vertices, not the bones' current pose; `toneMapped: false` dropped (no tone-mapping switch on the port's materials); dispose() not ported (freed on drop) |
+| `PointLightHelper` | Present | PointLightHelper (src/helpers/point_light_helper.rs:25) | tests/helpers_core.rs (three's class under node via tools/helpers_reference.mjs, 2 scenarios, 1e-9, geometry 1e-6 relative; node for node); tests/helpers.rs | `toneMapped: false` dropped (no tone-mapping switch on the port's materials); dispose() not ported (freed on drop) |
+| `HemisphereLightHelper` | Present | HemisphereLightHelper (src/helpers/hemisphere_light_helper.rs:26) | tests/helpers_core.rs (three's class under node via tools/helpers_reference.mjs, 2 scenarios, 1e-9, geometry 1e-6 relative; node for node); tests/helpers.rs | three's `this.material` is the octahedron's own material, reached here through `mesh`: one object on both sides, so a different access path, not a behaviour gap; `toneMapped: false` dropped (no tone-mapping switch on the port's materials); dispose() not ported (freed on drop) |
 | `GridHelper` | Present | GridHelper (src/helpers/grid_helper.rs:22) | tests/scene_webgpu_materials.rs; webgpu_materials, webgpu_particles |  |
-| `PolarGridHelper` | Absent | — | — | not ported |
-| `DirectionalLightHelper` | Absent | — | — | not ported |
+| `PolarGridHelper` | Present | PolarGridHelper (src/helpers/polar_grid_helper.rs:22) | tests/helpers_core.rs (three's class under node via tools/helpers_reference.mjs, 3 scenarios, 1e-9, geometry 1e-6 relative; node for node); tests/helpers.rs | `toneMapped: false` dropped (no tone-mapping switch on the port's materials); dispose() not ported (freed on drop) |
+| `DirectionalLightHelper` | Present | DirectionalLightHelper (src/helpers/directional_light_helper.rs:25) | tests/helpers_core.rs (three's class under node via tools/helpers_reference.mjs, 2 scenarios, 1e-9, geometry 1e-6 relative; node for node); tests/helpers.rs | three's one material shared by both lines is a clone per line; update() writes both, so it differs only when a caller mutates one line's material directly; `toneMapped: false` dropped (no tone-mapping switch on the port's materials); dispose() not ported (freed on drop) |
 | `CameraHelper` | Partial | CameraHelper (src/helpers/camera_helper.rs:27) | webgpu_camera (#[ignore]d, ungraded) | no graded check: webgpu_camera is ignored because three fails its own reference here |
-| `BoxHelper` | Absent | — | — | not ported |
-| `Box3Helper` | Absent | — | — | not ported |
-| `PlaneHelper` | Absent | — | — | not ported |
-| `ArrowHelper` | Absent | — | — | not ported |
-| `AxesHelper` | Absent | — | — | not ported |
+| `BoxHelper` | Present | BoxHelper (src/helpers/box_helper.rs:31) | tests/helpers_core.rs (three's class under node via tools/helpers_reference.mjs, 2 scenarios, 1e-9, geometry 1e-6 relative; node for node); tests/helpers.rs | copy() not ported (the port has no Object3D.copy to extend); `toneMapped: false` dropped (no tone-mapping switch on the port's materials); dispose() not ported (freed on drop) |
+| `Box3Helper` | Partial | Box3Helper (src/helpers/box3_helper.rs:32) | tests/helpers_core.rs (three's class under node via tools/helpers_reference.mjs, 1 scenario, 1e-9, geometry 1e-6 relative; node for node); tests/helpers.rs | updateMatrixWorld override is an explicit `update_matrix_world(force)` the caller runs each frame (after the graph update, before render); three's renderer runs it for you, so a scene that only adds the helper and renders draws it as a unit box at the origin, not around its box; `toneMapped: false` dropped (no tone-mapping switch on the port's materials); dispose() not ported (freed on drop) |
+| `PlaneHelper` | Partial | PlaneHelper (src/helpers/plane_helper.rs:29) | tests/helpers_core.rs (three's class under node via tools/helpers_reference.mjs, 1 scenario, 1e-9, geometry 1e-6 relative; node for node); tests/helpers.rs | updateMatrixWorld override is an explicit `update_matrix_world(force)` the caller runs each frame (after the graph update, before render); three's renderer runs it for you, so a scene that only adds the helper and renders draws it without its plane's orientation, offset and size; `toneMapped: false` dropped (no tone-mapping switch on the port's materials); dispose() not ported (freed on drop) |
+| `ArrowHelper` | Present | ArrowHelper (src/helpers/arrow_helper.rs:40) | tests/helpers_core.rs (three's class under node via tools/helpers_reference.mjs, 4 scenarios, 1e-9, geometry 1e-6 relative; node for node); tests/helpers.rs | copy() not ported (the port has no Object3D.copy to extend); `toneMapped: false` dropped (no tone-mapping switch on the port's materials); dispose() not ported (freed on drop) |
+| `AxesHelper` | Present | AxesHelper (src/helpers/axes_helper.rs:17) | tests/helpers_core.rs (three's class under node via tools/helpers_reference.mjs, 2 scenarios, 1e-9, geometry 1e-6 relative; node for node); tests/helpers.rs | `toneMapped: false` dropped (no tone-mapping switch on the port's materials); dispose() not ported (freed on drop) |
 
 ## audio
 
@@ -312,7 +356,7 @@ Graded examples: 94 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `MeshMatcapMaterial` | Absent | — | — | not ported |
 | `LineDashedMaterial` | Absent | — | — | not ported; comment only: src/objects/line.rs:13 |
 | `LineBasicMaterial` | Present | ::line (src/materials/mod.rs:838), LineBasicNodeMaterial alias (src/materials/mod.rs:981) | tests/renderer_lines.rs, tests/renderer_vertex_colors.rs; webgpu_modifier_curve | same impl as LineBasicNodeMaterial |
-| `Material` | Partial | MeshBasicNodeMaterial (src/materials/mod.rs:204) carries Material fields | all graded examples | no clippingPlanes, stencil*, polygonOffset, dithering, shadowSide, toJSON; no QUnit port |
+| `Material` | Partial | MeshBasicNodeMaterial (src/materials/mod.rs:204) carries Material fields | all graded examples; webgpu_clipping_stencil (stencil*, colorWrite) | no polygonOffset, dithering, shadowSide, toJSON; clippingPlanes is WebGLRenderer-only in three and not ported (docs/nodes.md §6); no QUnit port |
 | `NodeMaterialObserver` | Absent | — | — | no change detection; set_needs_update + per-frame uniform upload instead |
 | `NodeMaterial` | Partial | MeshBasicNodeMaterial node fields (src/materials/mod.rs:204), setup (src/materials/node_material.rs:413) | tests/nodes_*_wgsl.rs, webgpu_materials | no envNode, aoNode, backdropNode, geometryNode, receivedShadowNode |
 | `LineBasicNodeMaterial` | Present | LineBasicNodeMaterial alias (src/materials/mod.rs:981), ::line (src/materials/mod.rs:838) | tests/renderer_lines.rs; webgpu_modifier_curve |  |
@@ -404,7 +448,7 @@ Graded examples: 94 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `WebGPURenderer` | Partial | Renderer (src/renderer/mod.rs:649) | tests/e2e/main.rs (all graded examples) | native backend fixed to Vulkan, no backend/powerPreference choice (#48) |
 | `WebGPUBackend` | Present | folded into Renderer over wgpu (src/renderer/mod.rs:649) | tests/e2e/main.rs | no separate backend object; wgpu is the backend |
 | `WebGLBackend` | N.A. | — | — | WebGL-only; comment only: src/renderer/mod.rs |
-| `Renderer` | Partial | Renderer (src/renderer/mod.rs:649) | tests/e2e/main.rs, tests/renderer_*.rs | no clipping planes, copyFramebufferToTexture, compileAsync; caches never evict (#237) |
+| `Renderer` | Partial | Renderer (src/renderer/mod.rs:649) | tests/e2e/main.rs, tests/renderer_*.rs | no copyFramebufferToTexture, compileAsync; caches never evict (#237) |
 | `Backend` | N.A. | — | — | single backend |
 | `WebGLCapabilities` | N.A. | — | — | WebGL-only |
 | `Lighting` | Partial | Renderer.lighting_enabled (src/renderer/mod.rs:714) | webgpu_deferred, webgpu_lights_selective | flag only; no swappable Lighting object (TiledLighting) |
@@ -432,7 +476,7 @@ Graded examples: 94 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ## nodes
 
-141 rows: 100 Present, 27 Partial, 9 Absent, 5 N.A.
+141 rows: 101 Present, 27 Partial, 8 Absent, 5 N.A.
 
 | three.js name | verdict | three-rs symbol | verified by | note |
 |---|---|---|---|---|
@@ -480,7 +524,7 @@ Graded examples: 94 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `BufferAttributeNode` | Partial | instanced_buffer_attribute (src/nodes/tsl.rs:4395), to_attribute (3758) | tests/nodes_instanced_attributes.rs | no plain/dynamic bufferAttribute() |
 | `BufferNode` | Present | BufferNode (src/nodes/node.rs:869) | webgpu_skinning |  |
 | `BuiltinNode` | Partial | enum Builtin (src/nodes/node.rs:1156) | tests/nodes_compute_wgsl.rs | closed enum; no generic builtin(name) |
-| `ClippingNode` | Absent | — | — | no clippingPlanes; docs/nodes.md s6 deferred |
+| `ClippingNode` | Present | clipping, clipping_alpha, hardware_clipping (src/nodes/clipping.rs:175,216,262) | tests/nodes_clipping_wgsl.rs; webgpu_clipping (graded) | all three modes; the plane buffers' binding numbers differ (docs/nodes.md §8) |
 | `CubeTextureNode` | Present | cube_texture (src/nodes/tsl.rs:3581) | webgpu_materials_envmaps |  |
 | `MaterialNode` | Partial | material_color etc. (src/nodes/tsl.rs:2143) | webgpu_lights_physical | no iridescence/dash accessors; `material_metalness_value()` / `material_roughness_value()` are the map-resolved values (docs/nodes.md §89.2) |
 | `MaterialReferenceNode` | Partial | UniformSource::Material* (src/nodes/node.rs:172) | webgpu_lights_physical | fixed sources; no materialReference(name) |
@@ -1268,9 +1312,9 @@ Partial: `transmission`, `thickness`, `attenuationDistance`, `lights`, `pointSha
 
 ### accessors
 
-76 of 94 applicable present (8 Partial, 10 Absent, 1 N.A.).
+79 of 94 applicable present (8 Partial, 7 Absent, 1 N.A.).
 
-Missing (Absent): `bufferAttribute`, `dynamicBufferAttribute`, `instancedDynamicBufferAttribute`, `clipping`, `clippingAlpha`, `hardwareClipping`, `buffer`, `cameraIndex`, `rendererReference`, `reference`.
+Missing (Absent): `bufferAttribute`, `dynamicBufferAttribute`, `instancedDynamicBufferAttribute`, `buffer`, `cameraIndex`, `rendererReference`, `reference`.
 
 Partial: `tangentViewFrame`, `bitangentViewFrame`, `builtin`, `cameraViewport`, `instance`, `instancedMesh`, `batchIndirectIndex`, `referenceBuffer`.
 
@@ -1289,9 +1333,9 @@ Partial: `tangentViewFrame`, `bitangentViewFrame`, `builtin`, `cameraViewport`, 
 | `bitangentLocal` | Present | bitangent_local (src/nodes/tsl.rs:3518) | tests/nodes_tsl_batch.rs (bitangent_local_matches) | see bitangentGeometry |
 | `bitangentView` | Present | bitangent_view (src/nodes/tsl.rs:3424) | indirect: used by src/nodes/tsl.rs |  |
 | `bitangentWorld` | Present | bitangent_world (src/nodes/tsl.rs:3536) | tests/nodes_tsl_batch.rs (bitangent_world_matches) | see bitangentGeometry |
-| `clipping` | Absent | — | — | deferred (docs/nodes.md §6) |
-| `clippingAlpha` | Absent | — | — | deferred (docs/nodes.md §6) |
-| `hardwareClipping` | Absent | — | — | deferred (docs/nodes.md §6) |
+| `clipping` | Present | clipping (src/nodes/clipping.rs:175, pub(crate)) | tests/nodes_clipping_wgsl.rs; webgpu_clipping (graded) | built by NodeMaterial.setupClipping() from a `ClippingGroup`, as in three; not public |
+| `clippingAlpha` | Present | clipping_alpha (src/nodes/clipping.rs:216, pub(crate)) | tests/nodes_clipping_wgsl.rs; webgpu_clipping (graded) | built by NodeMaterial.setupClipping() from a `ClippingGroup`, as in three; not public |
+| `hardwareClipping` | Present | hardware_clipping (src/nodes/clipping.rs:262, pub(crate)) | tests/nodes_clipping_wgsl.rs; webgpu_clipping (graded) | built by NodeMaterial.setupHardwareClipping() from a `ClippingGroup`, as in three; not public |
 | `tangentViewFrame` | Partial | inline in tangent_attribute_frame (src/nodes/tsl.rs:2983, internal) | — | internal only |
 | `bitangentViewFrame` | Partial | inline in tangent_attribute_frame (src/nodes/tsl.rs:2983, internal) | — | internal only |
 | `buffer` | Absent | — | — |  |
@@ -1681,6 +1725,5 @@ The first refresh of this matrix closed the previous top five. Velocity and TRAA
 
 **Runners-up, and why they rank lower:**
 - RectAreaLight and LTC (3 pages).
-- Clipping planes (2 pages, but common in CAD-style viewers).
-- The TSL long tail: 50 absent `three/tsl` names, most of them unused by any r187 page. They port cheaply in batches against WGSL dump gates.
+- The TSL long tail: 47 absent `three/tsl` names, most of them unused by any r187 page. They port cheaply in batches against WGSL dump gates.
 - One Partial matters more than its page count suggests: `GLTFLoader` has no `KHR_lights_punctual` and no cameras. No r187 page needs them, but arbitrary glTF assets from users will.

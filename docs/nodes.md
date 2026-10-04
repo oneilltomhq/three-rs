@@ -259,7 +259,8 @@ new material, is wrong.
 | post-processing `pass()` (rung 9, done — see `docs/postprocessing.md`) | `PassNode` is a `Texture` whose source is a `RenderTarget` the renderer renders first; `TextureSource` already has that variant shape. |
 | ~~compute (rung 12)~~ | Done — see §11. `Stage::Compute` is reachable, `BufferSource::Storage` declares `var<storage>` and `build_compute()` emits the `@compute` entry point. |
 | ~~`SpriteNodeMaterial` (rung 13)~~ | Done — see §10. `position_view()` is context-driven the way `normal_view()` is, and `MaterialKind::Sprite` supplies the billboarded `vec4`. |
-| MRT, clipping planes, vertex colours, fog, alpha test | all are single branches in `NodeMaterial`'s setup flow, omitted because no rung 1–4 material sets them. |
+| ~~clipping planes~~ | Done (#295) — `src/nodes/clipping.rs`. A `ClippingGroup`'s planes reach each draw as a `ClippingContext` (the `SetupContext`'s `clipping`), and `NodeMaterial.setupClipping()` / `setupHardwareClipping()` push `clipping()`, `clippingAlpha()` (alpha-to-coverage with MSAA) or `hardwareClipping()` (`clip_distances`, when the adapter has `wgpu::Features::CLIP_DISTANCES`; otherwise the fragment discards). Gated against three's WGSL by `tests/nodes_clipping_wgsl.rs`; the plane buffers' binding numbers are the one divergence, in §8. `material.clippingPlanes` is `WebGLRenderer`-only in three and is not ported. |
+| MRT, vertex colours, fog, alpha test | all are single branches in `NodeMaterial`'s setup flow, omitted because no rung 1–4 material sets them. |
 
 ## 7. Sub-builds, and `normalMap` as the value of `normalView`
 
@@ -553,10 +554,16 @@ differences, each verified to be pixel-neutral.
   `nodeVarN` shifts down. (Named MRT members whose value is a property read —
   `webgpu_postprocessing_bloom_selective`'s — get no var in either, which is
   why this only shows up here.)
-* **Hoisted accumulator zeros.** `LightingContextNode`'s five accumulators
-  (`directDiffuse`, `directSpecular`, `irradiance`, `indirectDiffuse`,
-  `indirectSpecular`) are zeroed together before the light loop rather than each
-  at its first use. Nothing reads one before it is written either way.
+* **Hoisted accumulator zeros.** In the physical flow, `LightingContextNode`'s
+  five accumulators (`directDiffuse`, `directSpecular`, `irradiance`,
+  `indirectDiffuse`, `indirectSpecular`) are zeroed together before the light
+  loop rather than each at its first use. Nothing reads one before it is
+  written either way. Each zero is emitted once: the accumulator is a var
+  whose initialiser is the zero, and the flow pushes the var itself as the
+  statement. It used to push `assign( vec3( 0 ) )`, which emitted the
+  initialiser and then the same zero again (issue #281). The Phong, Lambert
+  and Toon flow hoists nothing: each zero lands right above the statement
+  that first uses it, as in three's dumps.
 * **`clearcoatNormalView` assigned before the light loop (§34).** Three
   assigns the var at its first read, inside `direct()` after `irradiance`; the
   port assigns it where the normal is set up, ahead of the loop, and emits the
@@ -642,6 +649,17 @@ differences, each verified to be pixel-neutral.
   uniform buffer at binding 0 and the three data textures at 1–3; the port
   emits the textures first and the buffer last. Same class as "Instance buffer
   binding indices": the layout and the shader come from the same descriptors.
+* **Clipping-plane buffer binding indices (#295).** Three's render group
+  numbers its bindings in the order they are created, fragment stage first: the
+  fragment stage's plane `NodeBuffer`s sit ahead of the `render` struct, while
+  the vertex stage's hardware-clipping buffer follows it (the knot in
+  `tests/fixtures/webgpu_clipping/` has its fragment planes at binding 0,
+  `render` at 1 and the vertex `clip_distances` planes at 2). The port's
+  `render` struct is always binding 0 and every plane buffer follows. Same
+  class as "Instance buffer binding indices": the layout and the shader come
+  from the same descriptors.
+  `tests/nodes_clipping_wgsl.rs` compares with the group-0 binding numbers
+  canonicalised.
 * **The indirect-diffuse block is emitted before the environment's (§25).**
   `PhysicalLightingModel.indirectDiffuse()` reads `irradiance`, and three runs
   it after `EnvironmentNode` has written `radiance` / `iblIrradiance`; this port
@@ -5298,7 +5316,7 @@ the port's body closes over `output_property()`. It is the same node.
   three's, statement for statement. The lighting has the same terms in a
   different order. Three emits the DFG lookup and the dielectric scattering
   first and zero-initialises each accumulator where it is first used. The
-  port zero-initialises them all up front (twice) and emits the directional
+  port zero-initialises them all up front (twice, until issue #281) and emits the directional
   light before the DFG. Three also writes `normalView` through
   `NORMAL_normalView = normalViewGeometry` where the port assigns it directly.
   The rest is spelling: `fragCoord` is the first fragment parameter rather

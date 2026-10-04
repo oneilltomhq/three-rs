@@ -509,6 +509,17 @@ mod webgpu_postprocessing_lensflare;
 #[allow(dead_code)]
 mod webgpu_postprocessing_outline;
 
+#[path = "../../examples/webgpu_clipping.rs"]
+#[allow(dead_code)]
+mod webgpu_clipping;
+
+#[path = "../../examples/webgpu_clipping_stencil.rs"]
+#[allow(dead_code)]
+mod webgpu_clipping_stencil;
+
+/// The two clipping rungs' pixel tests.
+mod clipping;
+
 fn three_js_dir() -> PathBuf {
     three_rs::testing::three_js_dir()
 }
@@ -6500,6 +6511,11 @@ fn steady_frame_builds_nothing() {
     // An empty selection: `OutlineNode.updateBefore()` returns before its
     // first draw every frame, so only the scene pass and the output build.
     rung!(webgpu_postprocessing_outline);
+    // The planes are a render-group uniform rewritten per draw and the stencil
+    // state is part of the pipeline key, so both pages build everything on
+    // frame one and nothing after.
+    rung!(webgpu_clipping);
+    rung!(webgpu_clipping_stencil);
 }
 
 // ---------------------------------------------------------------------------

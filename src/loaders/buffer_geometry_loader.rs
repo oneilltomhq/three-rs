@@ -1,12 +1,19 @@
-//! Port of `three.js/src/loaders/BufferGeometryLoader.js` (rung 2 subset:
-//! plain, non-interleaved `data.attributes` plus `data.index`).
+//! Port of `three.js/src/loaders/BufferGeometryLoader.js`: `data.index`,
+//! `data.attributes` and `data.morphAttributes` (plain, instanced and
+//! interleaved, of any typed-array kind but `Float64Array`), and
+//! `data.morphTargetsRelative`. Not ported: `groups`, `boundingSphere`,
+//! `name`, `userData`, `usage`, `gpuType`, `isInstancedBufferGeometry`.
 //!
 //! `load()` reads from the filesystem instead of the examples web server; the
 //! JSON it parses is byte-identical to what the page fetches.
 
+use std::collections::HashMap;
 use std::path::Path;
+use std::rc::Rc;
 
-use crate::core::{BufferAttribute, BufferGeometry, Index};
+use crate::core::{
+    ArrayKind, BufferAttribute, BufferGeometry, Index, InterleavedBuffer, TypedArray,
+};
 use crate::error::Error;
 
 /// three.js' `BufferGeometryLoader`.
@@ -57,54 +64,141 @@ impl BufferGeometryLoader {
             });
         }
 
+        let mut interleaved = HashMap::new();
+
         if let Some(attributes) = data.get("attributes").and_then(|a| a.as_object()) {
             for (key, attribute) in attributes {
-                // Rung 2 only reads `Float32Array` attributes.
-                if attribute["type"].as_str() != Some("Float32Array") {
-                    return Err(Error::UnsupportedFormat {
-                        what: "attribute type",
-                        value: format!("{:?}", attribute["type"].as_str()),
-                    });
-                }
-
-                let item_size =
-                    attribute["itemSize"]
-                        .as_u64()
-                        .ok_or_else(|| Error::UnsupportedFormat {
-                            what: "attribute itemSize",
-                            value: attribute["itemSize"].to_string(),
-                        })? as usize;
-                // `getTypedArray( 'Float32Array', array )`: each JSON number is
-                // parsed as an f64 and then narrowed by the Float32Array store.
-                let array: Vec<f32> = number_array(&attribute["array"])?
-                    .into_iter()
-                    .map(|v| v as f32)
-                    .collect();
-
-                let buffer_attribute = BufferAttribute::new(array, item_size);
-
-                match key.as_str() {
-                    "position" => {
-                        geometry.set_attribute("position", buffer_attribute);
-                    }
-                    "normal" => {
-                        geometry.set_attribute("normal", buffer_attribute);
-                    }
-                    "uv" => {
-                        geometry.set_attribute("uv", buffer_attribute);
-                    }
-                    other => {
-                        return Err(Error::UnsupportedFormat {
-                            what: "attribute",
-                            value: other.to_string(),
-                        })
-                    }
-                }
+                let buffer_attribute = parse_attribute(data, attribute, &mut interleaved)?;
+                geometry.set_attribute(key, buffer_attribute);
             }
+        }
+
+        if let Some(morph_attributes) = data.get("morphAttributes").and_then(|a| a.as_object()) {
+            for (key, attribute_array) in morph_attributes {
+                let array = attribute_array
+                    .as_array()
+                    .ok_or_else(|| Error::UnsupportedFormat {
+                        what: "morphAttributes entry",
+                        value: attribute_array.to_string(),
+                    })?
+                    .iter()
+                    .map(|attribute| parse_attribute(data, attribute, &mut interleaved))
+                    .collect::<Result<Vec<_>, _>>()?;
+                geometry.set_morph_attribute(key, array);
+            }
+        }
+
+        if data["morphTargetsRelative"].as_bool() == Some(true) {
+            geometry.morph_targets_relative = true;
         }
 
         Ok(geometry)
     }
+}
+
+/// One entry of `data.attributes` or `data.morphAttributes`: an
+/// `InterleavedBufferAttribute` over a shared [`InterleavedBuffer`], or an
+/// (instanced) `BufferAttribute` over `getTypedArray( type, array )`.
+fn parse_attribute(
+    data: &serde_json::Value,
+    attribute: &serde_json::Value,
+    interleaved: &mut HashMap<String, Rc<InterleavedBuffer>>,
+) -> Result<BufferAttribute, Error> {
+    let item_size = usize_field(attribute, "itemSize")?;
+    let normalized = attribute["normalized"].as_bool().unwrap_or(false);
+
+    if attribute["isInterleavedBufferAttribute"].as_bool() == Some(true) {
+        let uuid = string_field(attribute, "data")?;
+        let buffer = interleaved_buffer(data, uuid, interleaved)?;
+        let offset = usize_field(attribute, "offset")?;
+        return Ok(BufferAttribute::interleaved(
+            buffer, item_size, offset, normalized,
+        ));
+    }
+
+    // `getTypedArray( type, array )`: each JSON number stored the way the
+    // typed array's constructor stores it.
+    let kind = array_kind(&attribute["type"])?;
+    let array = TypedArray::from_f64(kind, &number_array(&attribute["array"])?);
+    Ok(
+        if attribute["isInstancedBufferAttribute"].as_bool() == Some(true) {
+            BufferAttribute::from_typed_instanced(array, item_size, normalized)
+        } else {
+            BufferAttribute::from_typed(array, item_size, normalized)
+        },
+    )
+}
+
+/// `getInterleavedBuffer( json, uuid )`: `data.interleavedBuffers[ uuid ]`,
+/// a typed view of `data.arrayBuffers[ buffer ]` (stored as `Uint32Array`
+/// words) with a stride, built once per uuid so every view shares it.
+///
+/// three also caches the `ArrayBuffer`, so two interleaved buffers over one
+/// array buffer alias each other's memory; here each gets its own copy.
+fn interleaved_buffer(
+    data: &serde_json::Value,
+    uuid: &str,
+    interleaved: &mut HashMap<String, Rc<InterleavedBuffer>>,
+) -> Result<Rc<InterleavedBuffer>, Error> {
+    if let Some(buffer) = interleaved.get(uuid) {
+        return Ok(buffer.clone());
+    }
+    let json = &data["interleavedBuffers"][uuid];
+    if json.is_null() {
+        return Err(Error::UnsupportedFormat {
+            what: "interleavedBuffers uuid",
+            value: uuid.to_string(),
+        });
+    }
+    let array_buffer = &data["arrayBuffers"][string_field(json, "buffer")?];
+    // `new Uint32Array( arrayBuffer ).buffer`.
+    let TypedArray::U32(words) = TypedArray::from_f64(ArrayKind::U32, &number_array(array_buffer)?)
+    else {
+        unreachable!("from_f64(U32) is a Uint32Array")
+    };
+    let bytes: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+    let array = TypedArray::from_le_bytes(array_kind(&json["type"])?, &bytes);
+    let buffer = Rc::new(InterleavedBuffer::new(array, usize_field(json, "stride")?));
+    interleaved.insert(uuid.to_string(), buffer.clone());
+    Ok(buffer)
+}
+
+/// `TYPED_ARRAYS[ type ]` from three's `utils.js`, less `Float64Array`,
+/// which no attribute kind holds.
+fn array_kind(value: &serde_json::Value) -> Result<ArrayKind, Error> {
+    Ok(match value.as_str() {
+        Some("Float32Array") => ArrayKind::F32,
+        Some("Int8Array") => ArrayKind::I8,
+        Some("Uint8Array") => ArrayKind::U8,
+        Some("Uint8ClampedArray") => ArrayKind::U8Clamped,
+        Some("Int16Array") => ArrayKind::I16,
+        Some("Uint16Array") => ArrayKind::U16,
+        Some("Int32Array") => ArrayKind::I32,
+        Some("Uint32Array") => ArrayKind::U32,
+        _ => {
+            return Err(Error::UnsupportedFormat {
+                what: "attribute type",
+                value: value.to_string(),
+            })
+        }
+    })
+}
+
+fn usize_field(json: &serde_json::Value, what: &'static str) -> Result<usize, Error> {
+    json[what]
+        .as_u64()
+        .map(|v| v as usize)
+        .ok_or_else(|| Error::UnsupportedFormat {
+            what,
+            value: json[what].to_string(),
+        })
+}
+
+fn string_field<'a>(json: &'a serde_json::Value, what: &'static str) -> Result<&'a str, Error> {
+    json[what].as_str().ok_or_else(|| Error::UnsupportedFormat {
+        what,
+        value: json[what].to_string(),
+    })
 }
 
 fn number_array(value: &serde_json::Value) -> Result<Vec<f64>, Error> {

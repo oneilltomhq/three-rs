@@ -470,13 +470,17 @@ shared unit quad, a `SpriteNodeMaterial`, and `center` fed to the vertex stage
 as an object uniform; transparent sprites sort on their world position, as
 `_projectObject` does. Every light type is wired: `PointLight`,
 `AmbientLight`, `DirectionalLight`, `SpotLight` and `HemisphereLight`, with
-shadows for the point, spot and directional kinds.
+shadows for the point, spot and directional kinds. A `ClippingGroup`
+(`Payload::ClippingGroup`) folds its world-space planes into the clipping
+context its descendants are drawn with, as `_projectObject` does through
+`ClippingContext`; `clip_shadows` carries it into the shadow passes.
+`material.clippingPlanes` is `WebGLRenderer`-only in three, so it is not
+ported.
 
 Still missing:
 
 - No `LOD` or `BundleGroup` arm in `project_object`.
 - No multi-material meshes: a mesh holds one material, so the
   `geometry.groups` arm that picks `material[ group.materialIndex ]` is absent.
-- No clipping context (`ClippingGroup`, `material.clippingPlanes`).
 - Sprite fog reads the mesh `positionView` rather than the sprite's billboarded
   one (see `tests/renderer_sprites.rs`); no graded rung has a fogged sprite.

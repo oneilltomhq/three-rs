@@ -4,10 +4,10 @@
 pub(crate) mod alpha_hash;
 pub mod batch;
 pub mod builder;
+pub mod clipping;
 pub mod code;
 pub mod display;
 pub(crate) mod frame;
-pub mod lines;
 pub mod materialx;
 pub mod morph;
 pub(crate) mod mrt;
