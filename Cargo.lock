@@ -359,9 +359,9 @@ checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
 
 [[package]]
 name = "d3-hierarchy"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c6226b12c7dc58c0c11e00d659efe766520c21df38b24e3018011a185999bdf8"
+checksum = "84ec9d4b727c5349d64ba5ec6bdf8f39544421ec5979b60099ea25836d68baea"
 dependencies = [
  "serde_json",
 ]
