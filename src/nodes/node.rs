@@ -358,6 +358,12 @@ pub enum UniformSource {
     /// `MeshStandardMaterial.aoMapIntensity` — the scale in `materialAO`'s
     /// `tex.r.sub( 1 ).mul( aoMapIntensity ).add( 1 )`.
     MaterialAoMapIntensity,
+    /// `material.lightMapIntensity` (`MeshBasicMaterial`, `MeshLambertMaterial`,
+    /// `MeshPhongMaterial`, `MeshStandardMaterial`, `MeshToonMaterial`) — the
+    /// scale in `materialLightMap`'s `tex.rgb.mul( lightMapIntensity )`.
+    MaterialLightMapIntensity,
+    /// `PointsMaterial.size` — `materialPointSize`.
+    MaterialPointSize,
     /// `toneMappingExposure` — `renderer.toneMappingExposure`.
     ToneMappingExposure,
     /// `reference( 'bindMatrix', 'mat4' )` / `reference( 'bindMatrixInverse',
@@ -645,6 +651,8 @@ impl UniformSource {
             | UniformSource::MaterialDiffuseRoughness
             | UniformSource::MaterialNormalScale
             | UniformSource::MaterialAoMapIntensity
+            | UniformSource::MaterialLightMapIntensity
+            | UniformSource::MaterialPointSize
             | UniformSource::EnvRotationMatrix
             | UniformSource::MorphBase
             | UniformSource::BindMatrix
