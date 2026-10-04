@@ -52,6 +52,7 @@ mod ssr;
 mod sss;
 mod stereo_composite_pass;
 mod stereo_pass;
+mod taa_utils;
 mod temporal_reproject;
 mod toon_outline_pass;
 mod traa;
