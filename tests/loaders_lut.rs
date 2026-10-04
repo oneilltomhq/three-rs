@@ -388,9 +388,10 @@ fn image_strips_longer_than_size_cubed_keep_the_first_size_cubed_texels() {
         .expect("a taller strip loads");
     assert_eq!(lut.size, SIZE);
     let decoded = {
-        let decoder = png::Decoder::new(std::fs::File::open(&tall).unwrap());
+        let decoder =
+            png::Decoder::new(std::io::BufReader::new(std::fs::File::open(&tall).unwrap()));
         let mut reader = decoder.read_info().unwrap();
-        let mut buf = vec![0; reader.output_buffer_size()];
+        let mut buf = vec![0; reader.output_buffer_size().unwrap()];
         let info = reader.next_frame(&mut buf).unwrap();
         buf.truncate(info.buffer_size());
         buf
