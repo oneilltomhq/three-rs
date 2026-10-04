@@ -861,10 +861,15 @@ impl InterleavedBuffer {
     }
 
     /// `InterleavedBuffer.copy( source )` — the array (a copy of it, as
-    /// `new source.array.constructor( source.array )`) and the stride.
+    /// `new source.array.constructor( source.array )`) and the stride; on an
+    /// instanced buffer, `InstancedInterleavedBuffer.copy` also takes
+    /// `meshPerAttribute`.
     pub fn copy(&mut self, source: &InterleavedBuffer) -> &mut Self {
         *self.array.get_mut() = source.array.borrow().clone();
         self.stride = source.stride;
+        if self.instanced {
+            self.mesh_per_attribute = source.mesh_per_attribute;
+        }
         self
     }
 }
