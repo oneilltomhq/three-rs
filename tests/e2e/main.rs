@@ -311,6 +311,9 @@ mod webgpu_deferred;
 #[path = "../../examples/webgpu_loader_gltf_anisotropy.rs"]
 #[allow(dead_code)]
 mod webgpu_loader_gltf_anisotropy;
+#[path = "../../examples/webgpu_loader_gltf_iridescence.rs"]
+#[allow(dead_code)]
+mod webgpu_loader_gltf_iridescence;
 #[path = "../../examples/webgpu_loader_gltf_transmission.rs"]
 #[allow(dead_code)]
 mod webgpu_loader_gltf_transmission;
@@ -2985,6 +2988,63 @@ fn webgpu_loader_gltf_transmission() {
         name,
         &mut app,
         webgpu_loader_gltf_transmission::animate,
+        |app| app.renderer.device(),
+    );
+}
+
+/// The Iridescence Lamp: `KHR_materials_iridescence` on two of its three
+/// meshes (one of them also transmissive), a Radiance `.hdr` as both
+/// `scene.environment` and the sharp cube `scene.background`, and an
+/// auto-rotating camera turned three times before the graded frame.
+///
+/// The scene has no lights, so the iridescence reaches the frame only through
+/// the iridescent F0 `computeMultiscattering` mixes in — `evalIridescence`,
+/// its loop and both `Schlick_to_F0` calls. See `docs/nodes.md` §95.
+#[test]
+fn webgpu_loader_gltf_iridescence() {
+    let name = "webgpu_loader_gltf_iridescence";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_loader_gltf_iridescence::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_loader_gltf_iridescence::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    // The draw calls and triangles the README's graded table records.
+    let info = app.renderer.info();
+    println!("{name}: info {info:?}");
+
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_loader_gltf_iridescence::animate,
         |app| app.renderer.device(),
     );
 }
@@ -6695,6 +6755,9 @@ fn steady_frame_builds_nothing() {
     // frame one and nothing after.
     rung!(webgpu_clipping);
     rung!(webgpu_clipping_stencil);
+    // The equirect-to-cube conversion and the PMREM run in `init()`; every
+    // frame draws the same five calls, and only frame one builds anything.
+    rung!(webgpu_loader_gltf_iridescence);
 }
 
 // ---------------------------------------------------------------------------
