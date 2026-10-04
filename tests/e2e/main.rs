@@ -265,6 +265,10 @@ mod webgpu_postprocessing_pixel;
 #[allow(dead_code)]
 mod webgpu_postprocessing_retro;
 
+#[path = "../../examples/webgpu_upscaling_fsr1.rs"]
+#[allow(dead_code)]
+mod webgpu_upscaling_fsr1;
+
 #[path = "../../examples/webgpu_pmrem_cubemap.rs"]
 #[allow(dead_code)]
 mod webgpu_pmrem_cubemap;
@@ -1635,6 +1639,57 @@ fn webgpu_upscaling_taau() {
         out.display()
     );
     steady_frame(name, &mut app, webgpu_upscaling_taau::animate, |app| {
+        app.renderer.device()
+    });
+}
+
+/// Littlest Tokyo drawn at half resolution and upscaled by `fsr1()`.
+///
+/// Ignored: three.js itself scores 703 of 100000 pixels (0.7%) against its
+/// own `webgpu_upscaling_fsr1.jpg` on this machine, twice, over the 0.1%
+/// limit, and the port scores 698. Against three's own screenshot here
+/// (`tools/dump-webgpu.mjs`' `actual.jpg`) three's compare finds 0; at
+/// 800×500, 690 pixels differ by more than 2 of 255 (max 31), single edge
+/// pixels over the model. See `docs/webgpu_upscaling_fsr1-progress.md`.
+#[test]
+#[ignore = "three.js itself fails its own reference for this page on this machine"]
+fn webgpu_upscaling_fsr1() {
+    let name = "webgpu_upscaling_fsr1";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_upscaling_fsr1::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_upscaling_fsr1::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_upscaling_fsr1::animate, |app| {
         app.renderer.device()
     });
 }
@@ -6545,6 +6600,7 @@ fn steady_frame_builds_nothing() {
     // texture, and makes its one view and the resolve's one bind group.
     // Frame three must create nothing.
     rung!(webgpu_upscaling_taau, 0, 2);
+    rung!(webgpu_upscaling_fsr1);
     rung!(webgpu_backdrop);
     rung!(webgpu_oit);
     rung!(webgpu_multiple_rendertargets);

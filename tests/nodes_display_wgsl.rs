@@ -1555,6 +1555,16 @@ fn sharpen_rcas_denoise_matches_three() {
 }
 
 #[test]
+fn fsr1_easu_matches_three() {
+    check("fsr1_easu", Region::Body);
+}
+
+#[test]
+fn fsr1_rcas_matches_three() {
+    check("fsr1_rcas", Region::Body);
+}
+
+#[test]
 fn recurrent_denoise_diffuse_matches_three() {
     check("recurrent_denoise_diffuse", Region::Body);
 }

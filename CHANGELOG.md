@@ -576,6 +576,20 @@ have their own sections after the release they ship with. The format follows [Ke
   `tests/nodes_display_wgsl.rs`, and `tests/ssao_frames.rs` checks on the
   GPU that a box's crease is darker than open floor and that the blur cuts
   the pixel-to-pixel noise. See `docs/nodes.md` §93.
+- **`fsr1()` / `Fsr1Node`** (`nodes::display`), a port of
+  `examples/jsm/tsl/display/FSR1Node.js`: AMD FidelityFX Super Resolution
+  1.0. It draws two half-float passes a frame at the drawing-buffer size.
+  EASU is edge-adaptive Lanczos2 upsampling over a 12-texel footprint, and
+  RCAS is `SharpenNode`'s sharpen over the result. The EASU and RCAS WGSL
+  is gated against three's dump of `webgpu_upscaling_fsr1` in
+  `tests/nodes_display_wgsl.rs`. `tests/fsr1_frames.rs` checks on the GPU
+  that a half-resolution pass comes out at canvas size, with flat regions
+  unchanged and an edge steeper than bilinear's. See `docs/nodes.md` §91.
+- **`webgpu_upscaling_fsr1`**, ported but not graded: three.js scores 703 of
+  100000 pixels against its own reference on this machine, over the 0.1%
+  limit, and the port scores 698. Its e2e rung is `#[ignore]`d. It is in
+  the steady-frame strip and the native viewer, but not the gallery or the
+  browser shell.
 
 ### Changed
 

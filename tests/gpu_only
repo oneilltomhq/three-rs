@@ -39,6 +39,7 @@ three-rs/renderer_viewport_depth
 three-rs/retro_frames
 three-rs/stereo_frames
 three-rs/recurrent_denoise_frames
+three-rs/fsr1_frames
 three-rs/ssgi_frames
 three-rs/ssr_stochastic_frames
 three-rs/sss_frames

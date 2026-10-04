@@ -16,7 +16,7 @@ use three_rs::nodes::display::{
     pixelation_pass, recurrent_denoise, retro_pass, rgb_shift, rtt, scanlines, sepia, smaa, sobel,
     ssao, ssgi, ssr, sss, taau, temporal_reproject, traa, viewport_shared_texture_at,
     BoxBlurOptions, DenoiseAlphaSource, DenoiseMode, DepthAwareBlendOptions, EnvironmentLobe,
-    GaussianBlurOptions, HashBlurOptions, ImportanceSampledEnvironment, LensflareParams,
+    Fsr1Node, GaussianBlurOptions, HashBlurOptions, ImportanceSampledEnvironment, LensflareParams,
     OutlineParams, RecurrentDenoiseOptions, RetroPassOptions, SampleFn, SharpenNode, SsrOptions,
     TemporalReprojectMode, TemporalReprojectOptions,
 };
@@ -998,6 +998,7 @@ pub fn display_quads() -> Vec<DisplayQuad> {
     recurrent_denoise_quads(&mut quads);
     specular_helpers_quads(&mut quads);
     ssr_denoise_page_quads(&mut quads);
+    fsr1_quads(&mut quads);
     denoise_ssao_quads(&mut quads);
 
     quads
@@ -1340,6 +1341,33 @@ fn environment_quads(quads: &mut Vec<DisplayQuad>) {
             float(1.0),
         ]),
     ));
+}
+
+/// `webgpu_upscaling_fsr1` `m36` and `m38`: `fsr1( scenePass )`'s EASU quad
+/// over the half-resolution pass, then its RCAS quad over the EASU target,
+/// at the default sharpness 0.2 without `denoise`.
+fn fsr1_quads(quads: &mut Vec<DisplayQuad>) {
+    let fsr1 = Fsr1Node::new(&input(), float(Fsr1Node::DEFAULT_SHARPNESS), false);
+    for (label, fixture, material) in [
+        (
+            "fsr1_easu",
+            "webgpu_upscaling_fsr1_m36_easu.wgsl",
+            fsr1.easu_material(),
+        ),
+        (
+            "fsr1_rcas",
+            "webgpu_upscaling_fsr1_m38_rcas.wgsl",
+            fsr1.rcas_material(),
+        ),
+    ] {
+        let mut material = material.clone();
+        material.vertex_node = Some(quad_vertex_node());
+        quads.push(DisplayQuad {
+            label,
+            fixture,
+            material,
+        });
+    }
 }
 
 /// `tools/dump-pages/denoise.html` `m03` and `m05`: `denoise()` over the
