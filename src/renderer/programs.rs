@@ -559,6 +559,11 @@ pub struct UniformContext<'a> {
     pub background_rotation: Matrix4,
     pub background_blurriness: f64,
     pub background_intensity: f64,
+    /// `scene.environmentIntensity` of the scene being drawn — what
+    /// `materialEnvIntensity` takes on a draw whose environment is the
+    /// scene's (`EnvironmentNode`'s `reference( 'environmentIntensity',
+    /// 'float', scene )`) rather than the material's own `envMap`.
+    pub scene_environment_intensity: f64,
     /// `scene.fog`'s colour (working space), `near`, `far` and `density` —
     /// whichever the fog kind has; the rest keep their defaults and are never
     /// read, because the other kind's node does not reference them.
@@ -669,6 +674,7 @@ impl Default for UniformContext<'_> {
             background_rotation: Matrix4::identity(),
             background_blurriness: 0.0,
             background_intensity: 1.0,
+            scene_environment_intensity: 1.0,
             fog_color: Color::new(1.0, 1.0, 1.0),
             fog_near: 1.0,
             fog_far: 1000.0,

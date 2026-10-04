@@ -454,3 +454,269 @@ fn element_forms() {
         ]),
     );
 }
+
+#[test]
+fn pack_float() {
+    let uv4 = || vec4_join(vec![uv(), float(0.0), float(1.0)]);
+    assert_body(
+        "pack_float",
+        vec4_join(vec![
+            pack_snorm_2x16(uv()).to_float(),
+            pack_unorm_2x16(uv()).to_float(),
+            pack_half_2x16(uv()).to_float(),
+            pack_snorm_4x8(uv4())
+                .to_float()
+                .add(pack_unorm_4x8(uv4()).to_float()),
+        ]),
+    );
+}
+
+#[test]
+fn unpack_float() {
+    assert_body(
+        "unpack_float",
+        vec4_join(vec![
+            unpack_snorm_2x16(x().mul(1000.0).to_uint()),
+            unpack_unorm_2x16(y().mul(1000.0).to_uint()),
+        ])
+        .add(vec4_join(vec![
+            unpack_half_2x16(x().mul(100.0).to_uint()),
+            float(0.0),
+            float(1.0),
+        ]))
+        .add(unpack_snorm_4x8(y().mul(100.0).to_uint()))
+        .add(unpack_unorm_4x8(x().mul(10.0).to_uint())),
+    );
+}
+
+#[test]
+fn pack_4x8() {
+    assert_body(
+        "pack_4x8",
+        vec4_join(vec![
+            pack_4x_i8(ivec4(x().mul(10.0).to_int(), -2.0, 3.0, -4.0)).to_float(),
+            pack_4x_u8(uvec4(y().mul(10.0).to_uint(), 2.0, 3.0, 4.0)).to_float(),
+            pack_4x_i8_clamp(ivec4(x().mul(300.0).to_int(), -200.0, 3.0, 4.0)).to_float(),
+            pack_4x_u8_clamp(uvec4(y().mul(300.0).to_uint(), 2.0, 3.0, 4.0)).to_float(),
+        ]),
+    );
+}
+
+#[test]
+fn unpack_4x8() {
+    assert_body(
+        "unpack_4x8",
+        unpack_4x_i8(x().mul(1000.0).to_uint())
+            .to_vec4()
+            .add(unpack_4x_u8(y().mul(1000.0).to_uint()).to_vec4())
+            .add(vec4_join(vec![
+                dot_4u8_packed(x().mul(100.0).to_uint(), y().mul(100.0).to_uint()).to_float(),
+                dot_4i8_packed(x().mul(50.0).to_uint(), y().mul(50.0).to_uint()).to_float(),
+                float(0.0),
+                float(1.0),
+            ])),
+    );
+}
+
+#[test]
+fn all_any() {
+    assert_body(
+        "all_any",
+        vec4_join(vec![
+            all(bvec2(x().greater_than(0.5), y().greater_than(0.5))).to_float(),
+            any(bvec3(x().less_than(0.25), y().less_than(0.25), false)).to_float(),
+            uv().greater_than(vec2(0.5, 0.5)).all().to_float(),
+            uv().less_than(vec2(0.5, 0.5)).any().to_float(),
+        ]),
+    );
+}
+
+#[test]
+fn transform_normal() {
+    assert_body(
+        "transform_normal",
+        vec4_join(vec![
+            transform_normal_by_view_matrix(
+                vec3_join(vec![uv(), float(1.0)]),
+                camera_view_matrix(),
+            ),
+            float(1.0),
+        ])
+        .add(vec4_join(vec![
+            vec3_join(vec![y(), x(), float(1.0)])
+                .transform_normal_by_inverse_view_matrix(camera_view_matrix()),
+            float(0.0),
+        ])),
+    );
+}
+
+#[test]
+fn deprecated_aliases() {
+    assert_body(
+        "deprecated_aliases",
+        vec4_join(vec![
+            faceforward(
+                vec3_join(vec![uv(), float(1.0)]),
+                vec3(0.0, 0.0, 1.0),
+                vec3_join(vec![y(), x(), float(0.5)]),
+            ),
+            inversesqrt(x().add(1.0)),
+        ]),
+    );
+}
+
+/// `body` with the §8 let-vs-var divergence (`docs/nodes.md`) normalised
+/// away: `let nodeConstN = X;` becomes `nodeConstN = X;`, and every
+/// `nodeConstN` / `nodeVarN` is renamed `vK` in order of first appearance.
+/// Three numbers its `let`s and `var`s separately; the port writes both as
+/// `var`s and numbers them together, so the names differ while the
+/// statements, their order and every expression match.
+fn canonical(wgsl: &str) -> String {
+    let text = body(wgsl).replace("let nodeConst", "nodeConst");
+    let mut names: Vec<String> = Vec::new();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < text.len() {
+        let rest = &text[i..];
+        let name_len = ["nodeConst", "nodeVar"].iter().find_map(|p| {
+            let digits = rest
+                .strip_prefix(p)?
+                .bytes()
+                .take_while(u8::is_ascii_digit)
+                .count();
+            (digits > 0).then_some(p.len() + digits)
+        });
+        match name_len {
+            Some(len) => {
+                let name = &rest[..len];
+                let k = names.iter().position(|n| n == name).unwrap_or_else(|| {
+                    names.push(name.to_string());
+                    names.len() - 1
+                });
+                out.push_str(&format!("v{k}"));
+                i += len;
+            }
+            None => {
+                let c = rest.chars().next().unwrap();
+                out.push(c);
+                i += c.len_utf8();
+            }
+        }
+    }
+    out
+}
+
+/// Asserts the port's `main` equals three's up to [`canonical`].
+fn assert_canonical(name: &str, node: NodeRef) {
+    let ours = fragment(node);
+    assert_eq!(
+        canonical(&ours),
+        canonical(&fixture(name)),
+        "{name}: main differs\n--- port ---\n{ours}"
+    );
+}
+
+fn filterable_map() -> three_rs::textures::Texture {
+    three_rs::textures::Texture::new(16, 16, Some(vec![0; 4 * 16 * 16]))
+}
+
+#[test]
+fn equirect_direction_matches() {
+    // Three's `phi`, `cosPhi` and `theta` are `let`s; the port's are `var`s.
+    assert_canonical(
+        "equirect_direction",
+        vec4_join(vec![equirect_direction(uv()), float(1.0)])
+            .add(vec4_join(vec![equirect_direction(uv()), float(0.0)])),
+    );
+}
+
+#[test]
+fn matcap_uv_matches() {
+    // The `x` axis is three's `let nodeConst0`, a `var` here.
+    assert_canonical(
+        "matcap_uv",
+        vec4_join(vec![matcap_uv(), float(0.0), float(1.0)]),
+    );
+}
+
+#[test]
+fn max_mip_level_matches() {
+    let map = filterable_map();
+    let wgsl = fragment(vec4_join(vec![
+        max_mip_level(&map),
+        float(0.0),
+        float(0.0),
+        float(1.0),
+    ]));
+    assert_eq!(body(&wgsl), body(&fixture("max_mip_level")), "{wgsl}");
+    // A uniform, not a texture: no binding is declared for the map.
+    assert!(!wgsl.contains("texture_2d"), "{wgsl}");
+}
+
+#[test]
+fn spritesheet_uv_matches() {
+    // `frameNum` is three's `let nodeConstN`, a `var` here.
+    assert_canonical(
+        "spritesheet_uv",
+        vec4_join(vec![
+            spritesheet_uv(vec2(6.0, 4.0), uv(), time()),
+            spritesheet_uv(vec2(3.0, 3.0), uv(), float(0.0)),
+        ]),
+    );
+}
+
+#[test]
+fn triplanar_textures_matches() {
+    let map = filterable_map();
+    assert_canonical(
+        "triplanar_textures",
+        triplanar_textures(
+            &map,
+            None,
+            None,
+            float(2.0),
+            position_world(),
+            normal_world(),
+        ),
+    );
+}
+
+#[test]
+fn texture_bicubic_matches() {
+    let map = filterable_map();
+    assert_canonical("texture_bicubic", texture_bicubic(&map, uv(), float(0.5)));
+}
+
+#[test]
+fn texture_3d_load_and_level() {
+    let volume = three_rs::textures::Data3DTexture::new(
+        vec![0; 8 * 8 * 8],
+        8,
+        8,
+        8,
+        wgpu::TextureFormat::R8Unorm,
+    );
+    volume.set_min_filter(three_rs::textures::MinFilter::Linear);
+    volume.set_mag_filter(three_rs::textures::TextureFilter::Linear);
+    let coord = join(
+        three_rs::nodes::Type::IVec3,
+        vec![
+            x().mul(8.0).to_int(),
+            y().mul(8.0).to_int(),
+            float(2.0).to_int(),
+        ],
+    );
+    let wgsl = fragment(vec4_join(vec![
+        texture_3d_load(&volume, coord).x(),
+        texture_3d_level(&volume, vec3_join(vec![uv(), float(0.5)]), float(1.0)).x(),
+        float(0.0),
+        float(1.0),
+    ]));
+    // Three caches the level tap's `vec3( uv, 0.5 )` in a `let`; the port
+    // writes the join out at its one use (§8).
+    let theirs = inline_let(&body(&fixture("texture_3d")), "nodeConst0");
+    assert_eq!(body(&wgsl), theirs, "{wgsl}");
+    // One binding and one sampler serve both taps.
+    assert_eq!(wgsl.matches("texture_3d<f32>").count(), 1, "{wgsl}");
+    assert_eq!(wgsl.matches(": sampler").count(), 1, "{wgsl}");
+}

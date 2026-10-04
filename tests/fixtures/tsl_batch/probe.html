@@ -28,7 +28,23 @@
 				xor, bitNot, increment, decrement, incrementBefore, decrementBefore, countOneBits, countTrailingZeros, countLeadingZeros,
 				floatBitsToInt, floatBitsToUint, intBitsToFloat, uintBitsToFloat,
 				oscTriangle, oscSquare, oscSawtooth, oscSine, rotateUV, spherizeUV, remap, remapClamp, deltaTime, frameId, time,
-				modelWorldMatrix, uniform, mod, smoothstep, step, positionLocal } = T;
+				modelWorldMatrix, uniform, mod, smoothstep, step, positionLocal,
+				packSnorm2x16, packUnorm2x16, packHalf2x16, packSnorm4x8, packUnorm4x8, unpackSnorm2x16, unpackUnorm2x16, unpackHalf2x16, unpackSnorm4x8, unpackUnorm4x8,
+				pack4xI8, pack4xU8, pack4xI8Clamp, pack4xU8Clamp, unpack4xI8, unpack4xU8, dot4U8Packed, dot4I8Packed, all, any,
+				transformNormalByViewMatrix, transformNormalByInverseViewMatrix, faceforward, inversesqrt, cameraViewMatrix,
+				equirectDirection, matcapUV, maxMipLevel, spritesheetUV, triplanarTextures, textureBicubic, texture3DLoad, texture3DLevel,
+				texture, positionWorld, normalWorld } = T;
+
+			const map = new THREE.DataTexture( new Uint8Array( 4 * 16 * 16 ), 16, 16 );
+			map.minFilter = THREE.LinearMipmapLinearFilter;
+			map.magFilter = THREE.LinearFilter;
+			map.generateMipmaps = true;
+			map.needsUpdate = true;
+			const volume = new THREE.Data3DTexture( new Uint8Array( 8 * 8 * 8 ), 8, 8, 8 );
+			volume.format = THREE.RedFormat;
+			volume.minFilter = THREE.LinearFilter;
+			volume.magFilter = THREE.LinearFilter;
+			volume.needsUpdate = true;
 
 			const probes = [];
 			const probe = ( name, build ) => probes.push( [ name, build ] );
@@ -74,6 +90,20 @@
 			probe( 'timer', () => vec4( deltaTime, float( frameId ), time, 1 ) );
 			probe( 'mod', () => vec4( uv().mod( 0.5 ), x().mod( 0.25 ), float( int( x().mul( 10 ) ).mod( 3 ) ) ).add( vec4( vec3( uv(), 1 ).mod( vec3( 0.5 ) ), 1 ) ).add( vec4( uv(), 0, 1 ).mod( 1 ) ) );
 			probe( 'element_forms', () => vec4( x().smoothstep( 0.2, 0.8 ), y().step( 0.5 ), smoothstep( 0, 1, uv() ) ) );
+			probe( 'pack_float', () => vec4( float( packSnorm2x16( uv() ) ), float( packUnorm2x16( uv() ) ), float( packHalf2x16( uv() ) ), float( packSnorm4x8( vec4( uv(), 0, 1 ) ) ).add( float( packUnorm4x8( vec4( uv(), 0, 1 ) ) ) ) ) );
+			probe( 'unpack_float', () => vec4( unpackSnorm2x16( uint( x().mul( 1000 ) ) ), unpackUnorm2x16( uint( y().mul( 1000 ) ) ) ).add( vec4( unpackHalf2x16( uint( x().mul( 100 ) ) ), 0, 1 ) ).add( unpackSnorm4x8( uint( y().mul( 100 ) ) ) ).add( unpackUnorm4x8( uint( x().mul( 10 ) ) ) ) );
+			probe( 'pack_4x8', () => vec4( float( pack4xI8( ivec4( int( x().mul( 10 ) ), - 2, 3, - 4 ) ) ), float( pack4xU8( uvec4( uint( y().mul( 10 ) ), 2, 3, 4 ) ) ), float( pack4xI8Clamp( ivec4( int( x().mul( 300 ) ), - 200, 3, 4 ) ) ), float( pack4xU8Clamp( uvec4( uint( y().mul( 300 ) ), 2, 3, 4 ) ) ) ) );
+			probe( 'unpack_4x8', () => vec4( unpack4xI8( uint( x().mul( 1000 ) ) ) ).add( vec4( unpack4xU8( uint( y().mul( 1000 ) ) ) ) ).add( vec4( float( dot4U8Packed( uint( x().mul( 100 ) ), uint( y().mul( 100 ) ) ) ), float( dot4I8Packed( uint( x().mul( 50 ) ), uint( y().mul( 50 ) ) ) ), 0, 1 ) ) );
+			probe( 'all_any', () => vec4( float( all( bvec2( x().greaterThan( 0.5 ), y().greaterThan( 0.5 ) ) ) ), float( any( bvec3( x().lessThan( 0.25 ), y().lessThan( 0.25 ), false ) ) ), float( uv().greaterThan( vec2( 0.5 ) ).all() ), float( uv().lessThan( vec2( 0.5 ) ).any() ) ) );
+			probe( 'transform_normal', () => vec4( transformNormalByViewMatrix( vec3( uv(), 1 ), cameraViewMatrix ), 1 ).add( vec4( transformNormalByInverseViewMatrix( vec3( y(), x(), 1 ), cameraViewMatrix ), 0 ) ) );
+			probe( 'deprecated_aliases', () => vec4( faceforward( vec3( uv(), 1 ), vec3( 0, 0, 1 ), vec3( y(), x(), 0.5 ) ), inversesqrt( x().add( 1 ) ) ) );
+			probe( 'equirect_direction', () => vec4( equirectDirection( uv() ), 1 ).add( vec4( equirectDirection(), 0 ) ) );
+			probe( 'matcap_uv', () => vec4( matcapUV, 0, 1 ) );
+			probe( 'max_mip_level', () => vec4( maxMipLevel( texture( map ) ), 0, 0, 1 ) );
+			probe( 'spritesheet_uv', () => vec4( spritesheetUV( vec2( 6, 4 ), uv(), time ), spritesheetUV( vec2( 3, 3 ) ) ) );
+			probe( 'triplanar_textures', () => triplanarTextures( texture( map ), null, null, float( 2 ), positionWorld, normalWorld ) );
+			probe( 'texture_bicubic', () => textureBicubic( texture( map, uv() ), float( 0.5 ) ) );
+			probe( 'texture_3d', () => vec4( texture3DLoad( volume, ivec3( int( x().mul( 8 ) ), int( y().mul( 8 ) ), 2 ) ).x, texture3DLevel( volume, vec3( uv(), 0.5 ), float( 1 ) ).x, 0, 1 ) );
 
 			init();
 
