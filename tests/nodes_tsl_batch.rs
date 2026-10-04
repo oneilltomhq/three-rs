@@ -3,8 +3,11 @@
 //! Every probe here is one material of `tests/fixtures/tsl_batch/probe.html`,
 //! a page that sets each TSL function as a `MeshBasicNodeMaterial`'s
 //! `fragmentNode`; `tests/fixtures/tsl_batch/<probe>.wgsl` is three's dumped
-//! fragment shader for it (`tools/dump.mjs` over that page). Each test builds
-//! the same node graph through the port and compares the `main` body.
+//! fragment shader for it (`tools/dump-webgpu.mjs` over that page). Each test
+//! builds the same node graph through the port and compares the `main` body.
+//! `<probe>.vertex.wgsl` is the same dump's vertex shader, kept for the
+//! probes whose vertex stage the port shapes itself (`tangentWorld`'s varying,
+//! `clipSpace`).
 //!
 //! The comparison normalises the one thing that legitimately differs between
 //! the two builders — the varying's number, which depends on how many
@@ -18,13 +21,30 @@
 use three_rs::materials::{setup, MeshBasicNodeMaterial, SetupContext};
 use three_rs::math::Matrix2;
 use three_rs::nodes::tsl::*;
-use three_rs::nodes::{NodeBuilder, NodeRef};
+use three_rs::nodes::{NodeBuilder, NodeProgram, NodeRef};
 
-fn fragment(node: NodeRef) -> String {
+/// The program for a `MeshBasicNodeMaterial` whose `fragmentNode` is `node`,
+/// set up for a geometry with or without a `tangent` attribute.
+fn program_for(node: NodeRef, has_tangent_attribute: bool) -> NodeProgram {
     let mut material = MeshBasicNodeMaterial::new();
     material.fragment_node = Some(node);
-    let flow = setup(&material, &SetupContext::default(), None);
-    NodeBuilder::new().build(&flow).fragment_wgsl
+    let ctx = SetupContext {
+        has_tangent_attribute,
+        ..SetupContext::default()
+    };
+    let flow = setup(&material, &ctx, None);
+    NodeBuilder::new().build(&flow)
+}
+
+/// The fragment shader on the probe page's default plane, which has no
+/// `tangent` attribute.
+fn fragment(node: NodeRef) -> String {
+    program_for(node, false).fragment_wgsl
+}
+
+/// The fragment shader on the page's `tangentPlane` (`computeTangents()`).
+fn fragment_with_tangents(node: NodeRef) -> String {
+    program_for(node, true).fragment_wgsl
 }
 
 fn fixture(name: &str) -> String {
@@ -84,7 +104,11 @@ fn inline_let(theirs: &str, name: &str) -> String {
 
 /// Asserts the port's `main` body equals three's.
 fn assert_body(name: &str, node: NodeRef) {
-    let ours = fragment(node);
+    assert_body_of(name, fragment(node));
+}
+
+/// [`assert_body`] for a shader already built.
+fn assert_body_of(name: &str, ours: String) {
     let theirs = fixture(name);
     assert_eq!(
         body(&ours),
@@ -532,7 +556,7 @@ fn all_any() {
 }
 
 #[test]
-fn transform_normal() {
+fn transform_normal_by_view_matrices() {
     assert_body(
         "transform_normal",
         vec4_join(vec![
@@ -614,6 +638,123 @@ fn assert_canonical(name: &str, node: NodeRef) {
         canonical(&fixture(name)),
         "{name}: main differs\n--- port ---\n{ours}"
     );
+}
+
+/// `nodeUniformN` renamed `uK` in order of first appearance.
+///
+/// Three numbers its unnamed uniforms across both stages, so a fragment's
+/// object uniforms start wherever the vertex stage's left off (and skip the
+/// vertex-only ones); the port's numbering differs while every uniform, its
+/// group and its type match.
+fn renumber_uniforms(text: &str) -> String {
+    let mut names: Vec<String> = Vec::new();
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find("nodeUniform") {
+        out.push_str(&rest[..at]);
+        let tail = &rest[at + "nodeUniform".len()..];
+        let digits = tail.bytes().take_while(u8::is_ascii_digit).count();
+        let name = &rest[at..at + "nodeUniform".len() + digits];
+        let k = names.iter().position(|n| n == name).unwrap_or_else(|| {
+            names.push(name.to_string());
+            names.len() - 1
+        });
+        out.push_str(&format!("u{k}"));
+        rest = &tail[digits..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// The `var<uniform>` struct members of `wgsl`, as `member -> (buffer, type)`.
+fn uniform_declarations(wgsl: &str) -> std::collections::HashMap<String, (String, String)> {
+    let mut members = std::collections::HashMap::new();
+    for line in wgsl.lines() {
+        let Some(declaration) = line.trim().strip_prefix("var<uniform> ") else {
+            continue;
+        };
+        let (buffer, ty) = declaration
+            .trim_end_matches(';')
+            .split_once(':')
+            .expect("var<uniform> name : type;");
+        let open = format!("struct {} {{", ty.trim());
+        let start = wgsl.find(&open).unwrap_or_else(|| panic!("no `{open}`")) + open.len();
+        let end = wgsl[start..].find("};").expect("unterminated struct") + start;
+        for member in wgsl[start..end].lines() {
+            let member = member.trim().trim_end_matches(',');
+            if let Some((name, member_ty)) = member.split_once(':') {
+                members.insert(
+                    name.trim().to_string(),
+                    (buffer.trim().to_string(), member_ty.trim().to_string()),
+                );
+            }
+        }
+    }
+    members
+}
+
+/// The buffer and declared type of each unnamed uniform `main` reads, in
+/// order of first use: the order [`renumber_uniforms`] numbers them in, so
+/// entry `K` is uniform `uK`. The type is `None` when the shader reads a
+/// uniform it does not declare.
+fn used_uniforms(wgsl: &str) -> Vec<(String, Option<String>)> {
+    let declarations = uniform_declarations(wgsl);
+    let text = canonical(wgsl);
+    let mut seen: Vec<String> = Vec::new();
+    let mut used = Vec::new();
+    let mut rest = text.as_str();
+    while let Some(at) = rest.find("nodeUniform") {
+        let tail = &rest[at + "nodeUniform".len()..];
+        let digits = tail.bytes().take_while(u8::is_ascii_digit).count();
+        let name = rest[at..at + "nodeUniform".len() + digits].to_string();
+        if !seen.contains(&name) {
+            let buffer = rest[..at]
+                .strip_suffix('.')
+                .and_then(|before| before.rsplit(|c: char| !c.is_alphanumeric()).next())
+                .unwrap_or("")
+                .to_string();
+            let ty = declarations.get(&name).map(|(_, ty)| ty.clone());
+            used.push((buffer, ty));
+            seen.push(name);
+        }
+        rest = &tail[digits..];
+    }
+    used
+}
+
+/// [`assert_canonical`] with [`renumber_uniforms`] on both sides, plus each
+/// renumbered uniform's buffer and type, which the renaming hides.
+///
+/// Three's fragment dumps do not always declare what `main` reads (the
+/// `transform_normal_matrix` dump reads `object.nodeUniform0` with no object
+/// struct) and can declare members `main` never reads, so the types are
+/// compared uniform by uniform where three declares one, and the port must
+/// declare every uniform it reads.
+fn assert_renumbered(name: &str, node: NodeRef, theirs: &str) {
+    let ours = fragment(node);
+    assert_eq!(
+        renumber_uniforms(&canonical(&ours)),
+        renumber_uniforms(&canonical(theirs)),
+        "{name}: main differs\n--- port ---\n{ours}"
+    );
+    let (our_uniforms, their_uniforms) = (used_uniforms(&ours), used_uniforms(theirs));
+    assert_eq!(our_uniforms.len(), their_uniforms.len(), "{name}");
+    for (k, (ours_k, theirs_k)) in our_uniforms.iter().zip(&their_uniforms).enumerate() {
+        assert_eq!(
+            ours_k.0, theirs_k.0,
+            "{name}: u{k}'s buffer\n--- port ---\n{ours}"
+        );
+        let our_ty = ours_k
+            .1
+            .as_ref()
+            .unwrap_or_else(|| panic!("{name}: u{k} is read but not declared\n{ours}"));
+        if let Some(their_ty) = &theirs_k.1 {
+            assert_eq!(
+                our_ty, their_ty,
+                "{name}: u{k}'s type\n--- port ---\n{ours}"
+            );
+        }
+    }
 }
 
 fn filterable_map() -> three_rs::textures::Texture {
@@ -719,4 +860,288 @@ fn texture_3d_load_and_level() {
     // One binding and one sampler serve both taps.
     assert_eq!(wgsl.matches("texture_3d<f32>").count(), 1, "{wgsl}");
     assert_eq!(wgsl.matches(": sampler").count(), 1, "{wgsl}");
+}
+
+#[test]
+fn bitangent_geometry_matches() {
+    // The probe draws `tangentPlane`, which has tangents.
+    assert_body_of(
+        "bitangent_geometry",
+        fragment_with_tangents(vec4_join(vec![bitangent_geometry(), float(1.0)])),
+    );
+}
+
+#[test]
+fn bitangent_local_matches() {
+    // The probe draws `tangentPlane`, which has tangents.
+    assert_body_of(
+        "bitangent_local",
+        fragment_with_tangents(vec4_join(vec![bitangent_local(), float(1.0)])),
+    );
+}
+
+#[test]
+fn bitangent_world_matches() {
+    // The probe draws `tangentPlane`, which has tangents.
+    assert_body_of(
+        "bitangent_world",
+        fragment_with_tangents(vec4_join(vec![
+            bitangent_world().add(tangent_world()),
+            float(1.0),
+        ])),
+    );
+}
+
+#[test]
+fn tangent_world_matches() {
+    assert_body(
+        "tangent_world_frame",
+        vec4_join(vec![tangent_world(), float(1.0)]),
+    );
+}
+
+#[test]
+fn parallax_matches() {
+    // Three splats the shared `scale` var for `tangentViewFrame` but writes it
+    // bare in `bitangentViewFrame`; the port splats both. `vec3 * f32` and
+    // `vec3 * vec3( f32 )` are the same value.
+    let theirs = fixture("parallax").replace(
+        "bitangentViewFrame = ( nodeConst5 * nodeVar0 );",
+        "bitangentViewFrame = ( nodeConst5 * vec3<f32>( nodeVar0 ) );",
+    );
+    assert_renumbered(
+        "parallax",
+        vec4_join(vec![
+            parallax_uv(uv(), float(0.1)).xy(),
+            parallax_direction().z(),
+            float(1.0),
+        ]),
+        &theirs,
+    );
+}
+
+#[test]
+fn camera_near_far_and_normal_matrix_match() {
+    assert_body(
+        "camera_near_far",
+        vec4_join(vec![
+            camera_near(),
+            camera_far(),
+            camera_normal_matrix()
+                .mul(vec3_join(vec![uv(), float(1.0)]))
+                .xy(),
+        ]),
+    );
+}
+
+#[test]
+fn model_scopes_match() {
+    assert_body(
+        "model_scopes",
+        vec4_join(vec![
+            model_direction()
+                .add(model_position())
+                .add(model_scale())
+                .add(model_view_position()),
+            model_radius(),
+        ]),
+    );
+}
+
+#[test]
+fn object_scopes_match() {
+    let target = three_rs::core::Object3D::new_node();
+    target.borrow_mut().position.set(1.0, 2.0, 3.0);
+    assert_body(
+        "object_scopes",
+        vec4_join(vec![
+            object_direction(&target)
+                .add(object_position(&target))
+                .add(object_scale(&target))
+                .add(object_view_position(&target)),
+            object_radius(&target).add(1.0),
+        ]),
+    );
+}
+
+#[test]
+fn model_view_precision_matches() {
+    let local = || vec4_join(vec![position_local(), float(1.0)]);
+    assert_renumbered(
+        "model_view_precision",
+        vec4_join(vec![
+            mediump_model_view_matrix()
+                .mul(local())
+                .xyz()
+                .add(highp_model_view_matrix().mul(local()).xyz())
+                .add(highp_model_normal_view_matrix().mul(normal_local())),
+            float(1.0),
+        ]),
+        &fixture("model_view_precision"),
+    );
+}
+
+#[test]
+fn transform_normal_matches() {
+    assert_renumbered(
+        "transform_normal_matrix",
+        vec4_join(vec![
+            transform_normal(vec3_join(vec![uv(), float(1.0)]), model_world_matrix())
+                .add(transform_normal(
+                    vec3_join(vec![y(), x(), float(1.0)]),
+                    camera_view_matrix(),
+                ))
+                .add(vec3_join(vec![x(), float(1.0), y()]).transform_normal(model_normal_matrix())),
+            float(1.0),
+        ]),
+        &fixture("transform_normal_matrix"),
+    );
+}
+
+#[test]
+fn transform_normal_to_view_matches() {
+    assert_renumbered(
+        "transform_normal_to_view",
+        vec4_join(vec![
+            transform_normal_to_view(vec3_join(vec![uv(), float(1.0)])),
+            float(1.0),
+        ]),
+        &fixture("transform_normal_to_view"),
+    );
+}
+
+#[test]
+fn reflect_refract_match() {
+    assert_renumbered(
+        "reflect_refract",
+        vec4_join(vec![
+            reflect_view().add(refract_view()).add(refract_vector()),
+            float(1.0),
+        ]),
+        &fixture("reflect_refract"),
+    );
+}
+
+#[test]
+fn clip_space_matches() {
+    assert_body("clip_space", clip_space().div(clip_space().w()));
+}
+
+/// The statements of a vertex `main`, from `// flow` to its `return`,
+/// normalised.
+fn vertex_body(wgsl: &str) -> String {
+    let start = wgsl.find("// flow").expect("no // flow");
+    let end = wgsl[start..].find("return ").expect("no return") + start;
+    normalise(&wgsl[start..end])
+}
+
+/// Asserts each statement is in three's vertex dump `<name>.vertex.wgsl` and
+/// in the port's vertex `main`.
+fn assert_vertex_contains(name: &str, ours: &str, statements: &[&str]) {
+    let theirs = vertex_body(&fixture(&format!("{name}.vertex")));
+    let got = vertex_body(ours);
+    for statement in statements {
+        let statement = normalise(statement);
+        assert!(
+            theirs.contains(&statement),
+            "{name}: the test's expectation is not in three's vertex dump: {statement}"
+        );
+        assert!(
+            got.contains(&statement),
+            "{name}: vertex main is missing `{statement}`\n--- port ---\n{ours}"
+        );
+    }
+}
+
+#[test]
+fn tangent_world_vertex_on_a_plane_without_tangents() {
+    // The probe's default plane has no `tangent` attribute. Three's
+    // `AttributeNode` then warns and writes `vec4()`'s default in its place,
+    // and the vertex stage declares no input for it (three's dump has only
+    // `position`); a `tangent` slot here would fail the draw for want of a
+    // vertex buffer.
+    let program = program_for(vec4_join(vec![tangent_world(), float(1.0)]), false);
+    assert!(
+        program.attributes.iter().all(|slot| slot.name != "tangent"),
+        "a tangent-less geometry must not get a `tangent` slot: {:?}",
+        program
+            .attributes
+            .iter()
+            .map(|slot| &slot.name)
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        !program.vertex_wgsl.contains("tangent : vec4<f32>"),
+        "{}",
+        program.vertex_wgsl
+    );
+    assert_vertex_contains(
+        "tangent_world_frame",
+        &program.vertex_wgsl,
+        &[
+            "tangentLocal = vec4<f32>( 0.0, 0.0, 0.0, 1.0 ).xyz;",
+            "v_tangentView = ( modelViewMatrix * vec4<f32>( tangentLocal, 0.0 ) ).xyz;",
+            "VERTEX_tangentView = normalize( v_tangentView );",
+            "varyings.v_tangentWorld = normalize( ( render.cameraWorldMatrix * vec4<f32>( VERTEX_tangentView, 0.0 ) ).xyz );",
+        ],
+    );
+
+    // With tangents, the same graph reads the attribute.
+    let program = program_for(vec4_join(vec![tangent_world(), float(1.0)]), true);
+    assert!(
+        program.attributes.iter().any(|slot| slot.name == "tangent"),
+        "{}",
+        program.vertex_wgsl
+    );
+    assert!(
+        vertex_body(&program.vertex_wgsl).contains("tangentLocal = tangent.xyz;"),
+        "{}",
+        program.vertex_wgsl
+    );
+}
+
+#[test]
+fn clip_space_vertex_writes_the_varying() {
+    let program = program_for(clip_space().div(clip_space().w()), false);
+    // Three's vertex output is the `VERTEX_`-prefixed var; the port's is not
+    // (`docs/nodes.md` §67.1), so only the assignment's shape is compared.
+    let theirs = vertex_body(&fixture("clip_space.vertex"));
+    assert!(
+        theirs.contains("varyings.v_clipSpace = VERTEX_v_modelViewProjection;"),
+        "{theirs}"
+    );
+    let got = vertex_body(&program.vertex_wgsl);
+    assert!(
+        got.contains("varyings.v_clipSpace = v_modelViewProjection;"),
+        "{}",
+        program.vertex_wgsl
+    );
+    assert!(
+        program
+            .vertex_wgsl
+            .contains("@location( 0 ) v_clipSpace : vec4<f32>"),
+        "{}",
+        program.vertex_wgsl
+    );
+}
+
+#[test]
+fn clip_space_outside_the_fragment_stage_is_zero() {
+    // Three's `Fn` warns and returns `vec4()` when built in the vertex stage.
+    let mut material = MeshBasicNodeMaterial::new();
+    material.position_node = Some(position_local().add(clip_space().xyz()));
+    let flow = setup(&material, &SetupContext::default(), None);
+    let program = NodeBuilder::new().build(&flow);
+    assert!(
+        !program.vertex_wgsl.contains("v_clipSpace"),
+        "{}",
+        program.vertex_wgsl
+    );
+    assert!(
+        program
+            .vertex_wgsl
+            .contains("vec4<f32>( 0.0, 0.0, 0.0, 0.0 ).xyz"),
+        "{}",
+        program.vertex_wgsl
+    );
 }

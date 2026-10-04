@@ -2602,7 +2602,10 @@ impl Renderer {
                         // A shadow material is `MeshBasicNodeMaterial`: it has
                         // no roughness, so the flag cannot reach any code.
                         geometry_missing_normal: false,
-                        has_tangent_attribute: false,
+                        // What `AttributeNode` checks: a cast-shadow or
+                        // position node that reads `tangent` gets the
+                        // attribute, or a zero on a geometry without one.
+                        has_tangent_attribute: geometry.has_attribute("tangent"),
                         instanced_attributes: Vec::new(),
                     },
                     fog: None,
@@ -2996,7 +2999,10 @@ impl Renderer {
                         // A shadow material is `MeshBasicNodeMaterial`: it has
                         // no roughness, so the flag cannot reach any code.
                         geometry_missing_normal: false,
-                        has_tangent_attribute: false,
+                        // What `AttributeNode` checks: a cast-shadow or
+                        // position node that reads `tangent` gets the
+                        // attribute, or a zero on a geometry without one.
+                        has_tangent_attribute: geometry.has_attribute("tangent"),
                         instanced_attributes: Vec::new(),
                     },
                     fog: None,
@@ -3390,6 +3396,7 @@ impl Renderer {
                 material_alpha_test: item.material.alpha_test,
                 material_rotation: item.material.rotation,
                 material_reflectivity: item.material.reflectivity,
+                material_refraction_ratio: item.material.refraction_ratio,
                 material_shininess: item.material.shininess,
                 material_specular: item.material.specular,
                 material_emissive: item.material.emissive,

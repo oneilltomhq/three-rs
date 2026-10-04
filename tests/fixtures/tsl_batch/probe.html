@@ -33,7 +33,11 @@
 				pack4xI8, pack4xU8, pack4xI8Clamp, pack4xU8Clamp, unpack4xI8, unpack4xU8, dot4U8Packed, dot4I8Packed, all, any,
 				transformNormalByViewMatrix, transformNormalByInverseViewMatrix, faceforward, inversesqrt, cameraViewMatrix,
 				equirectDirection, matcapUV, maxMipLevel, spritesheetUV, triplanarTextures, textureBicubic, texture3DLoad, texture3DLevel,
-				texture, positionWorld, normalWorld } = T;
+				texture, positionWorld, normalWorld,
+				bitangentGeometry, bitangentLocal, bitangentWorld, tangentWorld, parallaxDirection, parallaxUV, cameraNormalMatrix, cameraNear, cameraFar,
+				modelDirection, modelPosition, modelScale, modelViewPosition, modelRadius, objectDirection, objectPosition, objectScale, objectViewPosition, objectRadius,
+				mediumpModelViewMatrix, highpModelViewMatrix, highpModelNormalViewMatrix, transformNormal, transformNormalToView, modelNormalMatrix, normalLocal,
+				reflectView, refractView, refractVector, clipSpace } = T;
 
 			const map = new THREE.DataTexture( new Uint8Array( 4 * 16 * 16 ), 16, 16 );
 			map.minFilter = THREE.LinearMipmapLinearFilter;
@@ -46,8 +50,13 @@
 			volume.magFilter = THREE.LinearFilter;
 			volume.needsUpdate = true;
 
+			const tangentPlane = new THREE.PlaneGeometry( 0.5, 0.5 );
+			tangentPlane.computeTangents();
+			const target = new THREE.Object3D();
+			target.position.set( 1, 2, 3 );
+
 			const probes = [];
-			const probe = ( name, build ) => probes.push( [ name, build ] );
+			const probe = ( name, build, geometry = null ) => probes.push( [ name, build, geometry ] );
 
 			const x = () => uv().x;
 			const y = () => uv().y;
@@ -105,6 +114,20 @@
 			probe( 'texture_bicubic', () => textureBicubic( texture( map, uv() ), float( 0.5 ) ) );
 			probe( 'texture_3d', () => vec4( texture3DLoad( volume, ivec3( int( x().mul( 8 ) ), int( y().mul( 8 ) ), 2 ) ).x, texture3DLevel( volume, vec3( uv(), 0.5 ), float( 1 ) ).x, 0, 1 ) );
 
+			probe( 'bitangent_geometry', () => vec4( bitangentGeometry, 1 ), tangentPlane );
+			probe( 'bitangent_local', () => vec4( bitangentLocal, 1 ), tangentPlane );
+			probe( 'bitangent_world', () => vec4( bitangentWorld.add( tangentWorld ), 1 ), tangentPlane );
+			probe( 'tangent_world_frame', () => vec4( tangentWorld, 1 ) );
+			probe( 'parallax', () => vec4( parallaxUV( uv(), float( 0.1 ) ).xy, parallaxDirection.z, 1 ) );
+			probe( 'camera_near_far', () => vec4( cameraNear, cameraFar, cameraNormalMatrix.mul( vec3( uv(), 1 ) ).xy ) );
+			probe( 'model_scopes', () => vec4( modelDirection.add( modelPosition ).add( modelScale ).add( modelViewPosition ), modelRadius ) );
+			probe( 'object_scopes', () => vec4( objectDirection( target ).add( objectPosition( target ) ).add( objectScale( target ) ).add( objectViewPosition( target ) ), objectRadius( target ).add( 1 ) ) );
+			probe( 'model_view_precision', () => vec4( mediumpModelViewMatrix.mul( vec4( positionLocal, 1 ) ).xyz.add( highpModelViewMatrix.mul( vec4( positionLocal, 1 ) ).xyz ).add( highpModelNormalViewMatrix.mul( normalLocal ) ), 1 ) );
+			probe( 'transform_normal_matrix', () => vec4( transformNormal( vec3( uv(), 1 ) ).add( transformNormal( vec3( y(), x(), 1 ), cameraViewMatrix ) ).add( vec3( x(), 1, y() ).transformNormal( modelNormalMatrix ) ), 1 ) );
+			probe( 'transform_normal_to_view', () => vec4( transformNormalToView( vec3( uv(), 1 ) ), 1 ) );
+			probe( 'reflect_refract', () => vec4( reflectView.add( refractView ).add( refractVector ), 1 ) );
+			probe( 'clip_space', () => clipSpace.div( clipSpace.w ) );
+
 			init();
 
 			async function init() {
@@ -116,15 +139,16 @@
 
 				const geometry = new THREE.PlaneGeometry( 0.5, 0.5 );
 
-				probes.forEach( ( [ name, build ], index ) => {
+				probes.forEach( ( [ name, build, probeGeometry ], index ) => {
 
 					const material = new THREE.MeshBasicNodeMaterial();
 					material.name = name;
 					material.fragmentNode = build();
-					const mesh = new THREE.Mesh( geometry, material );
+					const mesh = new THREE.Mesh( probeGeometry || geometry, material );
 					mesh.position.x = ( index % 6 ) - 2.5;
 					mesh.position.y = Math.floor( index / 6 ) - 2;
 					mesh.renderOrder = index;
+					mesh.frustumCulled = false;
 					scene.add( mesh );
 
 				} );

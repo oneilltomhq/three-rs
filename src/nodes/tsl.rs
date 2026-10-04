@@ -16,9 +16,9 @@ use std::rc::Rc;
 
 use super::builder::{current_context, push_context};
 use super::node::{
-    BufferNode, BufferSource, Builtin, ContextValue, CustomNode, FnDef, InstanceBuffer, Lazy, Node,
-    NodeRef, SampleMode, SettableValue, Type, UniformGroup, UniformNode, UniformSource, VarDef,
-    VaryingDef,
+    BufferNode, BufferSource, Builtin, ContextValue, CustomNode, FnDef, InstanceBuffer, Lazy,
+    LiveValue, Node, NodeRef, Object3DScope, SampleMode, SettableValue, Type, UniformGroup,
+    UniformNode, UniformSource, VarDef, VaryingDef,
 };
 use crate::materials::Side;
 use crate::math::{Color, Matrix3};
@@ -2045,6 +2045,12 @@ impl NodeRef {
 // accessors (`three.js/src/nodes/accessors/`)
 // ---------------------------------------------------------------------------
 
+/// A module-level TSL constant: one node per thread, built on first use.
+///
+/// The body is built with no sub-build layer open, whoever asks first. Three's
+/// constants are created at import, outside any layer, so `modelViewMatrix`
+/// stays `modelViewMatrix` even when the `VERTEX` layer of [`tangent_world`]
+/// is the first to reach it.
 macro_rules! accessor {
     ($(#[$m:meta])* pub(crate) $name:ident, $body:expr) => {
         $(#[$m])*
@@ -2052,7 +2058,7 @@ macro_rules! accessor {
             thread_local! {
                 static CELL: Lazy<NodeRef> = const { Lazy::new() };
             }
-            CELL.with(|c| c.get(|| $body))
+            CELL.with(|c| c.get(|| outside_sub_build(|| $body)))
         }
     };
     ($(#[$m:meta])* $name:ident, $body:expr) => {
@@ -2061,9 +2067,15 @@ macro_rules! accessor {
             thread_local! {
                 static CELL: Lazy<NodeRef> = const { Lazy::new() };
             }
-            CELL.with(|c| c.get(|| $body))
+            CELL.with(|c| c.get(|| outside_sub_build(|| $body)))
         }
     };
+}
+
+/// Run `f` with no sub-build layer open — see [`accessor!`].
+fn outside_sub_build<R>(f: impl FnOnce() -> R) -> R {
+    let _top = push_context(|cx| cx.sub_build = None);
+    f()
 }
 
 accessor!(
@@ -2355,6 +2367,19 @@ accessor!(
     )
 );
 accessor!(
+    /// `materialRefractionRatio` — `uniform( 0 ).onObjectUpdate( ( { material
+    /// } ) => material.refractionRatio )`: the material's
+    /// [`refraction_ratio`](crate::materials::MeshBasicNodeMaterial::refraction_ratio),
+    /// per object.
+    material_refraction_ratio,
+    uniform(
+        UniformSource::MaterialRefractionRatio,
+        Type::F32,
+        UniformGroup::Object,
+        None
+    )
+);
+accessor!(
     /// `materialEnvRotation` — the env map's rotation matrix.
     material_env_rotation,
     uniform(
@@ -2457,6 +2482,23 @@ accessor!(
     )
 );
 accessor!(
+    /// `cameraNormalMatrix` — `uniform( camera.normalMatrix ).setName(
+    /// 'cameraNormalMatrix' )`, in the render group.
+    ///
+    /// `WebGPURenderer` never updates a camera's `normalMatrix`, so the value
+    /// three uploads is the identity the camera was constructed with; the port
+    /// uploads the same (see [`UniformSource::CameraNormalMatrix`]). Under an
+    /// `ArrayCamera` three switches to a per-sub-camera array; the port keeps
+    /// the one uniform, as it does for [`camera_world_matrix`].
+    camera_normal_matrix,
+    uniform(
+        UniformSource::CameraNormalMatrix,
+        Type::Mat3,
+        UniformGroup::Render,
+        Some("cameraNormalMatrix")
+    )
+);
+accessor!(
     /// `cameraProjectionMatrixInverse`. Named, like the other camera matrices:
     /// `uniform( camera.projectionMatrixInverse ).setName(
     /// 'cameraProjectionMatrixInverse' )`.
@@ -2528,13 +2570,171 @@ accessor!(
     to_var(Some("normalLocal"), normal_geometry())
 );
 accessor!(
-    /// `modelViewMatrix` — `cameraViewMatrix * modelWorldMatrix`.
+    /// `modelViewMatrix` — [`mediump_model_view_matrix`] in a var.
     model_view_matrix,
+    to_var(Some("modelViewMatrix"), mediump_model_view_matrix())
+);
+/// `mediumpModelViewMatrix` — `cameraViewMatrix.mul( modelWorldMatrix )`,
+/// multiplied on the GPU. No var of its own: [`model_view_matrix`] is this
+/// product `toVar`'d.
+///
+/// Three's is one shared node; this builds a fresh product per call. The
+/// vertex stage always reaches the product through `modelViewMatrix`, and the
+/// port counts a node's uses across both stages where three counts them per
+/// stage, so a shared node read once in a fragment would be promoted to a var
+/// there that three writes inline.
+pub fn mediump_model_view_matrix() -> NodeRef {
+    camera_view_matrix().mul(model_world_matrix())
+}
+accessor!(
+    /// `highpModelViewMatrix` — `uniform( 'mat4' ).onObjectUpdate( … )
+    /// .toVar( 'highpModelViewMatrix' )`: `camera.matrixWorldInverse *
+    /// object.matrixWorld`, multiplied on the CPU in double precision and
+    /// uploaded per object.
+    ///
+    /// Three's `ArrayCamera` branch (a `uniformArray` indexed by
+    /// `cameraIndex`) is not ported; under an `ArrayCamera` the product is the
+    /// array camera's own view matrix, as for [`camera_world_matrix`].
+    highp_model_view_matrix,
     to_var(
-        Some("modelViewMatrix"),
-        camera_view_matrix().mul(model_world_matrix())
+        Some("highpModelViewMatrix"),
+        uniform(
+            UniformSource::HighpModelViewMatrix,
+            Type::Mat4,
+            UniformGroup::Object,
+            None
+        )
     )
 );
+accessor!(
+    /// `highpModelNormalViewMatrix` — `uniform( 'mat3' ).onObjectUpdate( … )
+    /// .toVar( 'highpModelNormalViewMatrix' )`: the normal matrix of
+    /// [`highp_model_view_matrix`]'s product, per object. Same `ArrayCamera`
+    /// caveat.
+    highp_model_normal_view_matrix,
+    to_var(
+        Some("highpModelNormalViewMatrix"),
+        uniform(
+            UniformSource::HighpModelNormalViewMatrix,
+            Type::Mat3,
+            UniformGroup::Object,
+            None
+        )
+    )
+);
+
+/// `Object3DNode( scope )`'s uniform: unnamed, in the object group, so it
+/// takes a `nodeUniformN` slot, as three's does.
+fn object_3d_uniform(scope: Object3DScope, object: Option<LiveValue>) -> NodeRef {
+    let ty = match scope {
+        Object3DScope::Radius => Type::F32,
+        _ => Type::Vec3,
+    };
+    uniform(
+        UniformSource::Object3D { scope, object },
+        ty,
+        UniformGroup::Object,
+        None,
+    )
+}
+accessor!(
+    /// `modelDirection` — `ModelNode( DIRECTION )`: the drawn object's world
+    /// direction (`object.getWorldDirection()`), per object.
+    model_direction,
+    object_3d_uniform(Object3DScope::Direction, None)
+);
+accessor!(
+    /// `modelPosition` — `ModelNode( POSITION )`: the drawn object's world
+    /// position, per object.
+    model_position,
+    object_3d_uniform(Object3DScope::Position, None)
+);
+accessor!(
+    /// `modelScale` — `ModelNode( SCALE )`: the drawn object's world scale,
+    /// per object.
+    model_scale,
+    object_3d_uniform(Object3DScope::Scale, None)
+);
+accessor!(
+    /// `modelViewPosition` — `ModelNode( VIEW_POSITION )`: the drawn object's
+    /// world position in the rendering camera's view space, per object.
+    model_view_position,
+    object_3d_uniform(Object3DScope::ViewPosition, None)
+);
+accessor!(
+    /// `modelRadius` — `ModelNode( RADIUS )`: the radius of the drawn object's
+    /// geometry's bounding sphere in world space, per object.
+    model_radius,
+    object_3d_uniform(Object3DScope::Radius, None)
+);
+/// `clipSpace` — `Position.js`' `Fn( builder => builder.context.clipSpace
+/// .toVarying( 'v_clipSpace' ) ).once()()`: the material's clip-space vertex
+/// output (its `vertexNode`, else `modelViewProjection`), carried into the
+/// fragment stage. Fragment stage only, as in three: set up from a
+/// vertex-stage node it warns once and yields `vec4()`, where reading the
+/// varying would feed the vertex output back into itself.
+///
+/// The vertex output is not known when the node is made — a material's
+/// `vertex_node` is set independently of its `fragment_node` — so the varying
+/// wraps a [`CustomNode`] that reads `builder.context.clipSpace` at build
+/// time, which [`NodeBuilder::build`](crate::nodes::NodeBuilder::build)
+/// installs from the flow's position, as `NodeMaterial.setup()` does.
+///
+/// Cached in a plain cell, and not filled outside the sub-build layers as an
+/// `accessor!` is: nothing in it can take a layer prefix (it holds no var,
+/// and the port never prefixes a varying's name), and the stage test runs
+/// at build time, not here.
+pub fn clip_space() -> NodeRef {
+    /// `builder.context.clipSpace`, the varying's value.
+    struct ClipSpace;
+    impl CustomNode for ClipSpace {
+        fn type_name(&self) -> &'static str {
+            "ClipSpace"
+        }
+        fn node_type(&self) -> Type {
+            Type::Vec4
+        }
+        fn setup(&self, builder: &crate::nodes::NodeBuilder) -> NodeRef {
+            builder
+                .context("clipSpace")
+                .unwrap_or_else(|| vec4(0.0, 0.0, 0.0, 0.0))
+        }
+    }
+    /// The `Fn`'s stage test, around the varying.
+    struct ClipSpaceFn(NodeRef);
+    impl CustomNode for ClipSpaceFn {
+        fn type_name(&self) -> &'static str {
+            "ClipSpaceFn"
+        }
+        fn node_type(&self) -> Type {
+            Type::Vec4
+        }
+        // An inlined `Fn()` call: `ShaderCallNodeInternal` is never cached in
+        // a var of its own, so `clipSpace` read twice is the varying twice.
+        fn is_cacheable(&self) -> bool {
+            false
+        }
+        fn setup(&self, builder: &crate::nodes::NodeBuilder) -> NodeRef {
+            if builder.is_fragment_stage() {
+                return self.0.clone();
+            }
+            thread_local! { static WARNED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) }; }
+            if !WARNED.with(|w| w.replace(true)) {
+                eprintln!("three-rs: TSL: `clipSpace` is only available in fragment stage.");
+            }
+            vec4(0.0, 0.0, 0.0, 0.0)
+        }
+    }
+    thread_local! { static CELL: Lazy<NodeRef> = const { Lazy::new() }; }
+    CELL.with(|c| {
+        c.get(|| {
+            custom(ClipSpaceFn(to_varying(
+                Some("v_clipSpace"),
+                custom(ClipSpace),
+            )))
+        })
+    })
+}
 /// `positionView` — `Position.js`' `Fn( builder =>
 /// builder.context.setupPositionView() ).once( [ 'POSITION', 'VERTEX' ] )`.
 pub fn position_view() -> NodeRef {
@@ -2579,7 +2779,10 @@ accessor!(
 /// `positionViewDirection`.
 ///
 /// Not an `accessor!`: `overrideNodes` can replace it wholesale (§27), and a
-/// singleton cell would hand the replacement to the next material too.
+/// singleton cell would hand the replacement to the next material too. The
+/// cell is still filled outside any sub-build layer, as an `accessor!` is,
+/// so the first caller's layer (`reflect_view` in the `NORMAL` layer, say)
+/// does not prefix the var for every later one.
 pub fn position_view_direction() -> NodeRef {
     if let Some(node) = override_node(|o| &o.position_view_direction) {
         return node;
@@ -2587,27 +2790,27 @@ pub fn position_view_direction() -> NodeRef {
     thread_local! { static CELL: Lazy<NodeRef> = const { Lazy::new() }; }
     CELL.with(|c| {
         c.get(|| {
-            to_var(
-                Some("positionViewDirection"),
-                to_varying(Some("v_positionViewDirection"), position_view().negate()).normalize(),
-            )
+            outside_sub_build(|| {
+                to_var(
+                    Some("positionViewDirection"),
+                    to_varying(Some("v_positionViewDirection"), position_view().negate())
+                        .normalize(),
+                )
+            })
         })
     })
 }
-/// `normalFlat` — `positionView.dFdx().cross( positionView.dFdy() ).normalize()
-/// .toVar( 'normalFlat' )`. `dpdy()` carries WGSL's sign flip, so this prints as
-/// `normalize( cross( dpdx( v_positionView ), - dpdy( v_positionView ) ) )`.
-pub fn normal_flat() -> NodeRef {
-    thread_local! { static CELL: Lazy<NodeRef> = const { Lazy::new() }; }
-    CELL.with(|c| {
-        c.get(|| {
-            to_var(
-                Some("normalFlat"),
-                cross(dpdx(position_view()), dpdy(position_view())).normalize(),
-            )
-        })
-    })
-}
+accessor!(
+    /// `normalFlat` — `positionView.dFdx().cross( positionView.dFdy() )
+    /// .normalize().toVar( 'normalFlat' )`. `dpdy()` carries WGSL's sign
+    /// flip, so this prints as `normalize( cross( dpdx( v_positionView ), -
+    /// dpdy( v_positionView ) ) )`.
+    normal_flat,
+    to_var(
+        Some("normalFlat"),
+        cross(dpdx(position_view()), dpdy(position_view())).normalize()
+    )
+);
 
 /// `normalViewGeometry` — `Fn( builder => builder.isFlatShading() ? normalFlat :
 /// transformNormalToView( normalLocal ).toVarying( 'v_normalViewGeometry'
@@ -2715,7 +2918,10 @@ fn tangent_frame() -> (NodeRef, NodeRef) {
     if let Some(pair) = TANGENT_VIEW.with(|m| m.borrow().get(&key).cloned()) {
         return pair;
     }
-    if current_context(|cx| cx.has_tangent) {
+    // `builder.subBuildFn === 'VERTEX' || builder.geometry.hasAttribute(
+    // 'tangent' )`: the vertex layer always takes the attribute, which reads
+    // as zero on a geometry that has none.
+    if current_context(|cx| cx.has_tangent || cx.sub_build == Some("VERTEX")) {
         let pair = tangent_attribute_frame();
         TANGENT_VIEW.with(|m| m.borrow_mut().insert(key, pair.clone()));
         return pair;
@@ -2788,8 +2994,8 @@ fn tangent_frame() -> (NodeRef, NodeRef) {
 /// expression over the *mapped* normal, in the `NORMAL` layer it is a vertex
 /// expression over the geometric one.
 fn tangent_attribute_frame() -> (NodeRef, NodeRef) {
-    let tangent_geometry = attribute("tangent", Type::Vec4);
-    let tangent_local = to_var(Some("tangentLocal"), tangent_geometry.clone().xyz());
+    let tangent_geometry = tangent_geometry();
+    let tangent_local = tangent_local();
 
     let flat = current_context(|cx| cx.flat_shading);
     let front_side = |value: NodeRef| {
@@ -2802,17 +3008,22 @@ fn tangent_attribute_frame() -> (NodeRef, NodeRef) {
 
     // One varying for both layers: three creates it in the shared `VERTEX`
     // sub-build, so the `NORMAL` layer reads the same `v_tangentView` rather
-    // than declaring a prefixed one of its own.
+    // than declaring a prefixed one of its own. Filled outside any layer, as
+    // an `accessor!` is. Nothing in it takes a prefix today (a varying's name
+    // never does, and `modelViewMatrix` is an `accessor!`), so this only keeps
+    // a future var inside from inheriting the first caller's layer.
     thread_local! { static TANGENT_VARYING: Lazy<NodeRef> = const { Lazy::new() }; }
     let tangent = TANGENT_VARYING
         .with(|c| {
             c.get(|| {
-                to_varying(
-                    Some("v_tangentView"),
-                    model_view_matrix()
-                        .mul(vec4_join(vec![tangent_local, float(0.0)]))
-                        .xyz(),
-                )
+                outside_sub_build(|| {
+                    to_varying(
+                        Some("v_tangentView"),
+                        model_view_matrix()
+                            .mul(vec4_join(vec![tangent_local, float(0.0)]))
+                            .xyz(),
+                    )
+                })
             })
         })
         .normalize();
@@ -2843,6 +3054,147 @@ pub fn tangent_view() -> NodeRef {
 /// `bitangentView`.
 pub fn bitangent_view() -> NodeRef {
     tangent_frame().1
+}
+
+accessor!(
+    /// `tangentGeometry` — `attribute( 'tangent', 'vec4' )`: the geometry's
+    /// tangent, its handedness in `w`.
+    tangent_geometry,
+    attribute("tangent", Type::Vec4)
+);
+accessor!(
+    /// `tangentLocal` — `tangentGeometry.xyz.toVar( 'tangentLocal' )`.
+    tangent_local,
+    to_var(Some("tangentLocal"), tangent_geometry().xyz())
+);
+
+/// One node per [`normal_key`]: the stand-in for three's per-build
+/// `nodeData` that every accessor reading `normalView`, the sub-build layer or
+/// the material's shading flags needs, so a second material in the process
+/// does not inherit the first one's node.
+fn keyed_by_normal(
+    cell: &'static std::thread::LocalKey<RefCell<HashMap<NormalViewKey, NodeRef>>>,
+    build: impl FnOnce() -> NodeRef,
+) -> NodeRef {
+    let key = normal_key();
+    if let Some(node) = cell.with(|m| m.borrow().get(&key).cloned()) {
+        return node;
+    }
+    let node = build();
+    cell.with(|m| m.borrow_mut().insert(key, node.clone()));
+    node
+}
+
+/// `tangentWorld` — `tangentView.transformDirection( cameraWorldMatrix )
+/// .toVarying( 'v_tangentWorld' ).normalize().toVar( 'tangentWorld' )`.
+///
+/// The varying's value is built in the `VERTEX` sub-build, as three builds a
+/// varying's node, so its `tangentView` is the tangent attribute's
+/// (`VERTEX_tangentView`) whether or not the geometry has one — which is what
+/// three's dump shows, a zero tangent included.
+pub fn tangent_world() -> NodeRef {
+    thread_local! {
+        static CELL: RefCell<HashMap<NormalViewKey, NodeRef>> = RefCell::new(HashMap::new());
+    }
+    keyed_by_normal(&CELL, || {
+        let world = in_sub_build("VERTEX", || {
+            transform_direction(camera_world_matrix(), tangent_view())
+        });
+        to_var(
+            Some("tangentWorld"),
+            to_varying(Some("v_tangentWorld"), world).normalize(),
+        )
+    })
+}
+
+/// `Bitangent.js`' `getBitangent( crossNormalTangent, varyingName )`:
+/// `crossNormalTangent.mul( tangentGeometry.w ).xyz`, hoisted into a varying
+/// only inside the `NORMAL` sub-build of a smooth-shaded material — three
+/// names it through `getSubBuildProperty()`, hence the prefixed name.
+///
+/// **Divergence:** three's `getBitangent` is `.once( [ 'NORMAL' ] )`, a cache
+/// that ignores its arguments, so whichever of `bitangentGeometry`,
+/// `bitangentLocal` and `bitangentWorld` a material builds first lends its
+/// cross product to the other two. Each one here keeps its own.
+fn get_bitangent(cross_normal_tangent: NodeRef, varying_in_normal_layer: &'static str) -> NodeRef {
+    let bitangent = cross_normal_tangent.mul(tangent_geometry().w());
+    let in_normal_layer = current_context(|cx| cx.sub_build) == Some("NORMAL");
+    if in_normal_layer && !current_context(|cx| cx.flat_shading) {
+        to_varying(Some(varying_in_normal_layer), bitangent)
+    } else {
+        bitangent
+    }
+}
+
+/// `bitangentGeometry` — `getBitangent( normalGeometry.cross( tangentGeometry
+/// ), 'v_bitangentGeometry' ).normalize().toVar( 'bitangentGeometry' )`.
+pub fn bitangent_geometry() -> NodeRef {
+    thread_local! {
+        static CELL: RefCell<HashMap<NormalViewKey, NodeRef>> = RefCell::new(HashMap::new());
+    }
+    keyed_by_normal(&CELL, || {
+        to_var(
+            Some("bitangentGeometry"),
+            get_bitangent(
+                cross(normal_geometry(), tangent_geometry().xyz()),
+                "NORMAL_v_bitangentGeometry",
+            )
+            .normalize(),
+        )
+    })
+}
+
+/// `bitangentLocal` — `getBitangent( normalLocal.cross( tangentLocal ),
+/// 'v_bitangentLocal' ).normalize().toVar( 'bitangentLocal' )`.
+pub fn bitangent_local() -> NodeRef {
+    thread_local! {
+        static CELL: RefCell<HashMap<NormalViewKey, NodeRef>> = RefCell::new(HashMap::new());
+    }
+    keyed_by_normal(&CELL, || {
+        to_var(
+            Some("bitangentLocal"),
+            get_bitangent(
+                cross(normal_local(), tangent_local()),
+                "NORMAL_v_bitangentLocal",
+            )
+            .normalize(),
+        )
+    })
+}
+
+/// `bitangentWorld` — `getBitangent( normalWorld.cross( tangentWorld ),
+/// 'v_bitangentWorld' ).normalize().toVar( 'bitangentWorld' )`.
+pub fn bitangent_world() -> NodeRef {
+    thread_local! {
+        static CELL: RefCell<HashMap<NormalViewKey, NodeRef>> = RefCell::new(HashMap::new());
+    }
+    keyed_by_normal(&CELL, || {
+        to_var(
+            Some("bitangentWorld"),
+            get_bitangent(
+                cross(normal_world(), tangent_world()),
+                "NORMAL_v_bitangentWorld",
+            )
+            .normalize(),
+        )
+    })
+}
+
+/// `parallaxDirection` — `AccessorsUtils.js`' `positionViewDirection.mul(
+/// TBNViewMatrix )`: the view direction in tangent space, unnormalised (three
+/// leaves its `.normalize()` commented out).
+pub fn parallax_direction() -> NodeRef {
+    thread_local! {
+        static CELL: RefCell<HashMap<NormalViewKey, NodeRef>> = RefCell::new(HashMap::new());
+    }
+    keyed_by_normal(&CELL, || position_view_direction().mul(tbn_view_matrix()))
+}
+
+/// `parallaxUV( uv, scale )` — `uv.sub( parallaxDirection.mul( scale ) )`.
+/// The difference is a `vec3`, as three's is: the `vec2` uv is widened to
+/// meet the direction, so take `.xy()` for a texture coordinate.
+pub fn parallax_uv(uv: impl Into<NodeRef>, scale: impl Into<NodeRef>) -> NodeRef {
+    uv.into().sub(parallax_direction().mul(scale.into()))
 }
 /// `normalWorld` — `normalView` rotated out of view space.
 pub fn normal_world() -> NodeRef {
@@ -2879,20 +3231,59 @@ accessor!(
 pub fn model_view_projection() -> NodeRef {
     position_view_pair().1
 }
-accessor!(
-    /// `reflectVector` — `ReflectVectorNode`.
-    reflect_vector,
-    to_var(
-        Some("reflectVector"),
-        camera_world_matrix()
-            .mul(vec4_join(vec![
-                reflect(position_view_direction().negate(), normal_view()),
-                float(0.0)
-            ]))
-            .xyz()
-            .normalize()
-    )
-);
+/// `reflectView` — `ReflectVector.js`' `positionViewDirection.negate()
+/// .reflect( normalView )`: the view ray mirrored about the normal, in view
+/// space.
+pub fn reflect_view() -> NodeRef {
+    thread_local! {
+        static CELL: RefCell<HashMap<NormalViewKey, NodeRef>> = RefCell::new(HashMap::new());
+    }
+    keyed_by_normal(&CELL, || {
+        reflect(position_view_direction().negate(), normal_view())
+    })
+}
+/// `refractView` — `positionViewDirection.negate().refract( normalView,
+/// materialRefractionRatio )`: the view ray bent by the material's
+/// `refraction_ratio`, in view space.
+pub fn refract_view() -> NodeRef {
+    thread_local! {
+        static CELL: RefCell<HashMap<NormalViewKey, NodeRef>> = RefCell::new(HashMap::new());
+    }
+    keyed_by_normal(&CELL, || {
+        refract(
+            position_view_direction().negate(),
+            normal_view(),
+            material_refraction_ratio(),
+        )
+    })
+}
+/// `reflectVector` — `reflectView.transformDirection( cameraWorldMatrix )
+/// .toVar( 'reflectVector' )`, in world space. Keyed on the normal like
+/// [`reflect_view`], which it reads.
+pub fn reflect_vector() -> NodeRef {
+    thread_local! {
+        static CELL: RefCell<HashMap<NormalViewKey, NodeRef>> = RefCell::new(HashMap::new());
+    }
+    keyed_by_normal(&CELL, || {
+        to_var(
+            Some("reflectVector"),
+            transform_direction(camera_world_matrix(), reflect_view()),
+        )
+    })
+}
+/// `refractVector` — `refractView.transformDirection( cameraWorldMatrix )
+/// .toVar( 'refractVector' )`, in world space.
+pub fn refract_vector() -> NodeRef {
+    thread_local! {
+        static CELL: RefCell<HashMap<NormalViewKey, NodeRef>> = RefCell::new(HashMap::new());
+    }
+    keyed_by_normal(&CELL, || {
+        to_var(
+            Some("refractVector"),
+            transform_direction(camera_world_matrix(), refract_view()),
+        )
+    })
+}
 
 // Properties the material setup assigns to explicitly.
 /// `diffuseColor` — the `DiffuseColor` property, `NodeMaterial::setup_diffuse_color()`'s output.
@@ -4158,20 +4549,84 @@ pub fn compute_node(flow: crate::nodes::ComputeFlow, output: NodeRef) -> NodeRef
     })
 }
 
+/// The explicit object's `matrixWorld`, read when the buffer is written.
+fn object_matrix_world(object: &crate::core::Node, name: &'static str) -> LiveValue {
+    let object = object.downgrade();
+    LiveValue::new(move || {
+        let object = object
+            .upgrade()
+            .unwrap_or_else(|| panic!("three-rs: {name}( object ) outlived its object"));
+        let world = object.borrow().matrix_world;
+        world.elements.to_vec()
+    })
+}
+
+/// `objectDirection( object3d )` — `Object3DNode( DIRECTION, object3d )`:
+/// `object3d.getWorldDirection()`, an object-group `vec3`. As in three, the
+/// read refreshes `object3d`'s world matrix (`updateWorldMatrix( true, false
+/// )`) first, and a camera's direction is negated (`Camera.getWorldDirection()`),
+/// so a camera yields the way it looks. Each call is a uniform of its own, as
+/// each `Object3DNode` is in three.
+pub fn object_direction(object: &crate::core::Node) -> NodeRef {
+    let object = object.downgrade();
+    let direction = LiveValue::new(move || {
+        let object = object
+            .upgrade()
+            .unwrap_or_else(|| panic!("three-rs: objectDirection( object ) outlived its object"));
+        let mut direction = object.get_world_direction();
+        if object.borrow().is_camera {
+            direction.negate();
+        }
+        vec![direction.x, direction.y, direction.z]
+    });
+    object_3d_uniform(Object3DScope::Direction, Some(direction))
+}
+
+/// `objectPosition( object3d )` — `Object3DNode( POSITION, object3d )`:
+/// `object3d`'s world position.
+pub fn object_position(object: &crate::core::Node) -> NodeRef {
+    object_3d_uniform(
+        Object3DScope::Position,
+        Some(object_matrix_world(object, "objectPosition")),
+    )
+}
+
+/// `objectScale( object3d )` — `Object3DNode( SCALE, object3d )`:
+/// `object3d`'s world scale.
+pub fn object_scale(object: &crate::core::Node) -> NodeRef {
+    object_3d_uniform(
+        Object3DScope::Scale,
+        Some(object_matrix_world(object, "objectScale")),
+    )
+}
+
+/// `objectViewPosition( object3d )` — `Object3DNode( VIEW_POSITION, object3d
+/// )`: `object3d`'s world position in the rendering camera's view space.
+pub fn object_view_position(object: &crate::core::Node) -> NodeRef {
+    object_3d_uniform(
+        Object3DScope::ViewPosition,
+        Some(object_matrix_world(object, "objectViewPosition")),
+    )
+}
+
+/// `objectRadius( object3d )` — `Object3DNode( RADIUS, object3d )`. As in
+/// three, the sphere is the bounding sphere of the *drawn* object's geometry
+/// (`frame.object.geometry`), scaled by `object3d`'s `matrixWorld`; a draw
+/// with no geometry uploads 0.
+pub fn object_radius(object: &crate::core::Node) -> NodeRef {
+    object_3d_uniform(
+        Object3DScope::Radius,
+        Some(object_matrix_world(object, "objectRadius")),
+    )
+}
+
 /// `objectWorldMatrix( object3d )` — `Object3DNode( WORLD_MATRIX, object3d )`
 /// with an explicit object: an object-group `mat4` that reads
 /// `object3d.matrixWorld` whenever the buffer is written, in a draw or in a
 /// kernel.
 pub fn object_world_matrix(object: &crate::core::Node) -> NodeRef {
-    let object = object.downgrade();
     uniform(
-        UniformSource::Live(crate::nodes::node::LiveValue::new(move || {
-            let object = object
-                .upgrade()
-                .expect("three-rs: objectWorldMatrix( object ) outlived its object");
-            let world = object.borrow().matrix_world;
-            world.elements.to_vec()
-        })),
+        UniformSource::Live(object_matrix_world(object, "objectWorldMatrix")),
         Type::Mat4,
         UniformGroup::Object,
         None,
