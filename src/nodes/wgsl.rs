@@ -202,6 +202,18 @@ pub(crate) fn constant(ty: Type, values: &[f64]) -> String {
     }
 }
 
+/// `NodeBuilder.generateConst( type )` with no value: the default of the
+/// math class three reaches for, which is zero except for `Vector4`'s `w` of
+/// 1 — so `vec4<f32>( 0.0, 0.0, 0.0, 1.0 )` — and an empty constructor for a
+/// `mat3` or `mat4`.
+pub(crate) fn default_constant(ty: Type) -> String {
+    match ty {
+        Type::Mat3 | Type::Mat4 => format!("{}()", type_name(ty)),
+        Type::Vec4 | Type::UVec4 | Type::IVec4 | Type::BVec4 => constant(ty, &[0.0, 0.0, 0.0, 1.0]),
+        _ => constant(ty, &vec![0.0; ty.components()]),
+    }
+}
+
 /// JS `Math.round()`: halves round towards +∞ (`Math.round( -2.5 )` is -2).
 fn js_round(v: f64) -> f64 {
     (v + 0.5).floor()

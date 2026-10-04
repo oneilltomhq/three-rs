@@ -14,6 +14,7 @@ three-rs/pmrem_scene
 three-rs/renderer_blending
 three-rs/renderer_compute_indirect
 three-rs/renderer_compute_points
+three-rs/renderer_compute_subgroups
 three-rs/renderer_cube_camera
 three-rs/renderer_external_device
 three-rs/renderer_half_float_target
@@ -31,6 +32,7 @@ three-rs/renderer_textures
 three-rs/renderer_vertex_colors
 three-rs/renderer_viewport
 three-rs/traa_frames
+three-rs/gtao_frames
 three-rs/velocity_frames
 sdf-text/batched_text_culling
 sdf-text/batched_text_refill

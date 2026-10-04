@@ -93,10 +93,8 @@ clamped case emits the same text as before, and every existing
 
 ## Merge note
 
-`gtao-denoise` (#267) also replaces `main`'s `wgsl::CLAMP_WRAP_SNIPPET`
-with a `NodeBuilder::wrap_function`, but with a different signature
-(`wgsl::wrap_function_name` / `wgsl::wrap_function`) and helper strings that
-end in `"\n"`, which three's do not. Whichever of the two lands second
-should keep this branch's `NodeBuilder::wrap_function` and
-`wgsl::wrap_function_2d` (with `CLAMP_WRAP_SNIPPET` gone, as here) and take
-only `Texture::wrapping()` from `gtao-denoise`.
+`gtao-denoise` (#267) landed its own `NodeBuilder::wrap_function` first,
+built on `wgsl::wrap_function_name` / `wgsl::wrap_function` with helper
+strings ending in `"\n"`, which three's do not. The merge of `main` into
+this branch kept this branch's `wgsl::wrap_function_2d` behind that
+builder method, and kept `Texture::wrapping()` from `gtao-denoise`.

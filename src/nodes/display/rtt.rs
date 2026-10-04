@@ -78,11 +78,16 @@ pub fn rtt(node: NodeRef) -> RttNode {
 ///
 /// Upstream it returns its argument untouched when the node is already a
 /// texture or sample node, and `passNode.getTextureNode()` for a pass. The port
-/// has those two cases in the type system — a
+/// leaves the texture and pass cases to the type system — a
 /// [`PassNode`](crate::renderer::PassNode) hands out its own texture node and a
-/// `NodeRef` that is already a texture is already a texture — so the only case
-/// left is the one that actually builds something, and this is a spelling of
-/// [`rtt`] that says why the caller wants it.
+/// `NodeRef` that is already a texture is already a texture — so this is a
+/// spelling of [`rtt`] that says why the caller wants it.
+///
+/// It does not pass a [`SampleNode`](crate::nodes::tsl::SampleNode) through:
+/// one converted to a `NodeRef` and handed here is drawn into the target at
+/// `uv()` and sampled from there, where three would sample the callback
+/// directly. Call the `SampleNode`'s own `sample( uv )` instead
+/// (`docs/nodes.md` §70.4).
 pub fn convert_to_texture(node: NodeRef) -> RttNode {
     rtt(node)
 }

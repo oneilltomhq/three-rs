@@ -228,6 +228,7 @@ fn main() {
             instanced_attributes: Vec::new(),
             array_cameras: 0,
             orthographic: false,
+            ambient_occlusion: None,
         },
     );
 

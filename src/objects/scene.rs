@@ -73,6 +73,17 @@ pub struct Scene {
     /// the render-group uniform `BackgroundNode` puts on `getTextureLevel`, so
     /// changing it is a uniform write and not a new program.
     pub background_blurriness: f64,
+    /// `scene.backgroundIntensity` — the factor `BackgroundNode` multiplies
+    /// the background colour by. Like [`Scene::background_blurriness`] it is
+    /// a render-group uniform, so changing it is a uniform write.
+    pub background_intensity: f64,
+    /// `scene.environmentIntensity` — the factor `EnvironmentNode` scales the
+    /// radiance and irradiance of [`Scene::environment`] (or
+    /// [`Scene::environment_node`]) by, on every material that takes the
+    /// scene's environment instead of carrying its own. A material with its
+    /// own `pmrem_env` reads `envMapIntensity` instead, which the port keeps
+    /// at 1.
+    pub environment_intensity: f64,
     /// `scene.environment` — the default environment map for every material in
     /// the scene that does not carry one of its own.
     ///
@@ -91,6 +102,12 @@ pub struct Scene {
     ///
     /// [`MeshBasicNodeMaterial::set_needs_update`]: crate::materials::MeshBasicNodeMaterial::set_needs_update
     pub environment: Option<crate::materials::environment::PmremHandle>,
+    /// `scene.environmentRotation` — the rotation `materialEnvRotation` applies
+    /// to [`Scene::environment`] (or [`Scene::environment_node`]) on every
+    /// material that has no `envMap` of its own. Three's uniform is
+    /// `makeRotationFromEuler( rotation ).transpose()`, an object-group `mat4`,
+    /// so changing it is a uniform write, not a new program.
+    pub environment_rotation: crate::math::Euler,
     /// `scene.environmentNode` set by hand to a graph of `pmremTexture()`s.
     /// `NodeManager.getEnvironmentNode()` returns it ahead of the node it would
     /// make from [`Scene::environment`], so it wins when both are set. The same
@@ -98,11 +115,6 @@ pub struct Scene {
     ///
     /// [`MeshBasicNodeMaterial::set_needs_update`]: crate::materials::MeshBasicNodeMaterial::set_needs_update
     pub environment_node: Option<crate::materials::environment::EnvironmentNode>,
-    /// `scene.environmentIntensity` — the factor `materialEnvIntensity`
-    /// applies to the scene environment's radiance and irradiance for every
-    /// material without an environment of its own. A uniform, so changing it
-    /// rebuilds nothing.
-    pub environment_intensity: f64,
     /// `scene.fog` — a classic [`Fog`](super::Fog) or
     /// [`FogExp2`](super::FogExp2). The renderer turns it into a fog node
     /// whose parameters are render-group uniforms (`NodeManager.updateFog()`),
@@ -129,9 +141,11 @@ impl Default for Scene {
             node: object.into_node(),
             background: None,
             background_blurriness: 0.0,
-            environment: None,
-            environment_node: None,
+            background_intensity: 1.0,
             environment_intensity: 1.0,
+            environment: None,
+            environment_rotation: crate::math::Euler::default(),
+            environment_node: None,
             fog: None,
             fog_node: None,
             override_material: None,

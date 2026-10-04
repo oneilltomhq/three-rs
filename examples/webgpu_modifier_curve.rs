@@ -19,8 +19,9 @@
 //!
 //! Not ported: the `TransformControls` and the `Raycaster`. The page only
 //! creates the helper's scene entry on a `pointerdown` that hits a handle,
-//! so neither draws anything on the graded frame, and the port has no
-//! `TransformControls`.
+//! so neither draws anything on the graded frame. The crate has
+//! `addons::controls::TransformControls`, but this page does not wire it up
+//! yet: the host's controls hook below is typed for `OrbitControls`.
 
 use std::rc::Rc;
 
@@ -166,8 +167,8 @@ pub fn resize(app: &mut App, width: f64, height: f64) {
 }
 
 /// The example's controls, for a host that has a pointer. `None` here:
-/// the page's only controls are the `TransformControls`, which the port does
-/// not have.
+/// the page's only controls are the `TransformControls`, which this page does
+/// not wire up yet.
 pub fn controls(_app: &mut App) -> Option<&mut OrbitControls> {
     None
 }
