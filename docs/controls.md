@@ -1,8 +1,8 @@
 # Controls
 
 `three_rs::addons::controls` ports three.js' `examples/jsm/controls/` classes
-that the WebGPU example pages need: `OrbitControls`, `FirstPersonControls` and
-`FlyControls`. `TransformControls` (3 pages) is not ported yet. The
+that the WebGPU example pages need: `OrbitControls`, `FirstPersonControls`,
+`FlyControls` and `TransformControls`. The
 `three-rs-controls` workspace crate (`addons/controls/`) is a different thing,
 a map camera over a ground that is not a port; see the README's "Addons".
 
@@ -26,9 +26,13 @@ a map camera over a ground that is not a port; see the README's "Addons".
 - **The camera is an argument.** The camera belongs to the application and
   the controls sit beside it, so the methods that touch it take it. Orbit
   takes `&mut PerspectiveCamera` because it reads `fov`; FirstPerson and Fly
-  only need an `Object3D` and take a `&Node` (`&camera.node`).
+  only need an `Object3D` and take a `&Node` (`&camera.node`). Transform
+  takes any `TransformCamera` (perspective or orthographic), since it
+  raycasts through it.
 - **Events are return values.** There is no `EventDispatcher`. Where the JS
   dispatches `change`, `update` returns the condition it dispatches on.
+  TransformControls dispatches from many methods, so each of them returns the
+  `Vec<TransformControlsEvent>` it would have dispatched, in order.
 - **Keys.** FirstPerson and Fly share `KeyCode`; OrbitControls keeps its own
   four-arrow `Key` (inside a `KeyEvent` with modifiers). The split is
   deliberate, and Orbit's API is left as it is.
@@ -88,6 +92,67 @@ Routing: the JS listens only on the element itself (no pointer capture, no
 `onPointerDown` reads `event.button` for touch as well, where browsers report
 0, so send a touch press as `MouseButton::Left`.
 
+## TransformControls
+
+`examples/jsm/controls/TransformControls.js`: the translate, rotate and scale
+gizmo, with its picker meshes, helper lines and drag plane. The port builds
+the same graph three builds (the same names, handle order, geometry,
+transforms, `renderOrder` of infinity and material colours and opacities) under
+the node `get_helper()` returns, which the host adds to its scene. The drag
+math is the JS's, operation for operation, including the JS's own quirks:
+snaps tested for truthiness, `Math.round`, the `|| scaleSnap` that turns a
+scale rounded to 0 back into the snap, and the substring tests on axis names.
+
+| JS | port |
+|---|---|
+| `new TransformControls( camera, el )` | `TransformControls::new()` plus `set_element_size(w, h)` |
+| `getHelper()` | `get_helper() -> &Node` |
+| `attach( object )` / `detach()` / `reset()` | the same, each returning its events |
+| `setMode` / `setSpace` / `setSize` / `setTranslationSnap` / `setRotationSnap` / `setScaleSnap` | `set_mode(Mode)`, `set_space(Space)`, `set_size`, `set_*_snap(Option<f64>)` |
+| `setColors( x, y, z, active )` | `set_colors(Color, Color, Color, Color)` |
+| `getRaycaster()` | `get_raycaster()` |
+| `getMode()`, `axis`, `dragging`, `worldPosition`, `eye`, … | getters of the same names in snake case |
+| `enabled`, `showX` … `showE`, `minX` … `maxZ` | public fields |
+| `pointerdown` / `pointermove` / `pointerup` | `on_pointer_down(&e, camera)` / `on_pointer_move(&e, camera)` / `on_pointer_up(&e)` with a `TransformPointerEvent` |
+| `pointerHover` / `pointerDown` / `pointerMove` / `pointerUp` (`{ x, y, button }` in NDC) | `pointer_hover` / `pointer_down` / `pointer_move` / `pointer_up` with `Option<&Pointer>` |
+| the helper's `updateMatrixWorld` overrides, run by the renderer | `update(camera)` |
+| `addEventListener( 'change' \| 'objectChange' \| 'mouseDown' \| 'mouseUp' \| '<prop>-changed', … )` | the `Vec<TransformControlsEvent>` each call returns |
+| `viewport`, `document.pointerLockElement` | the `viewport: Option<Vector4>` and `pointer_locked` fields |
+
+`TransformCamera` is `RenderCamera` plus the gizmo's size factor, and is
+implemented for `PerspectiveCamera` and `OrthographicCamera`.
+
+Routing:
+
+- **Capture on down.** The JS captures the pointer on `pointerdown` (unless the
+  pointer is locked), so send moves and the up until the button is released,
+  even after the pointer leaves the element.
+- **Touch has no hover.** Hover listens for mouse and pen only, so a touch
+  first picks a handle in its own `pointerdown`. Pass the right
+  `PointerType` and the port does the same.
+- **Call `update(camera)` once a frame, before rendering.** In three the
+  helper's matrix update runs inside `renderer.render`; here the host calls it,
+  after the attached object and the camera are where they will be drawn.
+  Pointer methods raycast against the gizmo as the last `update` left it, as
+  three's do against the last render.
+
+Differences, all in the struct's doc comment:
+
+- **`toneMapped: false` is dropped.** The port's materials have no
+  tone-mapping switch, so under a tone-mapped output the gizmo's colours are
+  tone mapped too.
+- **Plain fields send nothing.** `enabled`, the `show*` flags and the `min*` /
+  `max*` limits are `defineProperty` properties in the JS, whose assignment
+  dispatches `<name>-changed` and `change`. They are fields here and send no
+  events; the setters (`set_mode` and the rest) do.
+- **Per-handle materials.** Three's pickers share one invisible material; the
+  port gives every handle its own. Picker colours differ, but pickers are
+  never drawn.
+- **Per-instance working state.** The module-level `_dirVector` and raycaster
+  belong to each instance.
+- **No listeners.** `connect()`, `disconnect()`, `dispose()` and pointer
+  capture are the host's.
+
 ## The gate
 
 Each port is checked against three's own class, run under node:
@@ -97,6 +162,7 @@ Each port is checked against three's own class, run under node:
 | `OrbitControls` | `tools/orbit_controls_reference.mjs` | (run live) | `tests/addons_orbit_controls.rs` | 1e-9 |
 | `FirstPersonControls` | `tools/first_person_controls_reference.mjs` | `tests/fixtures/first_person_controls.json` | `tests/addons_first_person_controls.rs` | 1e-9 |
 | `FlyControls` | `tools/fly_controls_reference.mjs` | `tests/fixtures/fly_controls.json` | `tests/addons_fly_controls.rs` | 1e-9 |
+| `TransformControls` | `tools/transform_controls_reference.mjs` | `tests/fixtures/transform_controls.json` | `tests/addons_transform_controls.rs` | 1e-9 |
 
 A script loads the class out of the three.js checkout (`THREE_JS_DIR`, at the
 revision CI pins), constructs it with no element so it registers no listeners,
@@ -106,7 +172,16 @@ scenarios, and records the camera's position and quaternion (and, for Fly,
 whether `change` fired) after every step. The test hard-codes the same
 scenarios, replays them through the port, and compares every number.
 
-The FirstPerson and Fly fixtures are committed, so their tests compare
+TransformControls records more per step: the events dispatched, the object's
+transform, `axis`, `mode`, `dragging`, `rotationAngle`, which handles are
+visible and highlighted, and the plane's orientation, plus on marked steps
+every handle's transform and colour, the world matrices and the working
+vectors. The fixture also holds the whole gizmo graph, which a separate test
+compares node for node (names, types, transforms, materials, and geometry by
+vertex and index counts and coordinate sums). Its test module lists the
+branches no scenario reaches.
+
+The FirstPerson, Fly and Transform fixtures are committed, so their tests compare
 everywhere, node or not. Where a checkout and node are present, each test also
 reruns its script into a scratch file and compares the port against that, so
 a fixture that no longer matches the pinned three.js fails; with `CI` set, a

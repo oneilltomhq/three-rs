@@ -23,11 +23,11 @@ This matrix judges every exported name in three.js revision 5f610f5 (r187) — `
 | renderers | 39 | 9 | 9 | 3 | 18 | 43% |
 | nodes | 141 | 91 | 28 | 17 | 5 | 67% |
 | tsl | 683 | 407 | 40 | 217 | 19 | 61% |
-| addons/controls | 9 | 1 | 3 | 5 | 0 | 11% |
+| addons/controls | 9 | 1 | 4 | 4 | 0 | 11% |
 | addons/loaders | 71 | 6 | 2 | 63 | 0 | 8% |
 | addons/postprocessing | 30 | 0 | 0 | 0 | 30 | — |
 | addons/other | 102 | 11 | 4 | 64 | 23 | 14% |
-| **total** | **1315** | **652** | **123** | **423** | **117** | **54%** |
+| **total** | **1315** | **652** | **124** | **422** | **117** | **54%** |
 
 TSL by family:
 
@@ -167,7 +167,7 @@ Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `ShapePath` | Present | ShapePath (src/extras/shape_path.rs:25) | tests/extras_core.rs |  |
 | `CurvePath` | Present | CurvePath (src/extras/curve_path.rs:35) | tests/extras_core.rs |  |
 | `Curve` | Present | Curve trait (src/extras/curve.rs:126) | tests/extras_curves.rs, tests/extras_core.rs |  |
-| `Controls` | Absent | — | — | no shared Controls base (connect/disconnect/update); no base type; OrbitControls, FirstPersonControls and FlyControls (src/addons/controls/) each stand alone |
+| `Controls` | Absent | — | — | no shared Controls base (connect/disconnect/update); no base type; OrbitControls, FirstPersonControls, FlyControls and TransformControls (src/addons/controls/) each stand alone |
 | `DataUtils` | Present | to_half_float/from_half_float (src/extras/data_utils.rs:71) | tests/hdr_loader.rs (bit-exact vs three) |  |
 | `ImageUtils` | N.A. | — | — | DOM canvas |
 | `ShapeUtils` | Present | area/is_clock_wise/triangulate_shape (src/extras/shape_utils.rs:8) | tests/extras_core.rs, tests/geometries_shape_oracle.rs |  |
@@ -580,7 +580,7 @@ Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ## addons/controls
 
-9 rows: 1 Present, 3 Partial, 5 Absent, 0 N.A.
+9 rows: 1 Present, 4 Partial, 4 Absent, 0 N.A.
 
 | three.js name | verdict | three-rs symbol | verified by | note |
 |---|---|---|---|---|
@@ -592,7 +592,7 @@ Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `OrbitControls` | Partial | addons::controls::OrbitControls (src/addons/controls/orbit_controls.rs:209) | tests/addons_orbit_controls.rs; webgpu_loader_gltf et al. | no touch gestures, no OrthographicCamera branch, no change/start/end events |
 | `PointerLockControls` | Absent | — | — |  |
 | `TrackballControls` | Absent | — | — |  |
-| `TransformControls` | Absent | — | — | comment only: examples/webgpu_modifier_curve.rs:20 ("Not ported") |
+| `TransformControls` | Partial | addons::controls::TransformControls (src/addons/controls/transform_controls.rs:1144) | tests/addons_transform_controls.rs (three's class under node, 17 scenarios, 1e-9; gizmo graph compared node for node) | drag math and gizmo/picker/helper graph match three; `toneMapped: false` dropped (no tone-mapping switch on the port's materials); `enabled`, `show*`, `min*`/`max*` are plain fields that dispatch no `-changed`/`change`; events returned as values, DOM listeners replaced by input methods, the host calls update(camera) where three's renderer runs the helper's updateMatrixWorld; see docs/controls.md |
 
 ## addons/loaders
 
@@ -1678,7 +1678,7 @@ The first refresh of this matrix closed the previous top five. Velocity and TRAA
 
 1. **The screen-space effect nodes** (`GTAONode`, `SSRNode`, `SSGINode`, `SSSNode`, `DenoiseNode`, `DepthOfFieldNode`; `ao()` 2 pages, `ssr()` 2, `ssgi()` 2, `sss()` 1, `dof()` 1, `denoise` 6). Each needs a velocity target and a temporal resolve, and both now exist; these pages are the direct payoff of the velocity work. Porting them also gives the depth reads (`viewportDepthTexture`, `linearDepth`, `getViewPosition`) their first graded consumer.
 2. **EventDispatcher** (issues 153, 159). 8 pages subscribe to `change` or `finished` events. In ordinary use these are render-on-demand behind OrbitControls and chaining animation clips when one ends, and neither works in the port today. `AnimationMixer` and `AnimationAction` fire nothing.
-3. **Controls** (`TransformControls`, 3 pages). `FirstPersonControls` (8 pages) and `FlyControls` (1) are now ported and gated against three's classes (`docs/controls.md`); `TransformControls` is the remaining one, and it is bigger: a gizmo with its own scene, raycasting and materials.
+3. **The TransformControls pages** (`webgpu_modifier_curve`, `webgpu_shadowmap_progressive`, `webgpu_tsl_compute_attractors_particles`). `FirstPersonControls` (8 pages), `FlyControls` (1) and now `TransformControls` are ported and gated against three's classes (`docs/controls.md`). What is left is wiring the gizmo into the pages: `webgpu_modifier_curve`'s port still leaves it out, and the viewer's controls hook is typed for `OrbitControls`.
 4. **`transformNormalToView`** (6 pages). One line; the port's `webgpu_tsl_raging_sea` already writes it inline.
 5. **`WaterMesh`** (2 pages) and the remaining display files (`OutlineNode`, `SMAANode`, `Lut3DNode`, `FilmNode`, `LensflareNode`, 1 to 2 pages each). Small, self-contained, and each unlocks one page.
 
