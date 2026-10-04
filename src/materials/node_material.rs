@@ -105,12 +105,13 @@ pub struct SetupContext {
     /// gets the screen-derivative one. It changes both stages' code, so it is
     /// part of the program's cache key.
     pub has_tangent_attribute: bool,
-    /// The geometry's `InstancedBufferAttribute`s by name —
-    /// `isInstancedBufferAttribute`, which sets their vertex buffer's
-    /// `stepMode` to `instance`. It changes the pipeline, not the WGSL, and is
-    /// in the key for that reason; see
-    /// [`NodeProgram::instanced_attributes`](crate::nodes::NodeProgram).
-    pub instanced_attributes: Vec<String>,
+    /// `builder.geometry.attributes` — each attribute's name, typed-array
+    /// kind, item size, `normalized`, step mode and interleaved layout, from
+    /// [`BufferGeometry::attribute_descs`](crate::core::BufferGeometry::attribute_descs).
+    /// `AttributeNode` declares its vertex input in the attribute's own type
+    /// and the pipeline reads it in the attribute's own format, so both the
+    /// WGSL and the vertex layout depend on it, and it is in the key.
+    pub geometry_attributes: Vec<crate::core::AttributeDesc>,
     /// `viewportOpaqueMipTexture()` — the renderer's mipped copy of the frame
     /// as it stood when the last opaque object had been drawn, which is what a
     /// transmissive material reads through. `None` on every pass that makes no
@@ -859,6 +860,7 @@ fn setup_inner(
         vertex_statements: Vec::new(),
         position,
         geometry_has_tangent: ctx.has_tangent_attribute,
+        geometry_attributes: ctx.geometry_attributes.clone(),
     }
 }
 

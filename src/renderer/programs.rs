@@ -150,8 +150,8 @@ impl Program {
         });
 
         // `WebGPUAttributeUtils.createShaderVertexBuffers()`: the attributes
-        // grouped into buffers — one per geometry attribute, one per instanced
-        // buffer, in first-use order. The layouts are computed from the same
+        // grouped into buffers — one per geometry attribute or interleaved
+        // buffer, one per instanced buffer, in first-use order. The layouts are computed from the same
         // `AttributeSlot`s the renderer binds from, so a slot and its buffer
         // cannot disagree.
         let vertex_layouts = node
@@ -167,8 +167,8 @@ impl Program {
                 attributes: desc
                     .attributes
                     .iter()
-                    .map(|(location, ty, offset)| wgpu::VertexAttribute {
-                        format: vertex_format(*ty),
+                    .map(|(location, _, offset, format)| wgpu::VertexAttribute {
+                        format: *format,
                         offset: *offset,
                         shader_location: *location,
                     })
@@ -411,21 +411,6 @@ fn layout_entry(binding: u32, desc: &BindingDesc) -> wgpu::BindGroupLayoutEntry 
             }),
             count: None,
         },
-    }
-}
-
-fn vertex_format(ty: Type) -> wgpu::VertexFormat {
-    match ty {
-        Type::Vec2 => wgpu::VertexFormat::Float32x2,
-        Type::Vec3 => wgpu::VertexFormat::Float32x3,
-        Type::Vec4 => wgpu::VertexFormat::Float32x4,
-        Type::F32 => wgpu::VertexFormat::Float32,
-        // `WebGPUAttributeUtils.createAttribute()` reads the format off the
-        // attribute's own typed array: `skinIndex` is a `Uint32Array` by the
-        // time it reaches the GPU, so `uvec4` is `uint32x4`, not a float format
-        // the shader casts.
-        Type::UVec4 => wgpu::VertexFormat::Uint32x4,
-        other => panic!("three-rs: {other:?} is not a vertex attribute type"),
     }
 }
 

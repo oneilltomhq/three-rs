@@ -49,7 +49,7 @@ fn shape(buffers: &[VertexBufferDesc]) -> Vec<BufferShape> {
                 desc.instanced,
                 desc.attributes
                     .iter()
-                    .map(|(_, ty, offset)| (*ty, *offset))
+                    .map(|(_, ty, offset, _)| (*ty, *offset))
                     .collect(),
             )
         })
@@ -80,7 +80,7 @@ fn every_attribute_has_its_own_shader_location() {
     let buffers = layout(true);
     let mut locations: Vec<u32> = buffers
         .iter()
-        .flat_map(|desc| desc.attributes.iter().map(|(location, _, _)| *location))
+        .flat_map(|desc| desc.attributes.iter().map(|(location, _, _, _)| *location))
         .collect();
     let before = locations.len();
     locations.sort_unstable();

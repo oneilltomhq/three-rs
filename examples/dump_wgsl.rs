@@ -114,7 +114,9 @@ fn show_into(
         println!("  vertex buffers:");
         for (slot, desc) in buffers.iter().enumerate() {
             let kind = match &desc.source {
-                three_rs::nodes::builder::VertexBufferSource::Geometry(name) => name.to_string(),
+                three_rs::nodes::builder::VertexBufferSource::Geometry(slot) => {
+                    slot.name.to_string()
+                }
                 three_rs::nodes::builder::VertexBufferSource::Instance(buffer) => {
                     format!("{:?} x{}", buffer.source, buffer.count)
                 }
@@ -225,7 +227,7 @@ fn main() {
             vertex_color_size: 0,
             geometry_missing_normal: false,
             has_tangent_attribute: false,
-            instanced_attributes: Vec::new(),
+            geometry_attributes: Vec::new(),
             array_cameras: 0,
             orthographic: false,
             ambient_occlusion: None,
@@ -736,7 +738,7 @@ fn main() {
             // the attribute is read whole rather than widened from a `vec3`.
             vertex_color_size: 4,
             has_tangent_attribute: false,
-            instanced_attributes: Vec::new(),
+            geometry_attributes: Vec::new(),
             ..SetupContext::default()
         };
 
@@ -1877,7 +1879,7 @@ fn main() {
         SetupContext {
             environment: Some(Environment::Pmrem(environment.handle())),
             has_tangent_attribute: true,
-            instanced_attributes: Vec::new(),
+            geometry_attributes: Vec::new(),
             ..SetupContext::default()
         },
     );

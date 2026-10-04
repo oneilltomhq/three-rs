@@ -14,6 +14,8 @@ use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
+use crate::core::{AttributeDesc, AttributeLayout};
+
 use super::frame::{NodeUpdate, NodeUpdateType, UpdateNode};
 use super::node::{
     BufferNode, BufferSource, Builtin, ContextValue, CustomNode, FnDef, InstanceBuffer, Node,
@@ -181,17 +183,40 @@ pub struct AttributeSlot {
     /// The name in the shader — a geometry attribute's own name, or
     /// `nodeAttributeN` for a generated one.
     pub name: String,
-    /// The attribute's WGSL type.
+    /// The attribute's WGSL type — the input's declared type, which for a
+    /// geometry attribute is `getTypeFromAttribute()` of the attribute itself,
+    /// not the type the node graph reads it as.
     pub ty: Type,
+    /// The `GPUVertexFormat` the pipeline reads the attribute's bytes as.
+    pub format: wgpu::VertexFormat,
     /// Where the attribute's data comes from.
     pub source: AttributeSource,
+}
+
+/// A geometry attribute's place in its vertex buffer —
+/// `createShaderVertexBuffers()`'s per-attribute layout, from the
+/// [`AttributeDesc`](crate::core::AttributeDesc) the renderer handed over.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct GeometrySlot {
+    /// The attribute's name on the geometry.
+    pub name: &'static str,
+    /// `arrayStride` of its buffer, in bytes.
+    pub array_stride: u64,
+    /// Its offset within one stride, in bytes.
+    pub offset: u64,
+    /// `stepMode: 'instance'`.
+    pub instanced: bool,
+    /// Attributes with the same `Some( group )` are views of one
+    /// `InterleavedBuffer` and share a vertex buffer; `None` is a buffer of
+    /// its own.
+    pub group: Option<usize>,
 }
 
 /// Where one [`AttributeSlot`]'s data comes from.
 #[derive(Clone, Debug)]
 pub enum AttributeSource {
-    /// A named `BufferGeometry` attribute, stepping once per vertex.
-    Geometry(&'static str),
+    /// A named `BufferGeometry` attribute.
+    Geometry(GeometrySlot),
     /// An `InstancedBufferAttribute` view: the shared per-instance buffer plus
     /// this attribute's offset within one instance, in floats.
     Instance {
@@ -205,8 +230,10 @@ pub enum AttributeSource {
 /// Where one `GPUVertexBufferLayout` gets its bytes.
 #[derive(Clone, Debug)]
 pub enum VertexBufferSource {
-    /// A named `BufferGeometry` attribute.
-    Geometry(&'static str),
+    /// A `BufferGeometry` attribute — for an interleaved buffer, the first
+    /// of its views the program reads; every view resolves to the same
+    /// buffer.
+    Geometry(GeometrySlot),
     /// A shared per-instance buffer.
     Instance(Rc<InstanceBuffer>),
 }
@@ -225,8 +252,8 @@ pub struct VertexBufferDesc {
     pub array_stride: u64,
     /// `stepMode: 'instance'`.
     pub instanced: bool,
-    /// `( shaderLocation, type, offset in bytes )`.
-    pub attributes: Vec<(u32, Type, u64)>,
+    /// `( shaderLocation, type, offset in bytes, format )`.
+    pub attributes: Vec<(u32, Type, u64, wgpu::VertexFormat)>,
 }
 
 /// One `ComputeNode` — `Fn( () => { … } )().compute( count, workgroupSize )`.
@@ -330,13 +357,6 @@ pub struct NodeProgram {
     /// (`WGSLNodeBuilder.enableSubGroups()`). See `docs/nodes.md` §84.3.
     pub subgroups: bool,
     pub(crate) cache_key: u64,
-    /// The geometry attributes that are `InstancedBufferAttribute`s, which
-    /// step once per instance. Not the builder's to know — three reads
-    /// `isInstancedBufferAttribute` off the geometry in
-    /// `WebGPUAttributeUtils.createShaderVertexBuffers()` — so the renderer
-    /// fills it from [`SetupContext::instanced_attributes`](crate::materials::SetupContext)
-    /// after the build, through [`with_instanced_attributes`](Self::with_instanced_attributes).
-    pub(crate) instanced_attributes: Vec<String>,
     /// `nodeBuilderState.updateBeforeNodes`: every node the material reaches
     /// that has an `updateBefore()`, in the order the build met them. A
     /// `ComputeNode` read as a value (`renderer.compute( this )`, once per
@@ -358,25 +378,10 @@ pub struct NodeProgram {
 }
 
 impl NodeProgram {
-    /// Mark `names` as per-instance geometry attributes, and fold them into
-    /// the cache key: the step mode is baked into the pipeline, so the same
-    /// WGSL over a per-vertex `offset` and a per-instance one is two programs.
-    #[doc(hidden)]
-    pub fn with_instanced_attributes(mut self, names: &[String]) -> Self {
-        if names.is_empty() {
-            return self;
-        }
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        self.cache_key.hash(&mut hasher);
-        names.hash(&mut hasher);
-        self.cache_key = hasher.finish();
-        self.instanced_attributes = names.to_vec();
-        self
-    }
-
     /// `WebGPUAttributeUtils.createShaderVertexBuffers( renderObject )`: the
     /// attributes grouped into vertex buffers, in first-use order — geometry
-    /// attributes one per buffer, instanced attributes one buffer per
+    /// attributes one per buffer except views of one `InterleavedBuffer`,
+    /// which share one, and instanced attributes one buffer per
     /// `InstanceBuffer`.
     #[doc(hidden)]
     pub fn vertex_buffers(&self) -> Vec<VertexBufferDesc> {
@@ -385,12 +390,24 @@ impl NodeProgram {
         for (location, slot) in self.attributes.iter().enumerate() {
             let location = location as u32;
             match &slot.source {
-                AttributeSource::Geometry(name) => out.push(VertexBufferDesc {
-                    source: VertexBufferSource::Geometry(name),
-                    array_stride: (slot.ty.components() * 4) as u64,
-                    instanced: self.instanced_attributes.iter().any(|n| n == name),
-                    attributes: vec![(location, slot.ty, 0)],
-                }),
+                AttributeSource::Geometry(geometry) => {
+                    let entry = (location, slot.ty, geometry.offset, slot.format);
+                    let existing = geometry.group.and_then(|group| {
+                        out.iter_mut().find(|desc| match &desc.source {
+                            VertexBufferSource::Geometry(other) => other.group == Some(group),
+                            VertexBufferSource::Instance(_) => false,
+                        })
+                    });
+                    match existing {
+                        Some(desc) => desc.attributes.push(entry),
+                        None => out.push(VertexBufferDesc {
+                            source: VertexBufferSource::Geometry(geometry.clone()),
+                            array_stride: geometry.array_stride,
+                            instanced: geometry.instanced,
+                            attributes: vec![entry],
+                        }),
+                    }
+                }
                 AttributeSource::Instance { buffer, offset } => {
                     let id = Rc::as_ptr(buffer) as *const u8 as usize;
                     let existing = out.iter_mut().find(|desc| match &desc.source {
@@ -399,7 +416,7 @@ impl NodeProgram {
                         }
                         VertexBufferSource::Geometry(_) => false,
                     });
-                    let entry = (location, slot.ty, (*offset * 4) as u64);
+                    let entry = (location, slot.ty, (*offset * 4) as u64, slot.format);
                     match existing {
                         Some(desc) => desc.attributes.push(entry),
                         None => out.push(VertexBufferDesc {
@@ -790,6 +807,8 @@ pub struct NodeBuilder {
     array_cameras: Option<ArrayCameraNodes>,
     /// [`MaterialFlow::geometry_has_tangent`] for the flow being built.
     geometry_has_tangent: bool,
+    /// [`MaterialFlow::geometry_attributes`] for the flow being built.
+    geometry_attributes: Vec<AttributeDesc>,
 }
 
 /// `Camera.js`' `ArrayCamera` arm: `uniformArray( matrices ).element(
@@ -851,6 +870,7 @@ impl NodeBuilder {
             output_type: Type::Vec4,
             array_cameras: None,
             geometry_has_tangent: true,
+            geometry_attributes: Vec::new(),
         };
         for s in &mut b.stages {
             // Statements in `fn main` sit one tab in.
@@ -1628,6 +1648,61 @@ impl NodeBuilder {
     /// instanced `vec4` into the fragment flow (`varyings.nodeVaryingN =
     /// nodeAttributeN`) instead of passing the instance index down and indexing
     /// a uniform buffer.
+    /// `AttributeNode.generate()` in the vertex stage: declare the input in
+    /// the attribute's own type (`getTypeFromAttribute()`) and convert it to
+    /// the node's with `builder.format()`. An attribute the renderer described
+    /// no geometry entry for (a hand-built program, or a name the geometry
+    /// lacks) is declared in the node's type over a 32-bit format of its own,
+    /// as before typed attributes. A helper rather than inline in `generate`'s
+    /// match, to keep that frame small (the `nodes_mx_library` stack canary).
+    #[inline(never)]
+    fn geometry_attribute(&mut self, name: &'static str, ty: Type) -> String {
+        let desc = self
+            .geometry_attributes
+            .iter()
+            .find(|desc| desc.name == name);
+        let (slot_ty, format, geometry) = match desc {
+            Some(desc) => {
+                let group = match desc.layout {
+                    AttributeLayout::Interleaved { buffer, .. } => Some(buffer),
+                    _ => None,
+                };
+                (
+                    desc.shader_type(),
+                    desc.vertex_format(),
+                    GeometrySlot {
+                        name,
+                        array_stride: desc.array_stride(),
+                        offset: desc.offset(),
+                        instanced: desc.instanced,
+                        group,
+                    },
+                )
+            }
+            None => (
+                ty,
+                float_vertex_format(ty),
+                GeometrySlot {
+                    name,
+                    array_stride: (ty.components() * 4) as u64,
+                    offset: 0,
+                    instanced: false,
+                    group: None,
+                },
+            ),
+        };
+        let s = &mut self.stages[Stage::Vertex.index()];
+        if !s.attributes.iter().any(|slot| slot.name == name) {
+            s.attributes.push(AttributeSlot {
+                name: name.to_string(),
+                ty: slot_ty,
+                format,
+                source: AttributeSource::Geometry(geometry),
+            });
+        }
+        wgsl::convert(name, slot_ty, ty)
+    }
+
     fn attribute_varying(&mut self, node: &NodeRef) -> String {
         let varying = match self.attribute_varyings.get(&node.key()) {
             Some(varying) => varying.clone(),
@@ -2864,15 +2939,7 @@ impl NodeBuilder {
                 if self.stage == Stage::Fragment {
                     return self.attribute_varying(node);
                 }
-                let s = &mut self.stages[Stage::Vertex.index()];
-                if !s.attributes.iter().any(|slot| slot.name == *name) {
-                    s.attributes.push(AttributeSlot {
-                        name: name.to_string(),
-                        ty: *ty,
-                        source: AttributeSource::Geometry(name),
-                    });
-                }
-                name.to_string()
+                self.geometry_attribute(name, *ty)
             }
 
             Node::InstancedAttribute { buffer, offset, ty } => {
@@ -2891,6 +2958,7 @@ impl NodeBuilder {
                     .push(AttributeSlot {
                         name: name.clone(),
                         ty: *ty,
+                        format: float_vertex_format(*ty),
                         source: AttributeSource::Instance {
                             buffer: buffer.clone(),
                             offset: *offset,
@@ -3485,6 +3553,36 @@ pub struct MaterialFlow {
     /// reads `tangent` whatever the geometry has, so it is the one checked.
     /// `true` in [`MaterialFlow::new`]: a hand-made flow keeps the slot.
     pub geometry_has_tangent: bool,
+    /// The geometry's attributes as
+    /// [`BufferGeometry::attribute_descs`](crate::core::BufferGeometry::attribute_descs)
+    /// lists them — `builder.geometry.getAttribute( name )`, which
+    /// `AttributeNode` reads its input's type, format and buffer layout from.
+    /// Empty in [`MaterialFlow::new`]: every attribute is then a 32-bit
+    /// buffer of its own in the node's type.
+    pub geometry_attributes: Vec<AttributeDesc>,
+}
+
+/// The 32-bit `GPUVertexFormat` for an attribute declared as `ty` with no
+/// typed array behind it to say otherwise: an `InstanceBuffer` view (always
+/// `f32` data) or a geometry attribute the renderer described no entry for.
+#[inline(never)]
+fn float_vertex_format(ty: Type) -> wgpu::VertexFormat {
+    use wgpu::VertexFormat as F;
+    match ty {
+        Type::F32 => F::Float32,
+        Type::Vec2 => F::Float32x2,
+        Type::Vec3 => F::Float32x3,
+        Type::Vec4 => F::Float32x4,
+        Type::U32 => F::Uint32,
+        Type::UVec2 => F::Uint32x2,
+        Type::UVec3 => F::Uint32x3,
+        Type::UVec4 => F::Uint32x4,
+        Type::I32 => F::Sint32,
+        Type::IVec2 => F::Sint32x2,
+        Type::IVec3 => F::Sint32x3,
+        Type::IVec4 => F::Sint32x4,
+        other => panic!("three-rs: {other:?} is not a vertex attribute type"),
+    }
 }
 
 /// The WGSL type of one `OutputType` member: `vec4` for an `MRTNode`'s
@@ -3517,6 +3615,7 @@ impl MaterialFlow {
             vertex_statements: Vec::new(),
             position,
             geometry_has_tangent: true,
+            geometry_attributes: Vec::new(),
         }
     }
 }
@@ -3692,6 +3791,8 @@ impl NodeBuilder {
             cx.extra.insert("clipSpace", flow.position.clone());
         });
         self.geometry_has_tangent = flow.geometry_has_tangent;
+        self.geometry_attributes
+            .clone_from(&flow.geometry_attributes);
         // Each stage's flow is analysed in that stage, as three's
         // `build()` sets the shader stage before every stage's pass: a
         // [`CustomNode`] that branches on the stage (`clip_space`) is set up
@@ -3844,8 +3945,9 @@ impl NodeBuilder {
         for slot in &attributes {
             slot.name.hash(&mut hasher);
             slot.ty.hash(&mut hasher);
+            slot.format.hash(&mut hasher);
             match &slot.source {
-                AttributeSource::Geometry(name) => name.hash(&mut hasher),
+                AttributeSource::Geometry(geometry) => geometry.hash(&mut hasher),
                 AttributeSource::Instance { buffer, offset } => {
                     buffer.item_size.hash(&mut hasher);
                     buffer.per_vertex.hash(&mut hasher);
@@ -3899,7 +4001,6 @@ impl NodeBuilder {
             subgroups: self.stages[Stage::Vertex.index()].subgroups
                 || self.stages[Stage::Fragment.index()].subgroups,
             cache_key,
-            instanced_attributes: Vec::new(),
             update_before,
             update,
             update_after,
