@@ -31,6 +31,14 @@
 //!   therefore mirrors about the target's identity matrixWorld (the plane
 //!   `z = 0`, facing +Z), not the water's surface; from the second frame on
 //!   the target sits where the mesh puts it.
+//! * **One reflector for life.** Upstream re-runs the `colorNode` `Fn()` on
+//!   every material rebuild, which makes a new `reflector()` and adds
+//!   another target to the water: the old one stays a child, and the rebuild
+//!   frame mirrors `z = 0` again. The port builds one reflector and keeps it.
+//! * **`waterNormals` is a `Texture`.** Upstream's is a `TextureNode` whose
+//!   `.value` can be swapped; the port stores the [`Texture`], so its image
+//!   can change but the texture cannot be replaced.
+//! * **No `isWaterMesh` flag.** Not ported, as `SkyMesh`'s is not.
 //! * **`waterNormals` is required.** Upstream types it `?Texture` with a
 //!   `null` default, but a `texture( null )` tap has nothing to sample;
 //!   [`WaterMeshOptions::new`] takes the map.
@@ -110,7 +118,7 @@ impl WaterMeshOptions {
 /// - [Water shader explanations in WebGL](http://29a.ch/slides/2012/webglwater/)
 pub struct WaterMesh {
     /// The `Mesh` itself: the geometry with the water material, and the
-    /// mirror's `target` as its child.
+    /// mirror's `target` as its child (from the first render on).
     pub mesh: Node,
     /// `water.resolutionScale`, as constructed. The mirror read it then; see
     /// the module docs.

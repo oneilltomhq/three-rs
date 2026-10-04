@@ -4010,7 +4010,21 @@ fn webgpu_ocean() {
     }
     assert!(app.scene_env.node.borrow().children.is_empty());
 
+    // The mirror's target is added to the water inside the material's `Fn()`,
+    // i.e. at first build: not at construction, but during the first frame.
+    assert!(
+        app.water.mesh.borrow().children.is_empty(),
+        "the target is added at first render, not at construction"
+    );
+
     webgpu_ocean::animate(&mut app);
+
+    {
+        let target = app.water.mirror_sampler.target();
+        let water = app.water.mesh.borrow();
+        assert_eq!(water.children.len(), 1, "the mirror's target");
+        assert!(three_rs::Node::ptr_eq(&water.children[0], &target));
+    }
 
     let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
     assert_eq!((width, height), (800, 500));
@@ -4045,6 +4059,14 @@ fn webgpu_ocean() {
     steady_frame(name, &mut app, webgpu_ocean::animate, |app| {
         app.renderer.device()
     });
+
+    // From the second frame on the target sits where the water puts it.
+    let target = app.water.mirror_sampler.target();
+    assert_eq!(
+        target.borrow().matrix_world.elements,
+        app.water.mesh.borrow().matrix_world.elements,
+        "the target follows the water"
+    );
 }
 
 /// Issue #139's rung: `gears.glb` is three Draco-compressed meshes, and the

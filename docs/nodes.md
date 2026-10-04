@@ -6075,4 +6075,12 @@ has no `onChange` into the quaternion, so the page goes through
 - `water.resolutionScale` as a field read at first build (§76.1).
 - `waterNormals: null`. A `texture( null )` tap has nothing to sample, so
   `WaterMeshOptions::new` requires the map.
+- Rebuilds. Three re-runs the `colorNode` `Fn()` on every material rebuild,
+  making a new `reflector()` and adding another target to the water (the old
+  one stays a child; the rebuild frame mirrors `z = 0` again). The port keeps
+  one reflector for life.
+- A swappable `waterNormals`. Three's is a `TextureNode` whose `.value` can be
+  replaced; the port stores a `Texture`, so the image can change but not the
+  texture.
+- The `isWaterMesh` flag (`SkyMesh`'s is not ported either).
 - The page's `Inspector` panel.

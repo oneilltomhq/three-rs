@@ -26,8 +26,8 @@ This matrix judges every exported name in three.js revision 5f610f5 (r187) — `
 | addons/controls | 9 | 0 | 2 | 7 | 0 | 0% |
 | addons/loaders | 71 | 6 | 2 | 63 | 0 | 8% |
 | addons/postprocessing | 30 | 0 | 0 | 0 | 30 | — |
-| addons/other | 102 | 11 | 4 | 64 | 23 | 14% |
-| **total** | **1315** | **651** | **122** | **425** | **117** | **54%** |
+| addons/other | 102 | 12 | 4 | 63 | 23 | 15% |
+| **total** | **1315** | **652** | **122** | **424** | **117** | **54%** |
 
 TSL by family:
 
@@ -44,7 +44,7 @@ TSL by family:
 | materialx | 49 | 48 | 0 | 1 | 0 |
 | utils | 77 | 29 | 5 | 39 | 4 |
 
-Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compressed`, which has a live `rung!` but a hyphen in its name). 10 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
+Graded examples: 86 (the README gallery plus `webgpu_textures_2d-array_compressed`, which has a live `rung!` but a hyphen in its name). 10 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
 
 ## math
 
@@ -711,7 +711,7 @@ Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ## addons/other
 
-102 rows: 11 Present, 4 Partial, 64 Absent, 23 N.A.
+102 rows: 12 Present, 4 Partial, 63 Absent, 23 N.A.
 
 | three.js name | verdict | three-rs symbol | verified by | note |
 |---|---|---|---|---|
@@ -926,7 +926,7 @@ Partial: `bitcast`.
 | `TWO_PI` | Present | two_pi (src/nodes/tsl.rs:713) | webgpu_compute_points (graded) |  |
 | `HALF_PI` | Present | half_pi (src/nodes/tsl/wrappers.rs:220) | tests/nodes_tsl_batch.rs |  |
 | `all` | Absent | — | — | comment only: src/lib.rs |
-| `any` | Absent | — | — | reflector_node.rs:173 any() is a registry check (false positive) |
+| `any` | Absent | — | — | reflector_node.rs:176 any() is a registry check (false positive) |
 | `radians` | Present | radians (src/nodes/tsl/wrappers.rs:301) | tests/nodes_tsl_batch.rs |  |
 | `degrees` | Present | degrees (src/nodes/tsl/wrappers.rs:297) | tests/nodes_tsl_batch.rs |  |
 | `exp` | Present | exp (src/nodes/tsl.rs:684) | tests/nodes_fog.rs, webgpu_skinning_points (graded) |  |
