@@ -131,3 +131,32 @@ fn vertex_buffers_carry_the_typed_formats_and_strides() {
         ]
     );
 }
+
+/// `computeSkinning()` over a normalized `Uint16Array` skinWeight — what
+/// `BufferGeometryLoader` builds from a `Uint16Array` JSON attribute — reads
+/// it through the typed accessors instead of panicking on `array()`.
+#[test]
+fn compute_skinning_reads_a_normalized_uint16_skin_weight() {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    use three_rs::nodes::skinning::compute_skinning;
+    use three_rs::objects::{Bone, Skeleton, SkinnedMesh};
+
+    let mut geometry = BufferGeometry::new();
+    geometry.set_attribute(
+        "position",
+        BufferAttribute::new(vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0], 3),
+    );
+    geometry.set_attribute("skinIndex", BufferAttribute::uint16(vec![0; 12], 4, false));
+    geometry.set_attribute(
+        "skinWeight",
+        BufferAttribute::uint16([65535, 0, 0, 0].repeat(3), 4, true),
+    );
+    let mesh = SkinnedMesh::new(Rc::new(geometry), None);
+    let bone = Bone::new();
+    mesh.add(&bone);
+    let skeleton = Rc::new(RefCell::new(Skeleton::new(vec![bone], None)));
+    SkinnedMesh::bind(&mesh, skeleton, None);
+
+    let _ = compute_skinning(&mesh);
+}

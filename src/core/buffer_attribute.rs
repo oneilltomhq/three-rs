@@ -1499,6 +1499,22 @@ impl BufferAttribute {
         self
     }
 
+    /// The items as `f32`, `item_size` per item, de-interleaved and read
+    /// through [`get_component`](Self::get_component) — so a normalized
+    /// integer array denormalizes and a `Float16` one decodes. For code that
+    /// hands three's values on as floats whatever the array is; an own
+    /// `Float32Array` is copied as it is.
+    pub(crate) fn to_f32_items(&self) -> Vec<f32> {
+        if let Backing::Own(array) = &self.storage {
+            if let Some(v) = array.borrow().as_f32() {
+                return v.clone();
+            }
+        }
+        (0..self.count())
+            .flat_map(|i| (0..self.item_size).map(move |c| self.get_component(i, c) as f32))
+            .collect()
+    }
+
     /// `Vector3.fromBufferAttribute( attribute, index )`.
     pub fn get_vector3(&self, index: usize) -> Vector3 {
         Vector3::new(self.get_x(index), self.get_y(index), self.get_z(index))
