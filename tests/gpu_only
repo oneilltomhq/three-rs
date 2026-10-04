@@ -50,6 +50,8 @@ three-rs/temporal_reproject_frames
 three-rs/ssr_denoise_frames
 three-rs/texture_sampler_rebuild
 three-rs/gtao_frames
+three-rs/denoise_frames
+three-rs/ssao_frames
 three-rs/velocity_frames
 three-rs/water2_frames
 sdf-text/batched_text_culling

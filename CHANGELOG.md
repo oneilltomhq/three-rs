@@ -554,6 +554,28 @@ have their own sections after the release they ship with. The format follows [Ke
   helpers, and `tests/recurrent_denoise_frames.rs` checks on the GPU that it
   cuts a noisy face's variance without moving its mean or its silhouette,
   and keeps cutting it as frames accumulate. See `docs/nodes.md` §88.
+- **`denoise()` / `DenoiseNode`** (`nodes::display`), a port of
+  `examples/jsm/tsl/display/DenoiseNode.js`: the single-pass 16-tap
+  Poisson-disk denoiser with luma, depth-plane and normal edge stopping,
+  rotated per pixel by a 64x64 simplex-noise texture; the normal input is
+  optional (`None` reconstructs it from depth). With it,
+  **`addons::simplex_noise::SimplexNoise`**, a port of
+  `examples/jsm/math/SimplexNoise.js` (2D, 3D and 4D) with a unit test
+  against three's JS. Both of `tools/dump-pages/denoise.html`'s quads are
+  gated against three's dump in `tests/nodes_display_wgsl.rs`, and
+  `tests/denoise_frames.rs` checks on the GPU that it flattens a
+  pixel-scale checkerboard while keeping a depth edge sharp. See
+  `docs/nodes.md` §92.
+- **`ssao()` / `SsaoNode`** (`nodes::display`) and
+  **`tsl::depth_aware_blur`**, ports of
+  `examples/jsm/tsl/display/SSAONode.js` and `depthAwareBlur.js`:
+  Vogel-disk SSAO with one depth tap per sample, drawn into its own target
+  at `resolutionScale` and cleaned by a separable five-tap blur weighted by
+  view-Z difference (`blurEnabled`, `blurSharpness`). The AO and blur quads
+  are gated against three's dump of `tools/dump-pages/ssao.html` in
+  `tests/nodes_display_wgsl.rs`, and `tests/ssao_frames.rs` checks on the
+  GPU that a box's crease is darker than open floor and that the blur cuts
+  the pixel-to-pixel noise. See `docs/nodes.md` §93.
 - **`fsr1()` / `Fsr1Node`** (`nodes::display`), a port of
   `examples/jsm/tsl/display/FSR1Node.js`: AMD FidelityFX Super Resolution
   1.0. It draws two half-float passes a frame at the drawing-buffer size.

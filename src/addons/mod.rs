@@ -26,5 +26,6 @@ pub mod lights;
 pub mod lines;
 pub mod objects;
 pub mod raymarching;
+pub mod simplex_noise;
 pub mod text_geometry;
 pub mod textures;
