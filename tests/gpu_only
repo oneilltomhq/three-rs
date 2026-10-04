@@ -15,7 +15,7 @@ three-rs/outline_frames
 three-rs/pmrem_equirect
 three-rs/pmrem_scene
 three-rs/renderer_blending
-three-rs/renderer_clipping
+three-rs/renderer_clipping            the two clipping rungs graded against three's screenshots until they join e2e; same reason as e2e
 three-rs/renderer_compute_indirect
 three-rs/renderer_compute_points
 three-rs/renderer_compute_subgroups
