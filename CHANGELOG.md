@@ -147,6 +147,29 @@ have their own sections after the release they ship with. The format follows [Ke
     too, because there is no `RectAreaLight`.
   - `lights( indices )` builds `MeshBasicNodeMaterial::lights_node`.
     `webgpu_lights_selective` uses it.
+- **TSL sweep 6**: the compute, storage and subgroup `three/tsl` names, in
+  `nodes::tsl`, each gated against three's own dump in
+  `tests/nodes_tsl_batch.rs`. See `docs/nodes.md` §84.
+  - The subgroup family: `subgroup_add`, `subgroup_mul`, `subgroup_and`,
+    `subgroup_or`, `subgroup_xor`, `subgroup_min` and `subgroup_max` with
+    their inclusive and exclusive scans where three has them, `subgroup_all`,
+    `subgroup_any`, `subgroup_ballot`, `subgroup_elect`,
+    `subgroup_broadcast_first`, `subgroup_broadcast`, `subgroup_shuffle`
+    and its `_xor`/`_up`/`_down` forms, `quad_swap_x`/`_y`/`_diagonal` and
+    `quad_broadcast`. Also the builtins `subgroup_size`, `subgroup_index` and
+    `invocation_subgroup_index`. A stage that uses any of them gets
+    `enable subgroups;`. The renderer requests `wgpu::Features::SUBGROUP`
+    when the adapter has it. Without the feature, a subgroup kernel or a
+    material whose fragment stage uses subgroups logs three's message and is
+    skipped.
+  - Known gaps: naga 30 cannot parse `subgroup_elect`, and accepts only `u32`
+    ids for `subgroup_broadcast`, `subgroup_shuffle` and `quad_broadcast`.
+    Three cannot build `quadBroadcast` at all; the port takes the id it
+    needs.
+  - `attribute_array`: the `StorageArray` whose `to_attribute()` steps once
+    per vertex rather than once per instance.
+  - `storage_element`, `atomic_func` (public now, under three's name) and
+    `texture_barrier`. `storage_texture_3d` is now gated.
 - **`SkyMesh`** (`addons::objects`), a port of `examples/jsm/objects/SkyMesh.js`.
   It is the Preetham daylight model with a sun disc and an fbm cloud layer.
   Every uniform is a public `SettableValue`. `webgpu_sky` is graded green at 0
@@ -244,6 +267,15 @@ have their own sections after the release they ship with. The format follows [Ke
   it at the origin. A light whose position the application never sets now
   shines down from one unit up, as in three; a scene that relied on the old
   origin should set the position itself.
+- **A compute kernel with a barrier has no bounds check, and its vars are
+  local to `main`**, as `BarrierNode.setup()` makes them in three. Before,
+  `workgroup_barrier()` and `storage_barrier()` kernels kept the
+  `if ( instanceIndex >= count ) { return; }` guard and module-scope
+  `var<private>`s. Without the guard, every invocation of the last workgroup
+  runs, as in three: the dispatch is still `ceil( count / workgroup )`, so
+  tail invocations index past `count`, and a kernel must guard its own
+  accesses, e.g. `If( instanceIndex < count )` around the stores after the
+  barrier. See `docs/nodes.md` §84.6.
 
 ### Fixed
 
