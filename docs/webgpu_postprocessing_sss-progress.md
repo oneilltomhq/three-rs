@@ -30,12 +30,12 @@ materials with nothing SSS-specific beyond the context. The ground gate
 covers the context's multiply, and the statue takes it through the same
 `setup_light` path.
 
-The ground gate drops adjacent repeated lines from the port's WGSL before
-fingerprinting. The port's Phong flow emits the zero of `irradiance`,
-`directDiffuse`, `directSpecular` and `indirectDiffuse` twice in a row, once
-from each var's lazy initialiser and once from the flow's explicit assign.
-This happens on `main` too, with or without the context; it is issue #281,
-and the dedup goes when that is fixed.
+The ground gate fingerprints the port's WGSL as it is. It also checks that
+each lighting accumulator is zeroed once, right above the statement that
+first uses it, as in three's dump. Before issue #281 was fixed, the Phong
+flow emitted the zero of `irradiance`, `directDiffuse`, `directSpecular` and
+`indirectDiffuse` twice in a row, and the gate dropped adjacent repeated lines
+to get past it.
 
 ## What else is checked
 

@@ -504,10 +504,12 @@ impl Physical {
             .mul(ess.reciprocal().sub(1.0))
             .add(1.0);
 
+        // The three clearcoat accumulators are vars with a zero initialiser:
+        // the var as a statement emits it, once (issue #281).
         if clearcoat {
-            out.push(clearcoat_radiance().assign(vec3(0.0, 0.0, 0.0)));
-            out.push(clearcoat_specular_direct().assign(vec3(0.0, 0.0, 0.0)));
-            out.push(clearcoat_specular_indirect().assign(vec3(0.0, 0.0, 0.0)));
+            out.push(clearcoat_radiance());
+            out.push(clearcoat_specular_direct());
+            out.push(clearcoat_specular_indirect());
         }
 
         Self {
@@ -813,9 +815,11 @@ impl Physical {
         // is `EnvironmentNode.setup()`, which runs as a lighting node before
         // `indirectSpecular` and so carries the zeros with it; with none,
         // nothing ever adds to them and they are declared here.
+        // Both are vars with a zero initialiser, so the var as a statement is
+        // the declaration (issue #281).
         if !has_environment {
-            out.push(radiance().assign(vec3(0.0, 0.0, 0.0)));
-            out.push(ibl_irradiance().assign(vec3(0.0, 0.0, 0.0)));
+            out.push(radiance());
+            out.push(ibl_irradiance());
         }
 
         let single_scattering_mixed = mix(

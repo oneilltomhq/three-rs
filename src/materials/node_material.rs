@@ -1311,27 +1311,23 @@ fn setup_phong(
             .map(|light| light.index)
             .collect();
 
-        // `AmbientLightNode` sorts first in `LightsNode`'s list, and its
-        // `irradiance.addAssign()` is what forces `irradiance = vec3( 0 )` up
-        // here rather than down in the indirect tail. A hemisphere light or a
-        // probe adds to `irradiance` from inside the loop, so it needs the
-        // zero up here too — after the loop it would wipe what they added.
-        let irradiance_lights = lights.iter().any(|light| {
-            matches!(
-                light.kind,
-                LightKind::Ambient | LightKind::Hemisphere | LightKind::Probe
-            )
-        });
+        // No accumulator is zeroed explicitly. Each is a var with a `vec3( 0
+        // )` initialiser (`LightingContextNode.getContext()`'s `vec3().toVar(
+        // name )`), and an assign generates its target first, so the zero
+        // lands right above the statement that first touches it — as three
+        // has it, and only once (issue #281). That keeps the order the dumps
+        // show: `AmbientLightNode` sorts first in `LightsNode`'s list, so its
+        // `irradiance.addAssign()` puts `irradiance = vec3( 0 )` ahead of the
+        // loop; a hemisphere light or a probe adding to `irradiance` from
+        // inside the loop puts it there too, never after what they added;
+        // with none of them it lands in the indirect tail. `directDiffuse`
+        // lands in the first direct light, `directSpecular` after that
+        // light's diffuse term, and Lambert's `directSpecular` /
+        // `indirectSpecular` in `totalSpecular`'s line.
         if !ambient.is_empty() {
             phong::ambient_lights(&ambient, fragment);
-        } else if irradiance_lights {
-            fragment.push(irradiance().assign(vec3(0.0, 0.0, 0.0)));
         }
 
-        fragment.push(direct_diffuse().assign(vec3(0.0, 0.0, 0.0)));
-        if specular {
-            fragment.push(direct_specular().assign(vec3(0.0, 0.0, 0.0)));
-        }
         for light in &lights {
             if light.kind == LightKind::Ambient {
                 continue;
@@ -1363,10 +1359,6 @@ fn setup_phong(
         }
 
         // The tail every lit material shares.
-        fragment.push(indirect_diffuse().assign(vec3(0.0, 0.0, 0.0)));
-        if !irradiance_lights {
-            fragment.push(irradiance().assign(vec3(0.0, 0.0, 0.0)));
-        }
         fragment.push(
             indirect_diffuse().assign(
                 vec4_join(vec![indirect_diffuse(), float(1.0)])
@@ -1382,12 +1374,6 @@ fn setup_phong(
             material,
             direct_diffuse().add(indirect_diffuse()),
         )));
-        if !specular {
-            // Lambert reads both specular accumulators for the first time
-            // here, so this is where three declares them.
-            fragment.push(direct_specular().assign(vec3(0.0, 0.0, 0.0)));
-            fragment.push(indirect_specular().assign(vec3(0.0, 0.0, 0.0)));
-        }
         fragment.push(total_specular().assign(direct_specular().add(indirect_specular())));
         fragment.push(outgoing_light().assign(total_diffuse().add(total_specular())));
         outgoing_light()
@@ -1755,12 +1741,15 @@ fn setup_standard(
         // `LightingContextNode`'s five accumulators. three.js declares each at
         // the point of its first use; hoisting the zeros here is the one
         // reordering in this flow (see `docs/nodes.md` §8) and reads nothing
-        // before it is written either way.
-        fragment.push(direct_diffuse().assign(vec3(0.0, 0.0, 0.0)));
-        fragment.push(direct_specular().assign(vec3(0.0, 0.0, 0.0)));
-        fragment.push(irradiance().assign(vec3(0.0, 0.0, 0.0)));
-        fragment.push(indirect_diffuse().assign(vec3(0.0, 0.0, 0.0)));
-        fragment.push(indirect_specular().assign(vec3(0.0, 0.0, 0.0)));
+        // before it is written either way. Each is a var whose initialiser is
+        // the zero, so the var itself, as a statement, is the whole of it: an
+        // `assign( vec3( 0 ) )` would emit the initialiser and then the same
+        // zero again (issue #281).
+        fragment.push(direct_diffuse());
+        fragment.push(direct_specular());
+        fragment.push(irradiance());
+        fragment.push(indirect_diffuse());
+        fragment.push(indirect_specular());
 
         for light in &lights {
             physical::direct_light(
