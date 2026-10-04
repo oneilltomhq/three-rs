@@ -644,10 +644,14 @@ differences, each verified to be pixel-neutral.
   emits the textures first and the buffer last. Same class as "Instance buffer
   binding indices": the layout and the shader come from the same descriptors.
 * **Clipping-plane buffer binding indices (#295).** Three's render group
-  numbers the fragment stage's bindings first, so the clipping planes'
-  `NodeBuffer`s sit ahead of the `render` struct; the port's `render` struct is
-  always binding 0 and the planes follow. Same class as "Instance buffer
-  binding indices": the layout and the shader come from the same descriptors.
+  numbers its bindings in the order they are created, fragment stage first: the
+  fragment stage's plane `NodeBuffer`s sit ahead of the `render` struct, while
+  the vertex stage's hardware-clipping buffer follows it (the knot in
+  `tests/fixtures/webgpu_clipping/` has its fragment planes at binding 0,
+  `render` at 1 and the vertex `clip_distances` planes at 2). The port's
+  `render` struct is always binding 0 and every plane buffer follows. Same
+  class as "Instance buffer binding indices": the layout and the shader come
+  from the same descriptors.
   `tests/nodes_clipping_wgsl.rs` compares with the group-0 binding numbers
   canonicalised.
 * **The indirect-diffuse block is emitted before the environment's (§25).**
