@@ -208,6 +208,10 @@ mod webgpu_deferred;
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_loader_gltf_anisotropy;
 
+#[path = "webgpu_loader_gltf_transmission.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_loader_gltf_transmission;
+
 #[path = "webgpu_compute_texture.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_compute_texture;
@@ -475,6 +479,9 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_deferred", || drop(webgpu_deferred::init())),
     ("webgpu_loader_gltf_anisotropy", || {
         drop(webgpu_loader_gltf_anisotropy::init())
+    }),
+    ("webgpu_loader_gltf_transmission", || {
+        drop(webgpu_loader_gltf_transmission::init())
     }),
     ("webgpu_materials_texture_manualmipmap", || {
         drop(webgpu_materials_texture_manualmipmap::init())
