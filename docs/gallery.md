@@ -135,6 +135,7 @@ tests read only five- and six-cell rows, so they skip that table.
 | `webgpu_postprocessing_traa` | three's exception list, "Black screen". Gated on its resolve shader and on `tests/traa_frames.rs` |
 | `webgpu_postprocessing_dof` | three's exception list, "Black screen". Gated on all seven of `DepthOfFieldNode`'s distinct quad shaders against three's dump (`dof_*` in `tests/nodes_display_wgsl.rs`) |
 | `webgpu_postprocessing_retro` | three.js misses its own reference here (1503 of 100000 pixels, limit 0.1%); the port scores the same. Gated on its two post-processing shaders and on `tests/retro_frames.rs` |
+| `webgpu_upscaling_taau` | three.js misses its own reference here (540 of 100000 pixels, limit 0.1%); the port scores 539. Gated on its seed and resolve shaders and on `tests/taau_frames.rs` |
 
 ## Reference images stay out of the tree
 

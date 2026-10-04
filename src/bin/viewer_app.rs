@@ -302,7 +302,8 @@ PostprocessingOutline, webgpu_postprocessing_outline, "../../examples/webgpu_pos
 Oit, webgpu_oit, "../../examples/webgpu_oit.rs";
 PostprocessingRetro, webgpu_postprocessing_retro, "../../examples/webgpu_postprocessing_retro.rs";
 Clipping, webgpu_clipping, "../../examples/webgpu_clipping.rs";
-ClippingStencil, webgpu_clipping_stencil, "../../examples/webgpu_clipping_stencil.rs";}
+ClippingStencil, webgpu_clipping_stencil, "../../examples/webgpu_clipping_stencil.rs";
+UpscalingTaau, webgpu_upscaling_taau, "../../examples/webgpu_upscaling_taau.rs";}
 
 impl Which {
     /// The name with or without its `webgpu_` prefix, or its 1-based index in
