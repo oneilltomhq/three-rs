@@ -1,8 +1,10 @@
 # Releasing
 
-The checklist for a crates.io release. Two crates live in this workspace
-and version independently: `three-rs` and `sdf-text` (depends on
-`three-rs`). A release ships whichever of them changed. (`d3-hierarchy`
+The checklist for a crates.io release. Three published crates live in this
+workspace and version independently: `three-rs`, and the member crates
+`sdf-text` and `three-rs-controls`, each of which depends on `three-rs`
+(`web` is a member too, but `publish = false`). A release ships whichever
+of them changed. (`d3-hierarchy`
 has its own repository and releases since #63.)
 
 Everything here is done by hand except the last step: pushing the annotated
@@ -13,15 +15,16 @@ write it as one.
 ## 1. Decide what ships
 
 - Which crates changed since their last tag. `git log v0.1.2.. -- sdf-text`
-  answers it for the member crate.
+  (or `-- addons/controls`) answers it for a member crate.
 - Which bump each one is. At 0.x a minor bump is the breaking one and a
   patch bump promises compatibility. Run `cargo semver-checks` on each
   crate that changed (#27; `cargo install cargo-semver-checks`) and take
   the bump it says is honest, not the one that was planned.
-- If `three-rs` takes a minor bump, `sdf-text` must ship too, with its
-  `three-rs = { path = "..", version = "..." }` dependency moved to the new
-  minor. A patch bump of `three-rs` leaves `sdf-text` alone; its caret
-  dependency already covers it.
+- If `three-rs` takes a minor bump, every member crate must ship too, with
+  its `three-rs = { path = "...", version = "..." }` dependency moved to the
+  new minor: `sdf-text/Cargo.toml` and `addons/controls/Cargo.toml` both
+  pin it. A patch bump of `three-rs` leaves the member crates alone; their
+  caret dependencies already cover it.
 
 ## 2. Gates
 
@@ -30,9 +33,12 @@ On a branch, from a clean tree, on a machine with a Vulkan device:
 ```sh
 cargo fmt --all --check
 cargo test -p sdf-text --lib
+cargo test -p three-rs-controls --lib
 cargo test -p three-rs --lib
 cargo test --workspace --no-fail-fast        # the GPU renderer tests and the e2e grader;
                                              # --no-fail-fast, or one failing target hides the rest (#227)
+cargo test --release -p three-rs --test e2e  # the ladder again in release: in debug,
+                                             # steady_frame_builds_nothing overflows its stack
 cargo test -p sdf-text -- --test-threads=1   # the SDF text gates, on the GPU
 cargo doc --workspace --no-deps
 cargo publish --dry-run -p <crate>           # for each crate that ships, in the order in step 4
@@ -49,8 +55,8 @@ it. Any failure is new.
 
 One commit per release, on a branch, merged to `main` like any other change:
 
-- The `version` in each shipping crate's `Cargo.toml`, and `sdf-text`'s
-  dependency on `three-rs` if step 1 said so. `cargo build` refreshes
+- The `version` in each shipping crate's `Cargo.toml`, and each member
+  crate's dependency on `three-rs` if step 1 said so. `cargo build` refreshes
   `Cargo.lock`; commit that too.
 - `CHANGELOG.md`: rename *Unreleased* to the version and date, and open a
   fresh *Unreleased* above it.
@@ -67,11 +73,12 @@ ship:
 
 ```sh
 cargo publish -p three-rs
-cargo publish -p sdf-text        # after three-rs is visible on crates.io
+cargo publish -p sdf-text           # after three-rs is visible on crates.io
+cargo publish -p three-rs-controls  # likewise
 ```
 
-`sdf-text` resolves its `three-rs` dependency from the registry when it
-packages, so the new `three-rs` has to be there first; the index usually
+A member crate resolves its `three-rs` dependency from the registry when
+it packages, so the new `three-rs` has to be there first; the index usually
 catches up within a minute.
 
 A publish cannot be undone. `cargo yank` withdraws a version from new
