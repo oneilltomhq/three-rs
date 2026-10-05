@@ -6593,6 +6593,20 @@ fn webgpu_postprocessing_lensflare() {
 fn steady_frame_builds_nothing() {
     let _gpu = gpu();
 
+    /// One rung's frame. Every `rung!` below expands inside this function
+    /// rather than inline, so a page's `App`, its strip and its closures die
+    /// when the rung returns. Expanded inline, the 100-odd rungs were
+    /// siblings in one frame, and a debug build gives each sibling its own
+    /// stack slot: the frame was the sum of every page (about 1.4 MB of
+    /// `App`s alone, each 10 to 22 KB, before the strips), which overflowed
+    /// the 2 MB test thread in its prologue (issue #344). Release overlapped
+    /// the slots and never saw it. `#[inline(never)]` keeps the frame real in
+    /// every profile.
+    #[inline(never)]
+    fn rung<R>(body: impl FnOnce() -> R) -> R {
+        body()
+    }
+
     macro_rules! rung {
         ($module:ident) => {
             rung!($module, 0)
@@ -6607,47 +6621,49 @@ fn steady_frame_builds_nothing() {
         }};
         // `$init`: the app, for a page whose `init()` is `async` and has to
         // be blocked on (`webgpu_lightprobe_cubecamera`).
-        ($module:ident, $textures:expr, $steady_from:expr, $init:expr) => {{
-            let mut app = $init;
+        ($module:ident, $textures:expr, $steady_from:expr, $init:expr) => {
+            rung(|| {
+                let mut app = $init;
 
-            // `[ "", "" ]`: nothing is done to the scene between the three
-            // frames, which is what makes frames two and three steady.
-            let strip = three_rs::testing::strip(
-                &mut app,
-                |app| &mut app.renderer,
-                &mut |app: &mut $module::App| $module::animate(app),
-                &mut [
-                    ("", &mut |_: &mut $module::App| {}),
-                    ("", &mut |_: &mut $module::App| {}),
-                ],
-            )
-            .unwrap();
+                // `[ "", "" ]`: nothing is done to the scene between the three
+                // frames, which is what makes frames two and three steady.
+                let strip = three_rs::testing::strip(
+                    &mut app,
+                    |app| &mut app.renderer,
+                    &mut |app: &mut $module::App| $module::animate(app),
+                    &mut [
+                        ("", &mut |_: &mut $module::App| {}),
+                        ("", &mut |_: &mut $module::App| {}),
+                    ],
+                )
+                .unwrap();
 
-            for (index, frame) in strip.frames.iter().enumerate() {
-                println!(
-                    "{}: frame {} — {}",
-                    stringify!($module),
-                    index + 1,
-                    frame.info
+                for (index, frame) in strip.frames.iter().enumerate() {
+                    println!(
+                        "{}: frame {} — {}",
+                        stringify!($module),
+                        index + 1,
+                        frame.info
+                    );
+                }
+
+                assert!(
+                    strip.frames[0].info.build.total() > 0,
+                    "{}: the first frame built nothing, so the counters are not wired",
+                    stringify!($module)
                 );
-            }
+                assert!(
+                    strip.frames[2].info.render.calls > 0,
+                    "{}: the third frame drew nothing, so it is not a frame",
+                    stringify!($module)
+                );
+                strip.assert_steady_uploading($steady_from.., $textures);
 
-            assert!(
-                strip.frames[0].info.build.total() > 0,
-                "{}: the first frame built nothing, so the counters are not wired",
-                stringify!($module)
-            );
-            assert!(
-                strip.frames[2].info.render.calls > 0,
-                "{}: the third frame drew nothing, so it is not a frame",
-                stringify!($module)
-            );
-            strip.assert_steady_uploading($steady_from.., $textures);
-
-            let png = out_dir(stringify!($module)).join("steady-strip.png");
-            strip.write_png(png.to_str().expect("three-rs: the strip path is UTF-8"));
-            println!("{}: strip {}", stringify!($module), png.display());
-        }};
+                let png = out_dir(stringify!($module)).join("steady-strip.png");
+                strip.write_png(png.to_str().expect("three-rs: the strip path is UTF-8"));
+                println!("{}: strip {}", stringify!($module), png.display());
+            })
+        };
     }
 
     rung!(webgpu_depth_texture);
