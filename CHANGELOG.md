@@ -809,6 +809,10 @@ have their own sections after the release they ship with. The format follows [Ke
   `webgpu_loader_gltf_iridescence`, but it was missing from the list of
   extensions the required-extension check accepts, so such a file was
   refused. `IridescenceLamp.glb` only lists it under `extensionsUsed`.
+- `cargo run --example web_manifests` records `webgpu_lightprobe_cubecamera`
+  again (#271). Its `init()` became `async` and the generator dropped the
+  future without running it, so a regeneration wrote an empty manifest for
+  the page. It now blocks on the future, as the page's own `main()` does.
 
 ## [0.2.0] - 2026-09-29
 
