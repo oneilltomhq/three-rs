@@ -11,9 +11,10 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use three_rs::animation::property_binding::ParsedTrackName;
-use three_rs::animation::AnimationMixer;
 use three_rs::animation::KeyframeTrack;
+use three_rs::animation::LoopMode;
 use three_rs::animation::{AnimationBlendMode, AnimationClip};
+use three_rs::animation::{AnimationMixer, MixerEvent};
 use three_rs::animation::{BindingTarget, TargetResolver};
 
 mod support;
@@ -152,9 +153,12 @@ fn stub_object3d() -> StubRoot {
 
 // INHERITANCE
 
-// SKIPPED: 'Extending' — `assert object instanceof EventDispatcher`. This port
-// drops `EventDispatcher` (see the `animation_mixer` module docs), so there is no
-// inheritance to assert.
+// SKIPPED: 'Extending' — `assert object instanceof EventDispatcher`. The
+// mixer's two events are a `MixerEvent` queue drained with `take_events()`, not
+// an `EventDispatcher` (see the `animation_mixer` module docs), so there is no
+// inheritance to assert; the events themselves are checked by the ADDED tests
+// below and by the `AnimationAction` suite's 'StartAt when already executed
+// once'.
 
 // INSTANCING
 #[test]
@@ -423,5 +427,172 @@ fn set_time() {
     assert!(
         (position[0] - 0.25).abs() <= EPS,
         "and the bound value matches it, not the earlier update"
+    );
+}
+
+// ADDED: the `'loop'` / `'finished'` events, which Three's mixer suite does not
+// test directly. Each expectation is what `AnimationAction._updateTime` passes
+// to `this._mixer.dispatchEvent( … )` on the same input.
+
+/// `LoopRepeat` with three repetitions: one `'loop'` per wrap with
+/// `loopDelta: 1`, then one `'finished'` with `direction: 1` and nothing after.
+#[test]
+fn update_dispatches_loop_then_finished() {
+    let obj = stub_object3d();
+    let mut mixer = AnimationMixer::new(Box::new(obj));
+    let clips = get_clips(ZERO3, ONE3, TWO3, ONE3, 1.0);
+
+    let action = mixer.clip_action(&clips[0], None, None);
+    mixer.set_loop(action, LoopMode::Repeat, 3.0);
+    mixer.play(action);
+
+    mixer.update(0.5);
+    assert_eq!(mixer.take_events(), vec![], "no wrap, no event");
+
+    mixer.update(1.0);
+    assert_eq!(
+        mixer.take_events(),
+        vec![MixerEvent::Loop {
+            action,
+            loop_delta: 1.0
+        }],
+        "first wrap"
+    );
+
+    mixer.update(1.0);
+    assert_eq!(
+        mixer.take_events(),
+        vec![MixerEvent::Loop {
+            action,
+            loop_delta: 1.0
+        }],
+        "second wrap, entering the last round"
+    );
+
+    mixer.update(1.0);
+    assert_eq!(
+        mixer.take_events(),
+        vec![MixerEvent::Finished {
+            action,
+            direction: 1.0
+        }],
+        "third wrap runs out of repetitions"
+    );
+    assert!(!mixer.is_running(action), "and the action has stopped");
+
+    mixer.update(1.0);
+    assert_eq!(
+        mixer.take_events(),
+        vec![],
+        "a disabled action dispatches nothing more"
+    );
+}
+
+/// One update that spans several loops dispatches one `'loop'` whose
+/// `loopDelta` counts them.
+#[test]
+fn loop_delta_counts_the_wraps_of_one_update() {
+    let obj = stub_object3d();
+    let mut mixer = AnimationMixer::new(Box::new(obj));
+    let clips = get_clips(ZERO3, ONE3, TWO3, ONE3, 1.0);
+
+    let action = mixer.clip_action(&clips[0], None, None);
+    mixer.play(action);
+
+    mixer.update(3.25);
+    assert_eq!(
+        mixer.take_events(),
+        vec![MixerEvent::Loop {
+            action,
+            loop_delta: 3.0
+        }]
+    );
+    assert_eq!(mixer.action(action).loop_count, 3);
+}
+
+/// Playing backwards, `loopDelta` is negative.
+#[test]
+fn loop_delta_is_signed() {
+    let obj = stub_object3d();
+    let mut mixer = AnimationMixer::new(Box::new(obj));
+    let clips = get_clips(ZERO3, ONE3, TWO3, ONE3, 1.0);
+
+    let action = mixer.clip_action(&clips[0], None, None);
+    mixer.play(action);
+    mixer.time_scale = -1.0;
+
+    mixer.update(0.25);
+    assert_eq!(
+        mixer.take_events(),
+        vec![MixerEvent::Loop {
+            action,
+            loop_delta: -1.0
+        }]
+    );
+    assert_eq!(mixer.action(action).time, 0.75);
+}
+
+/// `LoopOnce` finishes at either end of the clip, with the direction it was
+/// playing in, and `clampWhenFinished` pauses rather than disables.
+#[test]
+fn loop_once_finishes_in_either_direction() {
+    let obj = stub_object3d();
+    let mut mixer = AnimationMixer::new(Box::new(obj));
+    let clips = get_clips(ZERO3, ONE3, TWO3, ONE3, 1.0);
+
+    let forwards = mixer.clip_action(&clips[0], None, None);
+    let backwards = mixer.clip_action(&clips[1], None, None);
+    mixer.set_loop(forwards, LoopMode::Once, f64::INFINITY);
+    mixer.set_loop(backwards, LoopMode::Once, f64::INFINITY);
+    mixer.action_mut(forwards).clamp_when_finished = true;
+    mixer.action_mut(backwards).time_scale = -1.0;
+    mixer.play(forwards);
+    mixer.play(backwards);
+
+    mixer.update(1.5);
+    let events = mixer.take_events();
+    assert_eq!(events.len(), 2, "both finished in the same update");
+    assert!(events.contains(&MixerEvent::Finished {
+        action: forwards,
+        direction: 1.0
+    }));
+    assert!(events.contains(&MixerEvent::Finished {
+        action: backwards,
+        direction: -1.0
+    }));
+
+    assert!(mixer.action(forwards).paused, "clampWhenFinished pauses");
+    assert_eq!(mixer.action(forwards).time, 1.0);
+    assert!(!mixer.action(backwards).enabled, "otherwise it disables");
+    assert_eq!(mixer.action(backwards).time, 0.0);
+
+    let actions: Vec<_> = events.iter().map(MixerEvent::action).collect();
+    assert!(
+        actions.contains(&forwards) && actions.contains(&backwards),
+        "`action()` is `event.action`"
+    );
+}
+
+/// `take_events` drains the queue, and an event nobody drained is gone after
+/// the next `update()`.
+#[test]
+fn take_events_drains_and_update_clears() {
+    let obj = stub_object3d();
+    let mut mixer = AnimationMixer::new(Box::new(obj));
+    let clips = get_clips(ZERO3, ONE3, TWO3, ONE3, 1.0);
+
+    let action = mixer.clip_action(&clips[0], None, None);
+    mixer.play(action);
+
+    mixer.update(1.5);
+    assert_eq!(mixer.take_events().len(), 1, "one wrap");
+    assert_eq!(mixer.take_events(), vec![], "already drained");
+
+    mixer.update(1.0);
+    mixer.update(0.25);
+    assert_eq!(
+        mixer.take_events(),
+        vec![],
+        "the wrap of the earlier update was dropped by the later one"
     );
 }

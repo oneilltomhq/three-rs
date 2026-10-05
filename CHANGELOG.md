@@ -8,6 +8,17 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Added
 
+- **Animation mixer events** (#326): `MixerEvent` (`Loop { action,
+  loop_delta }`, `Finished { action, direction }`) and
+  `AnimationMixer::take_events()`. The mixer used to perform three's
+  `'loop'` and `'finished'` state changes and drop the notifications; it now
+  queues them from `AnimationAction._updateTime` at three's three dispatch
+  points, so a caller learns that an action looped or finished by draining
+  the queue after `update()` instead of polling `time` and `loop_count`.
+  `update()` clears what the previous update queued. `docs/api.md` decision
+  12 says why it is a queue and not listeners;
+  `tests/animation_animation_action.rs` now ports 'StartAt when already
+  executed once', which drives the action from a `'finished'` handler.
 - **Scene-graph events** (#159, #153 option C): `SceneEvent` (`Added`,
   `Removed`, `ChildAdded(child)`, `ChildRemoved(child)`), `SceneEventType`,
   and `ObjectRef::add_event_listener` / `has_event_listener` /
