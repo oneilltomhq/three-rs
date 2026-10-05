@@ -23,8 +23,10 @@ write it as one.
 - If `three-rs` takes a minor bump, every member crate must ship too, with
   its `three-rs = { path = "...", version = "..." }` dependency moved to the
   new minor: `sdf-text/Cargo.toml` and `addons/controls/Cargo.toml` both
-  pin it. A patch bump of `three-rs` leaves the member crates alone; their
-  caret dependencies already cover it.
+  pin it. `addons/controls/Cargo.toml` pins `sdf-text` the same way, so a
+  minor bump of `sdf-text` moves that pin too (the 0.3.0 release missed it
+  until `cargo build` refused to resolve). A patch bump of `three-rs` leaves
+  the member crates alone; their caret dependencies already cover it.
 
 ## 2. Gates
 
@@ -41,7 +43,7 @@ cargo test --release -p three-rs --test e2e  # the ladder again in release: in d
                                              # steady_frame_builds_nothing overflows its stack
 cargo test -p sdf-text -- --test-threads=1   # the SDF text gates, on the GPU
 cargo doc --workspace --no-deps
-cargo publish --dry-run -p <crate>           # for each crate that ships, in the order in step 4
+cargo publish --dry-run -p three-rs -p sdf-text -p three-rs-controls  # every crate that ships, in one call
 ```
 
 The e2e run is the whole ladder, not the rungs the release touched. If any
@@ -49,7 +51,10 @@ graded number in the README's table moved, the README is updated in the
 release PR with the new number and the reason.
 
 `cargo publish --dry-run` builds the packaged crate as crates.io will see
-it. Any failure is new.
+it. Any failure is new. Name every shipping crate in the one call: cargo
+(1.90 and later) then verifies a member crate against the freshly packaged
+`three-rs` in a temporary registry, where a dry run of the member crate on
+its own would look for the not-yet-published version on crates.io.
 
 ## 3. The release commit
 
@@ -72,14 +77,15 @@ From the merge commit on `main`, in dependency order, only the crates that
 ship:
 
 ```sh
-cargo publish -p three-rs
-cargo publish -p sdf-text           # after three-rs is visible on crates.io
-cargo publish -p three-rs-controls  # likewise
+cargo publish -p three-rs -p sdf-text -p three-rs-controls
 ```
 
-A member crate resolves its `three-rs` dependency from the registry when
-it packages, so the new `three-rs` has to be there first; the index usually
-catches up within a minute.
+One call: cargo orders the uploads by dependency and waits for each crate
+to be visible in the index before uploading the one that depends on it.
+The same thing one crate at a time, in that order, also works; then a
+member crate resolves its `three-rs` dependency from the registry when it
+packages, so the new `three-rs` has to be there first, and the index
+usually catches up within a minute.
 
 A publish cannot be undone. `cargo yank` withdraws a version from new
 resolutions but the number is spent; a broken release is followed by a

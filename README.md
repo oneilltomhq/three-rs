@@ -404,9 +404,9 @@ from crates.io, pinned to `30.0.1` in `Cargo.toml`; nothing else is unusual.
 wgpu types are part of the public API (a caller-owned `Device` and `Queue`,
 external textures), so an application that uses wgpu directly must use the
 same wgpu major version as three-rs, or it builds two copies that cannot
-exchange values. Each three-rs minor release tracks one wgpu major: 0.1 and
-0.2 are on wgpu 30. Moving to a new wgpu major is a breaking change, so it
-comes in the next minor release (0.2 to 0.3), never in a patch release.
+exchange values. Each three-rs minor release tracks one wgpu major: 0.1, 0.2 and
+0.3 are on wgpu 30. Moving to a new wgpu major is a breaking change, so it
+comes in the next minor release (0.3 to 0.4), never in a patch release.
 
 ```sh
 cargo build --release

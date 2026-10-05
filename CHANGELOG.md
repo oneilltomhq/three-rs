@@ -6,6 +6,11 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-05
+
+Ships with `sdf-text` 0.3.0 and `three-rs-controls` 0.2.0; their sections
+follow this one. Breaking: see *Changed*, starting with the `ObjectRef` rename.
+
 ### Added
 
 - **Animation mixer events** (#326): `MixerEvent` (`Loop { action,
@@ -831,6 +836,17 @@ have their own sections after the release they ship with. The format follows [Ke
   future without running it, so a regeneration wrote an empty manifest for
   the page. It now blocks on the future, as the page's own `main()` does.
 
+## sdf-text 0.3.0 - 2026-10-05
+
+Breaking only in what it depends on: it moves to `three-rs` 0.3, whose
+scene-graph handle is `ObjectRef` (#250), and exposes that type where it
+exposed `Node`. No API of its own changed.
+
+## three-rs-controls 0.2.0 - 2026-10-05
+
+Breaking only in what it depends on: it moves to `three-rs` 0.3, whose
+scene-graph handle is `ObjectRef` (#250). No API of its own changed.
+
 ## [0.2.0] - 2026-09-29
 
 Ships with `sdf-text` 0.2.0 and the first release of `three-rs-controls`
@@ -1086,7 +1102,8 @@ _Ships alongside the 0.1.1 fix, both already on `main` before this tag._
   the `WebGPURenderer` port on wgpu with a TSL-generated node system, the
   core materials, lights and shadow maps, and the first graded examples.
 
-[Unreleased]: https://github.com/oneilltomhq/three-rs/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/oneilltomhq/three-rs/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/oneilltomhq/three-rs/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/oneilltomhq/three-rs/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/oneilltomhq/three-rs/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/oneilltomhq/three-rs/compare/v0.1.0...v0.1.1
