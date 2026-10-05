@@ -6,6 +6,16 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ## [Unreleased]
 
+### Fixed
+
+- **`steady_frame_builds_nothing` overflowed its stack in a debug build**
+  (#344): the e2e test's 115 `rung!` expansions shared one stack frame, and
+  a debug build keeps every expansion's `App` and strip in its own slot, so
+  the frame was the sum of every page's renderer. Each rung now runs in its
+  own `#[inline(never)]` frame and is dropped before the next page is built.
+  `cargo test --workspace --no-fail-fast` passes without the release-mode
+  second run of the e2e target that `docs/RELEASING.md` carried since #339.
+
 ## [0.3.0] - 2026-10-05
 
 Ships with `sdf-text` 0.3.0 and `three-rs-controls` 0.2.0; their sections

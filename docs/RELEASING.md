@@ -39,8 +39,6 @@ cargo test -p three-rs-controls --lib
 cargo test -p three-rs --lib
 cargo test --workspace --no-fail-fast        # the GPU renderer tests and the e2e grader;
                                              # --no-fail-fast, or one failing target hides the rest (#227)
-cargo test --release -p three-rs --test e2e  # the ladder again in release: in debug,
-                                             # steady_frame_builds_nothing overflows its stack
 cargo test -p sdf-text -- --test-threads=1   # the SDF text gates, on the GPU
 cargo doc --workspace --no-deps
 cargo publish --dry-run -p three-rs -p sdf-text -p three-rs-controls  # every crate that ships, in one call
