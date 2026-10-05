@@ -1,7 +1,7 @@
 //! Port of `three.js/examples/jsm/controls/FirstPersonControls.js`.
 
 use super::{KeyCode, MouseButton};
-use crate::core::Node;
+use crate::core::ObjectRef;
 use crate::math::math_utils::{clamp, deg_to_rad, lerp, map_linear, rad_to_deg};
 use crate::math::{Spherical, Vector3};
 
@@ -38,9 +38,9 @@ use crate::math::{Spherical, Vector3};
 /// As with [`OrbitControls`](super::OrbitControls), the camera belongs to the
 /// application, so [`new`](Self::new), [`look_at`](Self::look_at) and
 /// [`update`](Self::update) take it rather than the controls holding it. They
-/// take its [`Node`] (`&camera.node` for a
+/// take its [`ObjectRef`] (`&camera.node` for a
 /// [`PerspectiveCamera`](crate::cameras::PerspectiveCamera)), because the JS
-/// only needs an `Object3D`, and [`Node::look_at`] is three's
+/// only needs an `Object3D`, and [`ObjectRef::look_at`] is three's
 /// `Object3D.lookAt()` in full: world position, parent rotation, and the
 /// camera/non-camera flip. The input methods only change the controls' state,
 /// as in the JS, where only `update()` and `lookAt()` touch `this.object`.
@@ -121,7 +121,7 @@ impl FirstPersonControls {
     /// `new FirstPersonControls( camera )`: the defaults, with the latitude
     /// and longitude read off the camera's current orientation
     /// (`_setOrientation()`), so the first `update()` does not snap the view.
-    pub fn new(object: &Node) -> Self {
+    pub fn new(object: &ObjectRef) -> Self {
         let mut controls = Self {
             enabled: true,
 
@@ -173,14 +173,14 @@ impl FirstPersonControls {
 
     /// `lookAt( target )`: turns the object to face the world-space `target`
     /// and re-reads the latitude and longitude from it.
-    pub fn look_at(&mut self, object: &Node, target: &Vector3) -> &mut Self {
+    pub fn look_at(&mut self, object: &ObjectRef, target: &Vector3) -> &mut Self {
         object.look_at(target);
         self.set_orientation(object);
         self
     }
 
     /// `update( delta )`, `delta` in seconds.
-    pub fn update(&mut self, object: &Node, delta: f64) {
+    pub fn update(&mut self, object: &ObjectRef, delta: f64) {
         if !self.enabled {
             return;
         }
@@ -423,7 +423,7 @@ impl FirstPersonControls {
 
     /// `_setOrientation()`: the latitude and longitude, in degrees, of the
     /// camera's look direction.
-    fn set_orientation(&mut self, object: &Node) {
+    fn set_orientation(&mut self, object: &ObjectRef) {
         let quaternion = object.borrow().quaternion;
 
         let mut look_direction = Vector3::new(0.0, 0.0, -1.0);

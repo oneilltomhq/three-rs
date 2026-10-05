@@ -29,7 +29,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::cameras::PerspectiveCamera;
-use crate::core::{Node, Object3D, WeakNode};
+use crate::core::{Object3D, ObjectRef, WeakObjectRef};
 use crate::nodes::tsl::{screen_uv, texture_uv};
 use crate::nodes::NodeRef;
 use crate::renderer::RenderTarget;
@@ -41,7 +41,7 @@ use crate::textures::Texture;
 #[non_exhaustive]
 pub struct ReflectorParameters {
     /// `target` — `new Object3D()` when `None`.
-    pub target: Option<Node>,
+    pub target: Option<ObjectRef>,
     /// `resolutionScale`.
     pub resolution_scale: f64,
     /// `bounces` — whether this reflector renders while another one is
@@ -66,7 +66,7 @@ impl Default for ReflectorParameters {
 pub struct ReflectorBase {
     /// `target` — the object whose world transform is the mirror plane: its
     /// position is a point on the plane and its +Z the normal.
-    pub target: Node,
+    pub target: ObjectRef,
     /// `resolutionScale`.
     pub resolution_scale: f64,
     /// `bounces`.
@@ -88,7 +88,7 @@ pub struct ReflectorBase {
     pub(crate) value: Texture,
     /// The object [`ReflectorNode::add_target_on_setup`] defers
     /// `object.add( target )` to, until the reflector is first set up.
-    pub(crate) add_target_to: Option<WeakNode>,
+    pub(crate) add_target_to: Option<WeakObjectRef>,
 }
 
 impl std::fmt::Debug for ReflectorBase {
@@ -197,7 +197,7 @@ impl ReflectorNode {
 
     /// `reflectorNode.target` — add it to the mirror's mesh
     /// (`plane.add( groundReflector.target )`).
-    pub fn target(&self) -> Node {
+    pub fn target(&self) -> ObjectRef {
         self.reflector.0.borrow().target.clone()
     }
 
@@ -210,7 +210,7 @@ impl ReflectorNode {
     /// normal — and only the next frame's sees the target where the object
     /// puts it. The renderer does the add in `update_reflectors`, just before
     /// the reflector's first `updateBefore()`.
-    pub fn add_target_on_setup(&self, object: &Node) {
+    pub fn add_target_on_setup(&self, object: &ObjectRef) {
         self.reflector.0.borrow_mut().add_target_to = Some(object.downgrade());
     }
 

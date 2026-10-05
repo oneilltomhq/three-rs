@@ -72,7 +72,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use crate::cameras::PerspectiveCamera;
-use crate::core::Node;
+use crate::core::ObjectRef;
 use crate::lights::LightObject;
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::{Color, Matrix4};
@@ -102,7 +102,7 @@ const SPATIAL_OFFSETS: [f64; 4] = [0.0, 0.5, 0.25, 0.75];
 pub fn sss(
     depth: &DepthTexture,
     camera: Rc<RefCell<PerspectiveCamera>>,
-    main_light: &Node,
+    main_light: &ObjectRef,
 ) -> SssNode {
     SssNode::new(depth, camera, main_light)
 }
@@ -131,7 +131,7 @@ pub(crate) struct SssState {
     /// `this._camera`.
     camera: Rc<RefCell<PerspectiveCamera>>,
     /// `this._mainLight`.
-    main_light: Node,
+    main_light: ObjectRef,
     /// `this._sssRenderTarget`.
     target: RenderTarget,
     /// `_quadMesh` with `this._material`, built on the first frame.
@@ -200,7 +200,7 @@ impl SssNode {
     pub fn new(
         depth: &DepthTexture,
         camera: Rc<RefCell<PerspectiveCamera>>,
-        main_light: &Node,
+        main_light: &ObjectRef,
     ) -> Self {
         // `new RenderTarget( 1, 1, { depthBuffer: false, format: RedFormat,
         // type: UnsignedByteType } )`, minus the `RedFormat`.

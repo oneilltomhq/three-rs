@@ -79,7 +79,7 @@ const DIRECTIONS: [[f64; 3]; 6] = [
 pub fn godrays(
     depth: &DepthTexture,
     camera: Rc<RefCell<PerspectiveCamera>>,
-    light: &crate::core::Node,
+    light: &crate::core::ObjectRef,
 ) -> GodraysNode {
     GodraysNode::new(depth, camera, light)
 }
@@ -95,7 +95,7 @@ pub(crate) struct GodraysState {
     /// `this._camera`.
     camera: Rc<RefCell<PerspectiveCamera>>,
     /// `this._light`.
-    light: crate::core::Node,
+    light: crate::core::ObjectRef,
     /// `this._godraysRenderTarget`.
     target: RenderTarget,
     /// `_quadMesh` with `this._material`.
@@ -143,7 +143,7 @@ struct Inputs<'a> {
 }
 
 /// `reference( name, 'float', light.shadow.camera )`, read at draw time.
-fn shadow_camera_reference(light: &crate::core::Node, far: bool) -> NodeRef {
+fn shadow_camera_reference(light: &crate::core::ObjectRef, far: bool) -> NodeRef {
     let light = light.downgrade();
     uniform(
         UniformSource::Live(LiveValue::new(move || {
@@ -169,7 +169,7 @@ fn shadow_camera_reference(light: &crate::core::Node, far: bool) -> NodeRef {
 
 /// `lightPosition( light )` — the light's world position, a render-group
 /// uniform updated per render.
-fn light_position(light: &crate::core::Node) -> NodeRef {
+fn light_position(light: &crate::core::ObjectRef) -> NodeRef {
     let light = light.downgrade();
     uniform(
         UniformSource::Live(LiveValue::new(move || {
@@ -191,7 +191,7 @@ impl GodraysNode {
     pub fn new(
         depth: &DepthTexture,
         camera: Rc<RefCell<PerspectiveCamera>>,
-        light: &crate::core::Node,
+        light: &crate::core::ObjectRef,
     ) -> Self {
         let shadow_map = {
             let mut object = light.borrow_mut();

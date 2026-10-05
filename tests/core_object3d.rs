@@ -4,7 +4,7 @@
 //! (`add/remove/removeFromParent/clear`, `attach`, the `getObject*` lookups,
 //! `traverse*`, `updateMatrixWorld`, `updateWorldMatrix` and the parent halves
 //! of `getWorldPosition`, `localToWorld`, `worldToLocal`, `lookAt`) run on the
-//! scene-graph [`Node`]. Skipped: `Extending`, `Instancing`, `isObject3D`,
+//! scene-graph [`ObjectRef`]. Skipped: `Extending`, `Instancing`, `isObject3D`,
 //! `toJSON`, `clone`, `copy`, and `localTransformVariableInstantiation` (a
 //! JS-only aliasing check).
 //!
@@ -318,25 +318,25 @@ fn update_matrix() {
 }
 
 // ---------------------------------------------------------------------------
-// The scene-graph half: the inherent tree methods on `Node`.
+// The scene-graph half: the inherent tree methods on `ObjectRef`.
 // ---------------------------------------------------------------------------
 
-use three_rs::core::Node;
+use three_rs::core::ObjectRef;
 
 /// `new Object3D()` as a scene-graph node.
-fn node() -> Node {
+fn node() -> ObjectRef {
     Object3D::new_node()
 }
 
-fn named(name: &str) -> Node {
+fn named(name: &str) -> ObjectRef {
     let object = node();
     object.borrow_mut().name = name.to_string();
     object
 }
 
 #[track_caller]
-fn same(a: &Node, b: &Node, what: &str) {
-    assert!(Node::ptr_eq(a, b), "{what}");
+fn same(a: &ObjectRef, b: &ObjectRef, what: &str) {
+    assert!(ObjectRef::ptr_eq(a, b), "{what}");
 }
 
 /// `matrixEquals4` from `test/unit/utils/math-constants.js`'s sibling helpers.
@@ -478,11 +478,11 @@ fn attach() {
     assert!(
         object
             .parent()
-            .is_some_and(|parent| Node::ptr_eq(&parent, &new_parent))
+            .is_some_and(|parent| ObjectRef::ptr_eq(&parent, &new_parent))
             && !old_parent
                 .children()
                 .iter()
-                .any(|child| Node::ptr_eq(child, &object)),
+                .any(|child| ObjectRef::ptr_eq(child, &object)),
         "object is a child of a new parent"
     );
 
@@ -520,15 +520,15 @@ fn attach() {
     assert!(
         object
             .parent()
-            .is_some_and(|parent| Node::ptr_eq(&parent, &new_parent))
+            .is_some_and(|parent| ObjectRef::ptr_eq(&parent, &new_parent))
             && new_parent
                 .children()
                 .iter()
-                .any(|child| Node::ptr_eq(child, &object))
+                .any(|child| ObjectRef::ptr_eq(child, &object))
             && !old_parent
                 .children()
                 .iter()
-                .any(|child| Node::ptr_eq(child, &object)),
+                .any(|child| ObjectRef::ptr_eq(child, &object)),
         "object is no longer a child of an old parent and is a child of a new parent now"
     );
 
@@ -1137,7 +1137,7 @@ use three_rs::core::{SceneEvent, SceneEventType};
 type Seen = (String, SceneEventType, Option<String>, Option<String>);
 
 /// Listens for all four events on each of `nodes`, into one shared log.
-fn record(nodes: &[&Node]) -> Rc<RefCell<Vec<Seen>>> {
+fn record(nodes: &[&ObjectRef]) -> Rc<RefCell<Vec<Seen>>> {
     let log: Rc<RefCell<Vec<Seen>>> = Rc::default();
     for node in nodes {
         for ty in [
@@ -1147,7 +1147,7 @@ fn record(nodes: &[&Node]) -> Rc<RefCell<Vec<Seen>>> {
             SceneEventType::ChildRemoved,
         ] {
             let log = log.clone();
-            node.add_event_listener(ty, move |event: &SceneEvent, target: &Node| {
+            node.add_event_listener(ty, move |event: &SceneEvent, target: &ObjectRef| {
                 log.borrow_mut().push((
                     target.borrow().name.clone(),
                     event.event_type(),

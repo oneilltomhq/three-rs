@@ -3,7 +3,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::core::{BufferGeometry, Node, Object3D};
+use crate::core::{BufferGeometry, Object3D, ObjectRef};
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::{Box3, Matrix4, Sphere, Vector3, Vector4};
 use crate::objects::{Mesh, Payload, Skeleton};
@@ -57,12 +57,12 @@ pub struct SkinnedMesh {
 }
 
 impl SkinnedMesh {
-    /// `new SkinnedMesh( geometry, material )`, as a scene-graph [`Node`].
-    #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `Node`, not `Self`; public API, not changing.
+    /// `new SkinnedMesh( geometry, material )`, as a scene-graph [`ObjectRef`].
+    #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `ObjectRef`, not `Self`; public API, not changing.
     pub fn new(
         geometry: Rc<BufferGeometry>,
         material: impl Into<Option<MeshBasicNodeMaterial>>,
-    ) -> Node {
+    ) -> ObjectRef {
         let mut object = Object3D {
             object_type: "SkinnedMesh",
             ..Default::default()
@@ -102,7 +102,7 @@ impl SkinnedMesh {
     /// `SkinnedMesh.bind( skeleton, bindMatrix )` for a mesh that is already a
     /// node — the node is needed for three.js' `bindMatrix === undefined`
     /// branch, which updates the world matrix and takes it.
-    pub fn bind(node: &Node, skeleton: Rc<RefCell<Skeleton>>, bind_matrix: Option<Matrix4>) {
+    pub fn bind(node: &ObjectRef, skeleton: Rc<RefCell<Skeleton>>, bind_matrix: Option<Matrix4>) {
         let bind_matrix = match bind_matrix {
             Some(matrix) => matrix,
             None => {
@@ -297,7 +297,7 @@ impl SkinnedMesh {
     pub fn raycast(
         &mut self,
         matrix_world: &Matrix4,
-        object: &crate::core::Node,
+        object: &crate::core::ObjectRef,
         raycaster: &crate::core::Raycaster,
         intersects: &mut Vec<crate::core::Intersection>,
     ) {

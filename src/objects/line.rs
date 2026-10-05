@@ -14,7 +14,7 @@
 
 use std::rc::Rc;
 
-use crate::core::{BufferGeometry, Intersection, Node, Object3D, Raycaster, TypedArray};
+use crate::core::{BufferGeometry, Intersection, Object3D, ObjectRef, Raycaster, TypedArray};
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::{Matrix4, Ray, Sphere, Vector3};
 use crate::objects::Payload;
@@ -39,8 +39,8 @@ impl Line {
     /// three.js defaults the material to `new LineBasicMaterial()`, which under
     /// `WebGPURenderer` is a `LineBasicNodeMaterial`; the port takes it by value
     /// because every call site on the ladder passes one.
-    #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `Node`, not `Self`; public API, not changing.
-    pub fn new(geometry: Rc<BufferGeometry>, material: MeshBasicNodeMaterial) -> Node {
+    #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `ObjectRef`, not `Self`; public API, not changing.
+    pub fn new(geometry: Rc<BufferGeometry>, material: MeshBasicNodeMaterial) -> ObjectRef {
         Self::node(geometry, material, false)
     }
 
@@ -64,7 +64,7 @@ impl Line {
         &self,
         matrix_world: &Matrix4,
         scale: &Vector3,
-        object: &Node,
+        object: &ObjectRef,
         raycaster: &Raycaster,
         intersects: &mut Vec<Intersection>,
     ) {
@@ -186,7 +186,7 @@ impl Line {
         geometry: Rc<BufferGeometry>,
         material: MeshBasicNodeMaterial,
         is_line_segments: bool,
-    ) -> Node {
+    ) -> ObjectRef {
         let mut object = Object3D {
             object_type: if is_line_segments {
                 "LineSegments"
@@ -212,8 +212,8 @@ pub struct LineSegments;
 
 impl LineSegments {
     /// `new LineSegments( geometry, material )`.
-    #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `Node`, not `Self`; public API, not changing.
-    pub fn new(geometry: Rc<BufferGeometry>, material: MeshBasicNodeMaterial) -> Node {
+    #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `ObjectRef`, not `Self`; public API, not changing.
+    pub fn new(geometry: Rc<BufferGeometry>, material: MeshBasicNodeMaterial) -> ObjectRef {
         Line::node(geometry, material, true)
     }
 }
@@ -223,7 +223,7 @@ impl LineSegments {
 #[allow(clippy::too_many_arguments)]
 fn check_intersection(
     matrix_world: &Matrix4,
-    object: &Node,
+    object: &ObjectRef,
     raycaster: &Raycaster,
     ray: &Ray,
     threshold_sq: f64,

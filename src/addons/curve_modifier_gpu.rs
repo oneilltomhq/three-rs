@@ -15,7 +15,7 @@
 
 use std::rc::Rc;
 
-use crate::core::{BufferGeometry, Node};
+use crate::core::{BufferGeometry, ObjectRef};
 use crate::extras::{to_half_float, Curve, FrenetFrames};
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::Vector3;
@@ -258,7 +258,7 @@ fn modify_shader(
 /// `Flow`.
 pub struct Flow {
     /// `flow.object3D` — the bent mesh.
-    pub object3d: Node,
+    pub object3d: ObjectRef,
     /// `flow.splineTexture`.
     pub spline_texture: Texture,
     /// `flow.uniforms`, minus `spineTexture` (which is [`Flow::spline_texture`]).

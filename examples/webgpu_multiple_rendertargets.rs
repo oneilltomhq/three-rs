@@ -38,7 +38,7 @@ use three_rs::renderer::RenderTargetOptions;
 use three_rs::textures::Wrapping;
 use three_rs::utils::now_ms;
 use three_rs::{
-    Color, ColorSpace, Mesh, MeshBasicNodeMaterial, Node, PerspectiveCamera, RenderPipeline,
+    Color, ColorSpace, Mesh, MeshBasicNodeMaterial, ObjectRef, PerspectiveCamera, RenderPipeline,
     RenderTarget, Renderer, RendererParameters, Scene, TextureFilter, TextureLoader,
 };
 
@@ -55,7 +55,7 @@ pub struct App {
     pub renderer: Renderer,
     pub scene: Scene,
     pub camera: PerspectiveCamera,
-    pub torus: Node,
+    pub torus: ObjectRef,
     pub render_pipeline: RenderPipeline,
     pub render_target: RenderTarget,
     /// The page's anonymous `new OrbitControls( camera, renderer.domElement )`.

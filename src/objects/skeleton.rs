@@ -5,14 +5,14 @@
 //! [`Skeleton::bone_matrices`] hook; the
 //! renderer fills it in at rung 10.
 
-use crate::core::Node;
+use crate::core::ObjectRef;
 use crate::math::Matrix4;
 
 /// `class Skeleton`.
 #[derive(Debug, Default)]
 pub struct Skeleton {
     /// `Skeleton.bones`.
-    pub bones: Vec<Node>,
+    pub bones: Vec<ObjectRef>,
     /// `Skeleton.boneInverses`.
     pub bone_inverses: Vec<Matrix4>,
     /// `Skeleton.boneMatrices` — `new Float32Array( bones.length * 16 )`,
@@ -26,7 +26,7 @@ impl Skeleton {
     /// `new Skeleton( bones, boneInverses )`. `None` for the inverses is
     /// three.js' `boneInverses === undefined` branch, which calls
     /// `calculateInverses()`.
-    pub fn new(bones: Vec<Node>, bone_inverses: Option<Vec<Matrix4>>) -> Self {
+    pub fn new(bones: Vec<ObjectRef>, bone_inverses: Option<Vec<Matrix4>>) -> Self {
         let mut skeleton = Self {
             bones,
             bone_inverses: Vec::new(),
@@ -126,7 +126,7 @@ impl Skeleton {
     }
 
     /// `Skeleton.getBoneByName( name )`.
-    pub fn get_bone_by_name(&self, name: &str) -> Option<Node> {
+    pub fn get_bone_by_name(&self, name: &str) -> Option<ObjectRef> {
         self.bones
             .iter()
             .find(|bone| bone.borrow().name == name)

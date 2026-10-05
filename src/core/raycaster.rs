@@ -4,13 +4,13 @@
 //!
 //! three.js dispatches `object.raycast( raycaster, intersects )` through the
 //! prototype chain. The port's subclasses live in a node's
-//! [`Payload`](crate::objects::Payload), so [`Node::raycast`] matches on it and
+//! [`Payload`](crate::objects::Payload), so [`ObjectRef::raycast`] matches on it and
 //! calls the ported method of whichever subclass is there; a plain
 //! `Object3D` / `Group` / light raycasts to nothing, as `Object3D.raycast()`
 //! does.
 
 use crate::cameras::RenderCamera;
-use crate::core::{Layers, Node};
+use crate::core::{Layers, ObjectRef};
 use crate::math::{Matrix4, Ray, Vector2, Vector3};
 
 /// The camera state `Raycaster.camera` is read for — by `Sprite.raycast()`
@@ -149,12 +149,12 @@ pub struct Intersection {
     /// `batchId` — `BatchedMesh` only.
     pub batch_id: Option<usize>,
     /// `object` — the object that was hit.
-    pub object: Node,
+    pub object: ObjectRef,
 }
 
 impl Intersection {
     /// The fields every hit has; the rest start absent.
-    pub fn new(distance: f64, point: Vector3, object: Node) -> Self {
+    pub fn new(distance: f64, point: Vector3, object: ObjectRef) -> Self {
         Self {
             distance,
             distance_to_ray: None,
@@ -254,7 +254,7 @@ impl Raycaster {
     /// `raycaster.intersectObject( object, recursive )` — every hit on
     /// `object`, and on its descendants when `recursive` (three's default),
     /// nearest first.
-    pub fn intersect_object(&self, object: &Node, recursive: bool) -> Vec<Intersection> {
+    pub fn intersect_object(&self, object: &ObjectRef, recursive: bool) -> Vec<Intersection> {
         let mut intersects = Vec::new();
         intersect(object, self, &mut intersects, recursive);
         sort(&mut intersects);
@@ -262,7 +262,7 @@ impl Raycaster {
     }
 
     /// `raycaster.intersectObjects( objects, recursive )`.
-    pub fn intersect_objects(&self, objects: &[Node], recursive: bool) -> Vec<Intersection> {
+    pub fn intersect_objects(&self, objects: &[ObjectRef], recursive: bool) -> Vec<Intersection> {
         let mut intersects = Vec::new();
         for object in objects {
             intersect(object, self, &mut intersects, recursive);
@@ -289,7 +289,7 @@ fn sort(intersects: &mut [Intersection]) {
 /// visited either way. three's `propagate` flag, which a `raycast()` that
 /// returns `false` clears, exists for `LOD`, which is not ported.
 fn intersect(
-    object: &Node,
+    object: &ObjectRef,
     raycaster: &Raycaster,
     intersects: &mut Vec<Intersection>,
     recursive: bool,
@@ -306,7 +306,7 @@ fn intersect(
     }
 }
 
-impl Node {
+impl ObjectRef {
     /// `object.raycast( raycaster, intersects )` — push this object's hits
     /// (unsorted) onto `intersects`. Dispatches on the subclass in the
     /// payload; an object that draws nothing has nothing to hit.

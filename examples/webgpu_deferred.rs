@@ -91,9 +91,9 @@ pub struct App {
     pub camera: Rc<RefCell<PerspectiveCamera>>,
     pub environment: PmremEnvironment,
     /// The page's `lightGroup`, turned by `render()`.
-    pub light_group: three_rs::Node,
+    pub light_group: three_rs::ObjectRef,
     /// The page's `planesGroup`, turned the other way.
-    pub planes_group: three_rs::Node,
+    pub planes_group: three_rs::ObjectRef,
     /// The page's module-level `timer`.
     pub timer: Timer,
     pub opaque_pass: PassNode,

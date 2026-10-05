@@ -5355,7 +5355,7 @@ pub fn compute_node(flow: crate::nodes::ComputeFlow, output: NodeRef) -> NodeRef
 }
 
 /// The explicit object's `matrixWorld`, read when the buffer is written.
-fn object_matrix_world(object: &crate::core::Node, name: &'static str) -> LiveValue {
+fn object_matrix_world(object: &crate::core::ObjectRef, name: &'static str) -> LiveValue {
     let object = object.downgrade();
     LiveValue::new(move || {
         let object = object
@@ -5372,7 +5372,7 @@ fn object_matrix_world(object: &crate::core::Node, name: &'static str) -> LiveVa
 /// )`) first, and a camera's direction is negated (`Camera.getWorldDirection()`),
 /// so a camera yields the way it looks. Each call is a uniform of its own, as
 /// each `Object3DNode` is in three.
-pub fn object_direction(object: &crate::core::Node) -> NodeRef {
+pub fn object_direction(object: &crate::core::ObjectRef) -> NodeRef {
     let object = object.downgrade();
     let direction = LiveValue::new(move || {
         let object = object
@@ -5389,7 +5389,7 @@ pub fn object_direction(object: &crate::core::Node) -> NodeRef {
 
 /// `objectPosition( object3d )` — `Object3DNode( POSITION, object3d )`:
 /// `object3d`'s world position.
-pub fn object_position(object: &crate::core::Node) -> NodeRef {
+pub fn object_position(object: &crate::core::ObjectRef) -> NodeRef {
     object_3d_uniform(
         Object3DScope::Position,
         Some(object_matrix_world(object, "objectPosition")),
@@ -5398,7 +5398,7 @@ pub fn object_position(object: &crate::core::Node) -> NodeRef {
 
 /// `objectScale( object3d )` — `Object3DNode( SCALE, object3d )`:
 /// `object3d`'s world scale.
-pub fn object_scale(object: &crate::core::Node) -> NodeRef {
+pub fn object_scale(object: &crate::core::ObjectRef) -> NodeRef {
     object_3d_uniform(
         Object3DScope::Scale,
         Some(object_matrix_world(object, "objectScale")),
@@ -5407,7 +5407,7 @@ pub fn object_scale(object: &crate::core::Node) -> NodeRef {
 
 /// `objectViewPosition( object3d )` — `Object3DNode( VIEW_POSITION, object3d
 /// )`: `object3d`'s world position in the rendering camera's view space.
-pub fn object_view_position(object: &crate::core::Node) -> NodeRef {
+pub fn object_view_position(object: &crate::core::ObjectRef) -> NodeRef {
     object_3d_uniform(
         Object3DScope::ViewPosition,
         Some(object_matrix_world(object, "objectViewPosition")),
@@ -5418,7 +5418,7 @@ pub fn object_view_position(object: &crate::core::Node) -> NodeRef {
 /// three, the sphere is the bounding sphere of the *drawn* object's geometry
 /// (`frame.object.geometry`), scaled by `object3d`'s `matrixWorld`; a draw
 /// with no geometry uploads 0.
-pub fn object_radius(object: &crate::core::Node) -> NodeRef {
+pub fn object_radius(object: &crate::core::ObjectRef) -> NodeRef {
     object_3d_uniform(
         Object3DScope::Radius,
         Some(object_matrix_world(object, "objectRadius")),
@@ -5429,7 +5429,7 @@ pub fn object_radius(object: &crate::core::Node) -> NodeRef {
 /// with an explicit object: an object-group `mat4` that reads
 /// `object3d.matrixWorld` whenever the buffer is written, in a draw or in a
 /// kernel.
-pub fn object_world_matrix(object: &crate::core::Node) -> NodeRef {
+pub fn object_world_matrix(object: &crate::core::ObjectRef) -> NodeRef {
     uniform(
         UniformSource::Live(object_matrix_world(object, "objectWorldMatrix")),
         Type::Mat4,

@@ -29,8 +29,8 @@ use three_rs::nodes::tsl::{
 use three_rs::nodes::{NodeRef, Type};
 use three_rs::testing::DeterministicRandom;
 use three_rs::{
-    pass, Color, Node, PassNode, PerspectiveCamera, RenderPipeline, Renderer, RendererParameters,
-    Scene, Sprite, TextureLoader, Vector3,
+    pass, Color, ObjectRef, PassNode, PerspectiveCamera, RenderPipeline, Renderer,
+    RendererParameters, Scene, Sprite, TextureLoader, Vector3,
 };
 
 pub const INNER_WIDTH: f64 = 800.0;
@@ -54,7 +54,7 @@ pub struct App {
     pub scene: Rc<RefCell<Scene>>,
     /// Shared with `scene_pass`.
     pub camera: Rc<RefCell<PerspectiveCamera>>,
-    pub particles: Node,
+    pub particles: ObjectRef,
     pub scene_pass: PassNode,
     pub after_image_pass: AfterImageNode,
     /// `params.damp`.

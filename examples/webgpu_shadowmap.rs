@@ -20,7 +20,7 @@ use std::f64::consts::PI;
 use std::rc::Rc;
 
 use three_rs::addons::controls::OrbitControls;
-use three_rs::core::Node;
+use three_rs::core::ObjectRef;
 use three_rs::geometries::{cylinder_geometry, plane_geometry, torus_knot_geometry};
 use three_rs::nodes::materialx::{mx_fractal_noise_float, mx_fractal_noise_vec3};
 use three_rs::nodes::tsl::{block, int, position_local, position_world, to_var};
@@ -44,9 +44,9 @@ pub struct App {
     pub camera: PerspectiveCamera,
     /// The page's `controls`.
     pub controls: OrbitControls,
-    pub torus_knot: Node,
-    pub dir_group: Node,
-    pub dir_light: Node,
+    pub torus_knot: ObjectRef,
+    pub dir_group: ObjectRef,
+    pub dir_light: ObjectRef,
     /// The page's module-level `timer`.
     pub timer: Timer,
 }

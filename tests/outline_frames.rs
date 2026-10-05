@@ -47,7 +47,7 @@ fn frame(pipeline: &mut RenderPipeline, renderer: &mut Renderer) -> Vec<(u8, u8)
 }
 
 /// A white unlit box.
-fn white_box(size: f64) -> three_rs::Node {
+fn white_box(size: f64) -> three_rs::ObjectRef {
     let mut material = MeshBasicNodeMaterial::new();
     material.color = Color::from_hex(0xffffff);
     Mesh::new(Rc::new(box_geometry(size, size, size, 1, 1, 1)), material)

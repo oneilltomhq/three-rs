@@ -3,7 +3,7 @@
 use crate::math::Color;
 
 /// `class Light extends Object3D`. In this port the `Object3D` half is the
-/// scene-graph [`Node`](crate::core::Node) that carries the light as a
+/// scene-graph [`ObjectRef`](crate::core::ObjectRef) that carries the light as a
 /// [`Payload`](crate::objects::Payload), so this struct is only what `Light`
 /// adds to `Object3D` — the same shape `Mesh` has.
 #[derive(Clone)]

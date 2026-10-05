@@ -6,12 +6,12 @@
 
 use std::rc::Rc;
 
-use three_rs::core::{BufferGeometry, Node, Object3D, Raycaster};
+use three_rs::core::{BufferGeometry, Object3D, ObjectRef, Raycaster};
 use three_rs::materials::MeshBasicNodeMaterial;
 use three_rs::math::Vector3;
 use three_rs::objects::Points;
 
-fn points() -> Node {
+fn points() -> ObjectRef {
     Points::new(
         Rc::new(BufferGeometry::new()),
         MeshBasicNodeMaterial::points(),

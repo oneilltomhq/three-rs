@@ -4831,7 +4831,10 @@ fn webgpu_ocean() {
         let scene = app.scene.borrow();
         let root = scene.node.borrow();
         assert_eq!(root.children.len(), 3, "water, cube, sky");
-        assert!(three_rs::Node::ptr_eq(&root.children[2], &app.sky.mesh));
+        assert!(three_rs::ObjectRef::ptr_eq(
+            &root.children[2],
+            &app.sky.mesh
+        ));
     }
     assert!(app.scene_env.node.borrow().children.is_empty());
 
@@ -4848,7 +4851,7 @@ fn webgpu_ocean() {
         let target = app.water.mirror_sampler.target();
         let water = app.water.mesh.borrow();
         assert_eq!(water.children.len(), 1, "the mirror's target");
-        assert!(three_rs::Node::ptr_eq(&water.children[0], &target));
+        assert!(three_rs::ObjectRef::ptr_eq(&water.children[0], &target));
     }
 
     let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
@@ -6848,8 +6851,8 @@ fn a_scene_mutation_uploads_exactly_what_changed() {
     use std::rc::Rc;
     use three_rs::materials::MeshBasicNodeMaterial;
     use three_rs::{
-        box_geometry, BuildCounts, Mesh, Node, PerspectiveCamera, Renderer, RendererParameters,
-        Scene,
+        box_geometry, BuildCounts, Mesh, ObjectRef, PerspectiveCamera, Renderer,
+        RendererParameters, Scene,
     };
 
     /// The smallest thing `testing::strip` renders: a renderer, a scene, a
@@ -6858,7 +6861,7 @@ fn a_scene_mutation_uploads_exactly_what_changed() {
         renderer: Renderer,
         scene: Scene,
         camera: PerspectiveCamera,
-        mesh: Option<Node>,
+        mesh: Option<ObjectRef>,
     }
 
     let _gpu = gpu();

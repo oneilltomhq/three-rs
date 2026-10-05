@@ -74,7 +74,7 @@ fn render(geometry: Rc<BufferGeometry>, material: MeshBasicNodeMaterial) -> Vec<
 }
 
 /// Render one line object on a black background and read the canvas back.
-fn render_node(line: three_rs::Node) -> Vec<u8> {
+fn render_node(line: three_rs::ObjectRef) -> Vec<u8> {
     let mut scene = Scene::new();
     scene.set_background(Color::from_hex(0x000000));
     scene.add(&line);

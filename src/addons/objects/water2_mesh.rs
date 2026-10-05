@@ -10,14 +10,14 @@
 //! - [Water using flow maps](http://graphicsrunner.blogspot.de/2010/08/water-using-flow-maps.html)
 //!
 //! Upstream's module defines a `Mesh` subclass it exports as `WaterMesh` and
-//! a private `WaterNode` (a `Node` of type `vec4`) that is the material's
+//! a private `WaterNode` (a `ObjectRef` of type `vec4`) that is the material's
 //! `colorNode`. The crate already has a `WaterMesh`, the port of
 //! `WaterMesh.js`, so this one is [`Water2Mesh`], after its file, as three's
 //! own docs call the module.
 //!
 //! Upstream reaches the uniforms through the node,
 //! `water.material.colorNode.scale.value = … `; the port's [`Mesh`] is a
-//! constructor returning a scene-graph [`Node`], so [`Water2Mesh`] holds that
+//! constructor returning a scene-graph [`ObjectRef`], so [`Water2Mesh`] holds that
 //! node next to the `WaterNode`'s uniforms, each a [`SettableValue`], and
 //! `waterNode.scale.value = 2` is `water.scale.set( vec![ 2.0 ] )`.
 //!
@@ -57,7 +57,7 @@
 //!   of its own, which the port's [`MeshBasicNodeMaterial`] is with its
 //!   defaults, as for `WaterMesh` and `SkyMesh`.
 
-use crate::core::{BufferGeometry, Node};
+use crate::core::{BufferGeometry, ObjectRef};
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::{Color, Vector2};
 use crate::nodes::display::{viewport_safe_uv, viewport_shared_texture_at};
@@ -127,7 +127,7 @@ impl Water2MeshOptions {
 pub struct Water2Mesh {
     /// The `Mesh` itself: the geometry with the water material, and the
     /// reflector's `target` as its child (from the first render on).
-    pub mesh: Node,
+    pub mesh: ObjectRef,
     /// `waterNode.normalMap0`'s map.
     pub normal_map0: Texture,
     /// `waterNode.normalMap1`'s map.

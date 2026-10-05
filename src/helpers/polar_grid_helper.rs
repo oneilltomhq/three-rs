@@ -3,7 +3,7 @@
 use std::f64::consts::PI;
 use std::rc::Rc;
 
-use crate::core::{BufferAttribute, BufferGeometry, Node};
+use crate::core::{BufferAttribute, BufferGeometry, ObjectRef};
 use crate::materials::LineBasicNodeMaterial;
 use crate::math::Color;
 use crate::objects::LineSegments;
@@ -24,7 +24,7 @@ pub struct PolarGridHelper;
 impl PolarGridHelper {
     /// `new PolarGridHelper( radius, sectors, rings, divisions, color1,
     /// color2 )`, as a scene-graph node.
-    #[allow(clippy::new_ret_no_self)] // mirrors three.js's constructor: a scene-graph `Node`, not `Self`.
+    #[allow(clippy::new_ret_no_self)] // mirrors three.js's constructor: a scene-graph `ObjectRef`, not `Self`.
     pub fn new(
         radius: f64,
         sectors: usize,
@@ -32,7 +32,7 @@ impl PolarGridHelper {
         divisions: usize,
         color1: Color,
         color2: Color,
-    ) -> Node {
+    ) -> ObjectRef {
         let mut vertices: Vec<f32> = Vec::new();
         let mut colors: Vec<f32> = Vec::new();
 

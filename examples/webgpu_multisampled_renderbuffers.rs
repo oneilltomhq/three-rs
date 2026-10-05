@@ -25,8 +25,8 @@ use three_rs::nodes::tsl::texture;
 use three_rs::renderer::RenderTargetOptions;
 use three_rs::testing::DeterministicRandom;
 use three_rs::{
-    box_geometry, Color, InstancedMesh, Matrix4, MeshBasicNodeMaterial, Node, PerspectiveCamera,
-    QuadMesh, RenderTarget, Renderer, RendererParameters, Scene, Vector3,
+    box_geometry, Color, InstancedMesh, Matrix4, MeshBasicNodeMaterial, ObjectRef,
+    PerspectiveCamera, QuadMesh, RenderTarget, Renderer, RendererParameters, Scene, Vector3,
 };
 
 pub const INNER_WIDTH: f64 = 800.0;
@@ -50,7 +50,7 @@ pub struct App {
     pub camera: PerspectiveCamera,
     pub quad_mesh: QuadMesh,
     pub render_target: RenderTarget,
-    pub boxes: [Node; 2],
+    pub boxes: [ObjectRef; 2],
 }
 
 /// The page's module-scope `positions`: points on two spheres, alternating

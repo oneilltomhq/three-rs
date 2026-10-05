@@ -2,7 +2,7 @@
 
 use std::rc::Rc;
 
-use crate::core::Node;
+use crate::core::ObjectRef;
 use crate::geometries::sphere_geometry;
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::Color;
@@ -24,9 +24,9 @@ use super::directional_light_helper::light_color;
 /// sphere is not ported either.
 pub struct PointLightHelper {
     /// The `Mesh` itself.
-    pub node: Node,
+    pub node: ObjectRef,
     /// `PointLightHelper.light`.
-    pub light: Node,
+    pub light: ObjectRef,
     /// `PointLightHelper.color`: `None` follows the light's colour.
     pub color: Option<Color>,
 }
@@ -38,7 +38,7 @@ impl PointLightHelper {
     /// Panics if `color` is `None` and `light` is not a light, here and on
     /// every [`update`](Self::update): only then does the helper read the
     /// light's colour.
-    pub fn new(light: &Node, sphere_size: f64, color: Option<Color>) -> Self {
+    pub fn new(light: &ObjectRef, sphere_size: f64, color: Option<Color>) -> Self {
         let geometry = sphere_geometry(sphere_size, 4, 2);
         // `new MeshBasicMaterial( { wireframe: true, fog: false, toneMapped:
         // false } )`.

@@ -33,7 +33,7 @@ use std::rc::Rc;
 
 use three_rs::addons::controls::OrbitControls;
 use three_rs::animation::AnimationMixer;
-use three_rs::core::Node;
+use three_rs::core::ObjectRef;
 use three_rs::geometries::{box_geometry, torus_geometry};
 use three_rs::loaders::GltfLoader;
 use three_rs::materials::Side;
@@ -72,8 +72,8 @@ pub struct App {
     pub camera: Rc<RefCell<PerspectiveCamera>>,
     /// The page's `controls`.
     pub controls: OrbitControls,
-    pub box_left: Node,
-    pub box_right: Node,
+    pub box_left: ObjectRef,
+    pub box_right: ObjectRef,
     /// The page's module-level `mixer`.
     pub mixer: AnimationMixer,
     /// The page's module-level `timer`.

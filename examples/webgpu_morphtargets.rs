@@ -41,7 +41,7 @@ pub struct App {
     /// The page's `controls`.
     pub controls: OrbitControls,
     /// The page's module-level `mesh`, which `initGUI()`'s sliders would morph.
-    pub mesh: three_rs::Node,
+    pub mesh: three_rs::ObjectRef,
 }
 
 /// `createGeometry()`.

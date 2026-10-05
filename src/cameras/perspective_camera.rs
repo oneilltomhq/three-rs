@@ -1,7 +1,7 @@
 //! Port of `three.js/src/cameras/PerspectiveCamera.js` + `Camera.js`
 //! (rung 1 subset).
 
-use crate::core::{Node, Object3D};
+use crate::core::{Object3D, ObjectRef};
 use crate::math::math_utils::{js_max, js_min};
 use crate::math::{CoordinateSystem, Matrix4, Vector2, Vector3, Vector4, DEG2RAD, RAD2DEG};
 
@@ -32,8 +32,8 @@ pub struct CameraView {
 pub struct PerspectiveCamera {
     /// The camera's own scene-graph node. `Camera` is an `Object3D` in three.js
     /// and examples nest it (`scene.add( camera )`, `camera.add( light )`), so it
-    /// owns a [`Node`] rather than a bare `Object3D`.
-    pub node: Node,
+    /// owns a [`ObjectRef`] rather than a bare `Object3D`.
+    pub node: ObjectRef,
     /// The vertical field of view, from bottom to top of view, in degrees.
     pub fov: f64,
     /// The aspect ratio, usually the canvas width divided by its height.

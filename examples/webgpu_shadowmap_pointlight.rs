@@ -20,7 +20,7 @@
 use std::rc::Rc;
 
 use three_rs::addons::controls::OrbitControls;
-use three_rs::core::Node;
+use three_rs::core::ObjectRef;
 use three_rs::materials::Side;
 use three_rs::textures::{Texture, TextureFilter, Wrapping};
 use three_rs::utils::now_ms;
@@ -40,8 +40,8 @@ pub struct App {
     pub camera: PerspectiveCamera,
     /// The page's `controls`.
     pub controls: OrbitControls,
-    pub point_light: Node,
-    pub point_light2: Node,
+    pub point_light: ObjectRef,
+    pub point_light2: ObjectRef,
 }
 
 /// `generateTexture()`: a 2 × 2 canvas, transparent except for
@@ -55,7 +55,7 @@ fn generate_texture() -> Texture {
 }
 
 /// The page's `createLight( color )`.
-fn create_light(color: u32) -> Node {
+fn create_light(color: u32) -> ObjectRef {
     let intensity = 200.0;
 
     let light = PointLight::new(Color::from_hex(color), intensity, 20.0);
@@ -158,7 +158,7 @@ pub fn init() -> App {
 }
 
 /// `pointLight.position` / `.rotation` for one `time`, in seconds.
-fn place(light: &Node, time: f64) {
+fn place(light: &ObjectRef, time: f64) {
     let mut object = light.borrow_mut();
     object.position.x = (time * 0.6).sin() * 9.0;
     object.position.y = (time * 0.7).sin() * 9.0 + 6.0;

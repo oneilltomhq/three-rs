@@ -28,8 +28,8 @@ use three_rs::textures::Wrapping;
 use three_rs::utils::date_now_ms;
 use three_rs::{
     box_geometry, plane_geometry, sphere_geometry, Color, ColorSpace, HemisphereLight, Mesh,
-    MeshStandardNodeMaterial, Node, PerspectiveCamera, PointLight, Renderer, RendererParameters,
-    Scene, ToneMapping, Vector3,
+    MeshStandardNodeMaterial, ObjectRef, PerspectiveCamera, PointLight, Renderer,
+    RendererParameters, Scene, ToneMapping, Vector3,
 };
 
 pub const INNER_WIDTH: f64 = 800.0;
@@ -49,9 +49,9 @@ pub struct App {
     pub scene: Scene,
     pub camera: PerspectiveCamera,
     /// The page's module-level handles that `animate()` mutates.
-    pub bulb_light: Node,
-    pub hemi_light: Node,
-    pub bulb_mesh: Node,
+    pub bulb_light: ObjectRef,
+    pub hemi_light: ObjectRef,
+    pub bulb_mesh: ObjectRef,
     /// The page's `controls`.
     pub controls: OrbitControls,
 }

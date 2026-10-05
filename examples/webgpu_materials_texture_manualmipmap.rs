@@ -204,7 +204,7 @@ pub fn init() -> App {
     let mesh2 = Mesh::new(geometry_painting, Some(material_painting2));
 
     // `addPainting( zscene, zmesh )`.
-    let add_painting = |zscene: &Scene, zmesh: &three_rs::Node| {
+    let add_painting = |zscene: &Scene, zmesh: &three_rs::ObjectRef| {
         {
             let mut mesh = zmesh.borrow_mut();
             mesh.scale.x = image_width / 100.0;

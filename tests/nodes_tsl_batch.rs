@@ -89,7 +89,7 @@ fn codes(wgsl: &str) -> String {
 /// Three's normalised body with `let {name} = X;` removed and every use of
 /// `name` replaced by `X`.
 ///
-/// Three's `Node.build()` now caches *any* cacheable node used more than once
+/// Three's `ObjectRef.build()` now caches *any* cacheable node used more than once
 /// in a `let nodeConstN`; the port promotes only operator, math and join nodes
 /// (`docs/nodes.md` §8), so a `ConvertNode` read three times is written out
 /// three times here. Same value.

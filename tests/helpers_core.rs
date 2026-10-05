@@ -30,7 +30,7 @@ use std::collections::BTreeMap;
 use std::process::Command;
 
 use serde_json::{json, Map, Value};
-use three_rs::core::{Index, Node, Object3D};
+use three_rs::core::{Index, Object3D, ObjectRef};
 use three_rs::geometries::{box_geometry, sphere_geometry};
 use three_rs::helpers::{
     ArrowHelper, AxesHelper, Box3Helper, BoxHelper, DirectionalLightHelper, HemisphereLightHelper,
@@ -103,7 +103,7 @@ fn side(side: Side) -> Value {
 }
 
 /// `dump( object )` in the script, without `material.toneMapped`.
-fn dump(node: &Node) -> Value {
+fn dump(node: &ObjectRef) -> Value {
     let object = node.borrow();
 
     let geometry = object.geometry().map_or(Value::Null, |geometry| {
@@ -217,7 +217,7 @@ fn compare(path: &str, expected: &Value, actual: &Value, failures: &mut Vec<Stri
 
 // --- Scenarios -------------------------------------------------------------------
 
-fn transformed_root() -> Node {
+fn transformed_root() -> ObjectRef {
     let root = Object3D::new_node();
     {
         let mut object = root.borrow_mut();
@@ -236,7 +236,7 @@ fn hex(hex: u32) -> Color {
     Color::from_hex(hex)
 }
 
-fn light_target(light: &Node) -> Node {
+fn light_target(light: &ObjectRef) -> ObjectRef {
     light
         .borrow()
         .light()
@@ -244,7 +244,7 @@ fn light_target(light: &Node) -> Node {
         .expect("the light has a target")
 }
 
-fn set_light_color(light: &Node, color: Color) {
+fn set_light_color(light: &ObjectRef, color: Color) {
     light.borrow_mut().light_mut().unwrap().light.color = color;
 }
 
@@ -600,10 +600,10 @@ fn spot_colored() -> Value {
 
 /// `skeleton()` in the script: the bones under a transformed root.
 struct Rig {
-    root: Node,
-    character: Node,
-    b0: Node,
-    b1: Node,
+    root: ObjectRef,
+    character: ObjectRef,
+    b0: ObjectRef,
+    b1: ObjectRef,
 }
 
 fn skeleton() -> Rig {

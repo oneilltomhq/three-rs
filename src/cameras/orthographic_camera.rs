@@ -9,7 +9,7 @@ use super::CameraView;
 /// three.js' `OrthographicCamera`: a camera whose projection keeps an
 /// object's size on screen constant regardless of its distance, unlike
 /// [`PerspectiveCamera`](super::PerspectiveCamera). It holds an [`Object3D`]
-/// by value rather than a [`Node`](crate::core::Node) — see
+/// by value rather than a [`ObjectRef`](crate::core::ObjectRef) — see
 /// `docs/scene-graph.md`, "What a node *is*".
 #[derive(Clone)]
 pub struct OrthographicCamera {

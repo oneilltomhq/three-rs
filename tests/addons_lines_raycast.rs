@@ -4,7 +4,7 @@
 
 use three_rs::addons::lines::{LineSegments2, LineSegmentsGeometry};
 use three_rs::cameras::PerspectiveCamera;
-use three_rs::core::{Node, Raycaster};
+use three_rs::core::{ObjectRef, Raycaster};
 use three_rs::materials::MeshBasicNodeMaterial;
 use three_rs::math::{Color, Vector2, Vector3};
 
@@ -16,7 +16,7 @@ fn close3(a: &Vector3, x: f64, y: f64, z: f64) -> bool {
     close(a.x, x) && close(a.y, y) && close(a.z, z)
 }
 
-fn set_resolution(line: &Node, x: f64, y: f64) {
+fn set_resolution(line: &ObjectRef, x: f64, y: f64) {
     let mut object = line.borrow_mut();
     let mesh = object.payload.mesh_mut().unwrap();
     mesh.line_segments.as_mut().unwrap().resolution = Vector2::new(x, y);

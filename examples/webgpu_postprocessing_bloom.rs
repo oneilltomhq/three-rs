@@ -57,7 +57,7 @@ pub struct App {
     pub mixer: AnimationMixer,
     /// The page's module-level `timer`.
     pub timer: Timer,
-    pub gltf_scene: three_rs::Node,
+    pub gltf_scene: three_rs::ObjectRef,
     pub scene_pass: PassNode,
     pub bloom_pass: BloomNode,
     pub render_pipeline: RenderPipeline,

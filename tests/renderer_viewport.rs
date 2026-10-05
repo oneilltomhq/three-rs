@@ -19,8 +19,8 @@
 use std::rc::Rc;
 
 use three_rs::{
-    plane_geometry, Color, Mesh, MeshBasicNodeMaterial, Node, OrthographicCamera, RenderTarget,
-    Renderer, RendererParameters, Scene,
+    plane_geometry, Color, Mesh, MeshBasicNodeMaterial, ObjectRef, OrthographicCamera,
+    RenderTarget, Renderer, RendererParameters, Scene,
 };
 
 const W: u32 = 64;
@@ -47,7 +47,7 @@ fn camera() -> OrthographicCamera {
 }
 
 /// A 2x2 plane of one flat colour at `z`.
-fn quad(color: u32, z: f64) -> Node {
+fn quad(color: u32, z: f64) -> ObjectRef {
     let mesh = Mesh::new(
         Rc::new(plane_geometry(2.0, 2.0, 1, 1)),
         MeshBasicNodeMaterial::line(Color::from_hex(color)),

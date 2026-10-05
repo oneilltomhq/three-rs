@@ -21,7 +21,7 @@ use three_rs::{
     CubeCamera, CubeRenderTarget, CubeTextureLoader, Renderer, RendererParameters, Scene,
 };
 
-fn sh(probe: &three_rs::Node) -> SphericalHarmonics3 {
+fn sh(probe: &three_rs::ObjectRef) -> SphericalHarmonics3 {
     probe.borrow().light().expect("a LightProbe").sh
 }
 

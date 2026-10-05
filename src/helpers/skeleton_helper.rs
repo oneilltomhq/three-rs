@@ -2,7 +2,7 @@
 
 use std::rc::Rc;
 
-use crate::core::{BufferAttribute, BufferGeometry, Node};
+use crate::core::{BufferAttribute, BufferGeometry, ObjectRef};
 use crate::materials::LineBasicNodeMaterial;
 use crate::math::{Color, Matrix4, Vector3};
 use crate::objects::{is_bone, LineSegments};
@@ -34,11 +34,11 @@ use crate::objects::{is_bone, LineSegments};
 /// [`GridHelper`](super::GridHelper).
 pub struct SkeletonHelper {
     /// The `LineSegments` itself.
-    pub node: Node,
+    pub node: ObjectRef,
     /// `SkeletonHelper.root`, the object the helper was built for.
-    pub root: Node,
+    pub root: ObjectRef,
     /// `SkeletonHelper.bones`: every bone under `root`, depth first.
-    pub bones: Vec<Node>,
+    pub bones: Vec<ObjectRef>,
 }
 
 impl SkeletonHelper {
@@ -46,7 +46,7 @@ impl SkeletonHelper {
     pub const IS_SKELETON_HELPER: bool = true;
 
     /// `new SkeletonHelper( object )`.
-    pub fn new(object: &Node) -> Self {
+    pub fn new(object: &ObjectRef) -> Self {
         let bones = get_bone_list(object);
 
         let segments = bones.iter().filter(|bone| has_bone_parent(bone)).count();
@@ -165,14 +165,14 @@ impl SkeletonHelper {
 }
 
 /// `bone.parent && bone.parent.isBone`.
-fn has_bone_parent(bone: &Node) -> bool {
+fn has_bone_parent(bone: &ObjectRef) -> bool {
     bone.parent()
         .is_some_and(|parent| is_bone(&parent.borrow()))
 }
 
 /// The module's `getBoneList( object )`: `object` if it is a bone, then each
 /// child's list in order.
-fn get_bone_list(object: &Node) -> Vec<Node> {
+fn get_bone_list(object: &ObjectRef) -> Vec<ObjectRef> {
     let mut bone_list = Vec::new();
 
     if is_bone(&object.borrow()) {

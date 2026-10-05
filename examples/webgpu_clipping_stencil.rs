@@ -41,7 +41,7 @@
 use std::rc::Rc;
 
 use three_rs::addons::controls::OrbitControls;
-use three_rs::core::Node;
+use three_rs::core::ObjectRef;
 use three_rs::geometries::{plane_geometry, torus_knot_geometry};
 use three_rs::materials::{Side, StencilFunc, StencilOp};
 use three_rs::math::{Plane, Vector3};
@@ -68,11 +68,11 @@ pub struct App {
     pub controls: OrbitControls,
     /// The page's `object`: the group the stencil groups and the clipped knot
     /// turn in.
-    pub object: Node,
+    pub object: ObjectRef,
     /// The page's `planes`, which the caps follow.
     pub planes: [Plane; 3],
     /// The page's `planeObjects`: one cap per plane.
-    pub plane_objects: Vec<Node>,
+    pub plane_objects: Vec<ObjectRef>,
     /// The page's module-level `timer`.
     pub timer: Timer,
 }
@@ -84,7 +84,7 @@ fn create_plane_stencil_group(
     plane: Plane,
     stencil_bit: u32,
     render_order: f64,
-) -> Node {
+) -> ObjectRef {
     let group = ClippingGroup::of(ClippingGroup {
         clipping_planes: vec![plane],
         ..ClippingGroup::default()

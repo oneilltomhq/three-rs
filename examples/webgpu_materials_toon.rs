@@ -49,7 +49,7 @@ pub struct App {
     /// pass is fired explicitly before the pipeline, as every ported pass is
     /// (`docs/postprocessing.md`).
     pub scene_pass: ToonOutlinePassNode,
-    pub particle_light: three_rs::Node,
+    pub particle_light: three_rs::ObjectRef,
 }
 
 fn examples_dir() -> std::path::PathBuf {

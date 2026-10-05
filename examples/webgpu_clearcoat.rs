@@ -70,9 +70,9 @@ pub struct App {
     pub controls: OrbitControls,
     pub environment: PmremEnvironment,
     /// The page's `particleLight`.
-    pub particle_light: three_rs::core::Node,
+    pub particle_light: three_rs::core::ObjectRef,
     /// The page's `group`.
-    pub group: three_rs::core::Node,
+    pub group: three_rs::core::ObjectRef,
 }
 
 pub fn init() -> App {

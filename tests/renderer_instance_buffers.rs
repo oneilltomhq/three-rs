@@ -21,8 +21,8 @@ use std::rc::Rc;
 use three_rs::geometries::plane_geometry;
 use three_rs::math::Matrix4;
 use three_rs::{
-    BuildCounts, Color, InstancedMesh, MeshBasicNodeMaterial, Node, PerspectiveCamera, Renderer,
-    RendererParameters, Scene, Vector3,
+    BuildCounts, Color, InstancedMesh, MeshBasicNodeMaterial, ObjectRef, PerspectiveCamera,
+    Renderer, RendererParameters, Scene, Vector3,
 };
 
 const WIDTH: f64 = 320.0;
@@ -30,7 +30,7 @@ const HEIGHT: f64 = 200.0;
 const COLUMNS: usize = 50;
 
 /// `count` small white quads on a grid.
-fn scene(count: usize) -> (Scene, PerspectiveCamera, Node) {
+fn scene(count: usize) -> (Scene, PerspectiveCamera, ObjectRef) {
     let mut camera = PerspectiveCamera::new(60.0, WIDTH / HEIGHT, 0.1, 100.0);
     camera.node.borrow_mut().position.set(0.0, 0.0, 10.0);
     camera.look_at(&Vector3::ZERO);
@@ -76,7 +76,7 @@ fn frame(
     (pixels, added)
 }
 
-fn version(mesh: &Node) -> u32 {
+fn version(mesh: &ObjectRef) -> u32 {
     mesh.borrow()
         .instance_matrix()
         .expect("an InstancedMesh has an instance matrix")

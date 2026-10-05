@@ -18,7 +18,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use three_rs::addons::helpers::LightProbeHelper;
-use three_rs::core::Node;
+use three_rs::core::ObjectRef;
 use three_rs::geometries::plane_geometry;
 use three_rs::materials::MeshBasicNodeMaterial;
 use three_rs::math::SphericalHarmonics3;
@@ -29,7 +29,7 @@ use three_rs::{
 
 type Log = Rc<RefCell<Vec<(String, u64)>>>;
 
-fn quad(name: &str, x: f64) -> Node {
+fn quad(name: &str, x: f64) -> ObjectRef {
     let geometry = Rc::new(plane_geometry(4.0, 4.0, 1, 1));
     let mut material = MeshBasicNodeMaterial::new();
     material.color = Color::from_hex(0xff0000);
@@ -39,7 +39,7 @@ fn quad(name: &str, x: f64) -> Node {
     mesh
 }
 
-fn hook_object(node: &Node, log: &Log) {
+fn hook_object(node: &ObjectRef, log: &Log) {
     let name = node.borrow().name.clone();
     let before = (log.clone(), name.clone());
     node.borrow_mut()
@@ -90,7 +90,10 @@ fn hooks_run_in_three_order_around_the_draws() {
         let (log, targets) = (log.clone(), targets.clone());
         let scene_node = scene_node.clone();
         scene.set_on_before_render(move |renderer, scene, camera, target| {
-            assert!(Node::ptr_eq(&scene.node, &scene_node), "the scene itself");
+            assert!(
+                ObjectRef::ptr_eq(&scene.node, &scene_node),
+                "the scene itself"
+            );
             assert_eq!(camera.id(), camera_id, "the camera rendered with");
             log.borrow_mut()
                 .push(("scene before".to_string(), renderer.info().render.calls));

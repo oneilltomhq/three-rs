@@ -4,7 +4,7 @@ use std::f64::consts::PI;
 use std::rc::Rc;
 
 use crate::cameras::{OrthographicCamera, PerspectiveCamera, RenderCamera};
-use crate::core::{BufferAttribute, BufferGeometry, Node, Object3D, Raycaster};
+use crate::core::{BufferAttribute, BufferGeometry, Object3D, ObjectRef, Raycaster};
 use crate::geometries::{
     box_geometry, cylinder_geometry, octahedron_geometry, plane_geometry, sphere_geometry,
     torus_geometry, torus_geometry_full,
@@ -481,7 +481,7 @@ type GizmoMap = Vec<(&'static str, Vec<Entry>)>;
 /// A handle: one child of a gizmo, picker or helper group.
 #[derive(Clone, Debug)]
 struct Handle {
-    node: Node,
+    node: ObjectRef,
     /// `handle.name`.
     name: &'static str,
     /// `handle.tag === 'helper'`.
@@ -492,7 +492,7 @@ struct Handle {
 /// One `setupGizmo()` result.
 #[derive(Clone, Debug)]
 struct Group {
-    node: Node,
+    node: ObjectRef,
     /// The children in `children` order.
     handles: Vec<Handle>,
 }
@@ -500,7 +500,7 @@ struct Group {
 /// `TransformControlsGizmo`: three groups per mode.
 #[derive(Clone, Debug)]
 struct Gizmo {
-    node: Node,
+    node: ObjectRef,
     gizmo: [Group; 3],
     picker: [Group; 3],
     helper: [Group; 3],
@@ -1004,7 +1004,7 @@ fn helper_scale() -> GizmoMap {
 }
 
 /// Write a handle's material colour and, if given, opacity.
-fn set_material(node: &Node, color: Color, opacity: Option<f64>) {
+fn set_material(node: &ObjectRef, color: Color, opacity: Option<f64>) {
     let mut object = node.borrow_mut();
     let material = match &mut object.payload {
         Payload::Mesh(mesh) => mesh.material.as_mut(),
@@ -1022,7 +1022,7 @@ fn set_material(node: &Node, color: Color, opacity: Option<f64>) {
 /// `intersectObjectWithRay( object, raycaster, includeInvisible )`: the
 /// nearest hit whose object is `visible`, or the nearest hit at all.
 fn intersect_object_with_ray(
-    object: &Node,
+    object: &ObjectRef,
     raycaster: &Raycaster,
     include_invisible: bool,
 ) -> Option<crate::core::Intersection> {
@@ -1033,10 +1033,10 @@ fn intersect_object_with_ray(
 }
 
 /// Whether `node` is `ancestor` or below it.
-fn is_within(node: &Node, ancestor: &Node) -> bool {
+fn is_within(node: &ObjectRef, ancestor: &ObjectRef) -> bool {
     let mut current = Some(node.clone());
     while let Some(n) = current {
-        if Node::ptr_eq(&n, ancestor) {
+        if ObjectRef::ptr_eq(&n, ancestor) {
             return true;
         }
         current = n.parent();
@@ -1091,7 +1091,7 @@ fn set_property<T: PartialEq>(
 ///
 /// Three does its per-frame work in `updateMatrixWorld` overrides on the
 /// root, the gizmo and the plane, which the renderer reaches through
-/// `scene.updateMatrixWorld()`. The port's `Node` has no overrides, so the
+/// `scene.updateMatrixWorld()`. The port's `ObjectRef` has no overrides, so the
 /// host calls `update(&mut camera)` once per frame after the scene's matrices
 /// are current and before rendering: it decomposes the object's and the
 /// camera's matrices, cancels the helper's parent transform, places, shows
@@ -1189,7 +1189,7 @@ pub struct TransformControls {
     /// the centre of the view.
     pub pointer_locked: bool,
 
-    object: Option<Node>,
+    object: Option<ObjectRef>,
     axis: Option<Axis>,
     mode: Mode,
     translation_snap: Option<f64>,
@@ -1230,9 +1230,9 @@ pub struct TransformControls {
     dir_vector: Vector3,
 
     raycaster: Raycaster,
-    root: Node,
+    root: ObjectRef,
     gizmo: Gizmo,
-    plane: Node,
+    plane: ObjectRef,
     palette: Palette,
 
     element_width: f64,
@@ -1345,7 +1345,7 @@ impl TransformControls {
     }
 
     /// `getHelper()`: the `TransformControlsRoot` to add to the scene.
-    pub fn get_helper(&self) -> &Node {
+    pub fn get_helper(&self) -> &ObjectRef {
         &self.root
     }
 
@@ -1360,9 +1360,9 @@ impl TransformControls {
     ///
     /// A test hook, so the graph test can hold the port's tags to three's;
     /// the port keeps the tag beside the handle rather than on the
-    /// [`Node`], and nothing outside reads it.
+    /// [`ObjectRef`], and nothing outside reads it.
     #[doc(hidden)]
-    pub fn handle_tag(&self, node: &Node) -> Option<Option<&'static str>> {
+    pub fn handle_tag(&self, node: &ObjectRef) -> Option<Option<&'static str>> {
         let gizmo = &self.gizmo;
         gizmo
             .gizmo
@@ -1370,12 +1370,12 @@ impl TransformControls {
             .chain(&gizmo.picker)
             .chain(&gizmo.helper)
             .flat_map(|group| &group.handles)
-            .find(|handle| Node::ptr_eq(&handle.node, node))
+            .find(|handle| ObjectRef::ptr_eq(&handle.node, node))
             .map(|handle| handle.helper.then_some("helper"))
     }
 
     /// `object`: the attached object.
-    pub fn object(&self) -> Option<&Node> {
+    pub fn object(&self) -> Option<&ObjectRef> {
         self.object.as_ref()
     }
 
@@ -1478,12 +1478,12 @@ impl TransformControls {
     }
 
     /// `attach( object )`. The object must be in the scene graph.
-    pub fn attach(&mut self, object: &Node) -> Vec<TransformControlsEvent> {
+    pub fn attach(&mut self, object: &ObjectRef) -> Vec<TransformControlsEvent> {
         let mut events = Vec::new();
         let same = self
             .object
             .as_ref()
-            .is_some_and(|o| Node::ptr_eq(o, object));
+            .is_some_and(|o| ObjectRef::ptr_eq(o, object));
         if !same {
             self.object = Some(object.clone());
             events.push(TransformControlsEvent::PropertyChanged("object"));
@@ -1807,7 +1807,7 @@ impl TransformControls {
         events
     }
 
-    fn translate(&mut self, object: &Node, axis: Axis, space: Space) {
+    fn translate(&mut self, object: &ObjectRef, axis: Axis, space: Space) {
         self.offset = self.point_end;
         self.offset.sub(&self.point_start);
         if space == Space::Local && axis != Axis::XYZ {
@@ -1875,7 +1875,7 @@ impl TransformControls {
         o.position.z = js_max(self.min_z, js_min(self.max_z, o.position.z));
     }
 
-    fn scale(&mut self, object: &Node, axis: Axis) {
+    fn scale(&mut self, object: &ObjectRef, axis: Axis) {
         let mut factor;
         if axis.has("XYZ") {
             let mut d = self.point_end.length() / self.point_start.length();
@@ -1919,7 +1919,7 @@ impl TransformControls {
 
     fn rotate(
         &mut self,
-        object: &Node,
+        object: &ObjectRef,
         axis: Axis,
         space: Space,
         camera: &impl TransformCamera,

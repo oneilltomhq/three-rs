@@ -3,7 +3,7 @@
 //! with a sun disc and a procedural cloud layer.
 //!
 //! Upstream's `SkyMesh extends Mesh`; the port's [`Mesh`] is a constructor
-//! returning a scene-graph [`Node`], so [`SkyMesh`] holds that node next to
+//! returning a scene-graph [`ObjectRef`], so [`SkyMesh`] holds that node next to
 //! the uniforms, which upstream keeps as fields of the mesh itself. Each
 //! uniform is a [`SettableValue`]: `sky.turbidity.value = 10` is
 //! `sky.turbidity.set( vec![ 10.0 ] )`.
@@ -16,7 +16,7 @@
 //! port writes as Rust functions that build the same nodes at each call site,
 //! as an un-laid-out `Fn()` is inlined.
 
-use crate::core::Node;
+use crate::core::ObjectRef;
 use crate::geometries::box_geometry;
 use crate::materials::{MeshBasicNodeMaterial, Side};
 use crate::nodes::node::SettableValue;
@@ -43,7 +43,7 @@ use std::rc::Rc;
 /// the map and back to `1` before rendering the sky box.
 pub struct SkyMesh {
     /// The `Mesh` itself: a `BoxGeometry( 1, 1, 1 )` with the sky material.
-    pub mesh: Node,
+    pub mesh: ObjectRef,
     /// `sky.turbidity` — default `2`.
     pub turbidity: SettableValue,
     /// `sky.rayleigh` — default `1`.

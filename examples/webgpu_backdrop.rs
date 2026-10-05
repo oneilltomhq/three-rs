@@ -36,7 +36,7 @@ use std::rc::Rc;
 
 use three_rs::addons::controls::OrbitControls;
 use three_rs::animation::AnimationMixer;
-use three_rs::core::{Node, Object3D};
+use three_rs::core::{Object3D, ObjectRef};
 use three_rs::geometries::sphere_geometry;
 use three_rs::loaders::GltfLoader;
 use three_rs::math::math_utils::deg_to_rad;
@@ -65,7 +65,7 @@ pub struct App {
     pub camera: PerspectiveCamera,
     pub controls: OrbitControls,
     /// The page's module-level `portals` group.
-    pub portals: Node,
+    pub portals: ObjectRef,
     /// The page's module-level `mixer`.
     pub mixer: AnimationMixer,
     /// The page's module-level `timer`.

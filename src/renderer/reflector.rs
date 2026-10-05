@@ -16,7 +16,7 @@
 use std::collections::HashSet;
 
 use crate::cameras::{PerspectiveCamera, RenderCamera};
-use crate::core::Node;
+use crate::core::ObjectRef;
 use crate::math::{CoordinateSystem, Matrix4, Plane, Vector3, Vector4};
 use crate::nodes::reflector_node::{self, Reflector};
 use crate::nodes::{BindingDesc, TextureSource};
@@ -126,7 +126,7 @@ impl Renderer {
         reflector: &Reflector,
         scene: &Scene,
         camera: &dyn RenderCamera,
-        object: &Node,
+        object: &ObjectRef,
     ) {
         if !reflector.borrow().bounces && self.in_reflector {
             return;
@@ -144,7 +144,7 @@ impl Renderer {
         reflector: &Reflector,
         scene: &Scene,
         camera: &dyn RenderCamera,
-        object: &Node,
+        object: &ObjectRef,
     ) {
         let target = reflector.borrow().target.clone();
 
@@ -348,7 +348,7 @@ fn clone_camera(camera: &dyn RenderCamera) -> PerspectiveCamera {
 
 /// `material.visible = …` on the object whose material carries the
 /// reflector — `frame.material`.
-fn set_material_visible(object: &Node, visible: bool) {
+fn set_material_visible(object: &ObjectRef, visible: bool) {
     if let Some(material) = object.borrow_mut().payload.material_mut() {
         material.visible = visible;
     }

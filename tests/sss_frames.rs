@@ -40,7 +40,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use three_rs::core::Node;
+use three_rs::core::ObjectRef;
 use three_rs::geometries::{box_geometry, plane_geometry};
 use three_rs::nodes::display::{sss, SssNode};
 use three_rs::nodes::tsl::screen_uv;
@@ -84,8 +84,8 @@ fn count_below(red: &[u8], threshold: u8) -> usize {
 struct Setup {
     scene: Rc<RefCell<Scene>>,
     camera: Rc<RefCell<PerspectiveCamera>>,
-    light: Node,
-    floor: Node,
+    light: ObjectRef,
+    floor: ObjectRef,
 }
 
 /// A unit box on a floor, lit by a shadow-casting directional light behind

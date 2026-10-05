@@ -1,6 +1,6 @@
 //! Port of `three.js/src/scenes/Scene.js` (rung 2 subset).
 
-use crate::core::{Node, Object3D, SceneRenderHook};
+use crate::core::{Object3D, ObjectRef, SceneRenderHook};
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::{Color, Matrix4};
 use crate::nodes::tsl::FogNode;
@@ -57,7 +57,7 @@ impl From<CubeTexture> for Background {
 
 /// `Scene extends Object3D`.
 ///
-/// The `Object3D` half is a real scene-graph [`Node`], so the tree under a scene
+/// The `Object3D` half is a real scene-graph [`ObjectRef`], so the tree under a scene
 /// is the tree the renderer walks: `Group`s, lights and their children all
 /// nest, and `Renderer::render` collects drawables with
 /// `crate::renderer::project_object`. The fields below are what `Scene` adds
@@ -65,7 +65,7 @@ impl From<CubeTexture> for Background {
 /// renderer's traversal branches on them.
 pub struct Scene {
     /// The scene root. `node.borrow().is_scene` is true.
-    pub node: Node,
+    pub node: ObjectRef,
     /// `scene.background`.
     pub background: Option<Background>,
     /// `scene.backgroundBlurriness` — the roughness the background's PMREM is
@@ -215,20 +215,20 @@ impl Scene {
     }
 
     /// `scene.add( object )`.
-    pub fn add(&self, object: &Node) -> &Self {
+    pub fn add(&self, object: &ObjectRef) -> &Self {
         self.node.add(object);
         self
     }
 
     /// `scene.remove( object )`.
-    pub fn remove(&self, object: &Node) -> &Self {
+    pub fn remove(&self, object: &ObjectRef) -> &Self {
         self.node.remove(object);
         self
     }
 
     /// `scene.children`, cloned — the direct children only. The renderer does
     /// not use this; it walks the whole tree.
-    pub fn children(&self) -> Vec<Node> {
+    pub fn children(&self) -> Vec<ObjectRef> {
         self.node.children()
     }
 

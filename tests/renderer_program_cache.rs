@@ -18,7 +18,7 @@ use std::sync::Mutex;
 use three_rs::nodes::tsl::{instanced_array, uint, vec3, StorageArray};
 use three_rs::nodes::{ComputeFlow, NodeRef, Type};
 use three_rs::{
-    plane_geometry, Mesh, MeshBasicNodeMaterial, Node, OrthographicCamera, Renderer,
+    plane_geometry, Mesh, MeshBasicNodeMaterial, ObjectRef, OrthographicCamera, Renderer,
     RendererParameters, Scene,
 };
 
@@ -51,14 +51,14 @@ fn camera() -> OrthographicCamera {
 }
 
 /// A 2x2 plane drawing `color`.
-fn plane(color: NodeRef) -> Node {
+fn plane(color: NodeRef) -> ObjectRef {
     let mut material = MeshBasicNodeMaterial::new();
     material.color_node = Some(color);
     Mesh::new(Rc::new(plane_geometry(2.0, 2.0, 1, 1)), material)
 }
 
 /// `mesh.material.colorNode = node; mesh.material.needsUpdate = true`.
-fn set_color_node(mesh: &Node, node: NodeRef) {
+fn set_color_node(mesh: &ObjectRef, node: NodeRef) {
     let mut object = mesh.borrow_mut();
     let material = object
         .mesh_mut()

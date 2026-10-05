@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::cameras::RenderCamera;
-use crate::core::{BufferAttribute, BufferGeometry, Node};
+use crate::core::{BufferAttribute, BufferGeometry, ObjectRef};
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::{Color, CoordinateSystem, Vector3};
 use crate::objects::LineSegments;
@@ -26,7 +26,7 @@ use crate::objects::LineSegments;
 /// be aliased; its helper takes a copy of the camera's world matrix instead.
 pub struct CameraHelper {
     /// The `LineSegments` itself.
-    pub node: Node,
+    pub node: ObjectRef,
     /// `this.pointMap` — each named point's vertex indices.
     point_map: HashMap<&'static str, Vec<usize>>,
 }

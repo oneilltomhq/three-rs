@@ -1,7 +1,7 @@
 //! Port of `three.js/examples/jsm/controls/FlyControls.js`.
 
 use super::{KeyCode, MouseButton};
-use crate::core::Node;
+use crate::core::ObjectRef;
 use crate::math::{Quaternion, Vector3};
 
 /// `_EPS` — the change below which `update()` reports "nothing moved" and
@@ -73,7 +73,7 @@ pub struct MoveState {
 ///
 /// As with [`OrbitControls`](super::OrbitControls), the camera belongs to the
 /// application. Only [`update`](Self::update) touches it, so only it takes
-/// it, as a [`Node`] (`&camera.node` for a
+/// it, as a [`ObjectRef`] (`&camera.node` for a
 /// [`PerspectiveCamera`](crate::cameras::PerspectiveCamera)) because the JS
 /// only needs an `Object3D`.
 ///
@@ -184,7 +184,7 @@ impl FlyControls {
     ///
     /// Returns whether the camera moved by more than `_EPS` since the last
     /// time it did — the JS's guard on dispatching `change`.
-    pub fn update(&mut self, object: &Node, delta: f64) -> bool {
+    pub fn update(&mut self, object: &ObjectRef, delta: f64) -> bool {
         if !self.enabled {
             return false;
         }

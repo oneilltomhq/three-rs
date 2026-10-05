@@ -48,7 +48,7 @@ pub struct App {
     /// Shared with `scene_pass`.
     pub camera: Rc<RefCell<PerspectiveCamera>>,
     /// The page's module-level `object`, parent of the hundred spheres.
-    pub object: three_rs::Node,
+    pub object: three_rs::ObjectRef,
     pub scene_pass: PassNode,
     /// The `RTTNode` `RGBShiftNode.setup()` makes of the dot screen.
     pub rgb_shift_input: RttNode,

@@ -7,7 +7,7 @@
 //! records.
 
 use super::{Light, LightShadow};
-use crate::core::{Node, Object3D};
+use crate::core::{Object3D, ObjectRef};
 use crate::math::{Color, Matrix4, SphericalHarmonics3, Vector3};
 use crate::objects::Payload;
 
@@ -32,7 +32,7 @@ pub enum LightKind {
 }
 
 /// `class <X>Light extends Light extends Object3D`, minus the `Object3D` half
-/// (which is the scene-graph [`Node`] carrying this as a [`Payload`]).
+/// (which is the scene-graph [`ObjectRef`] carrying this as a [`Payload`]).
 pub struct LightObject {
     /// The `color`/`intensity` state common to every light kind.
     pub light: Light,
@@ -55,7 +55,7 @@ pub struct LightObject {
     /// `SpotLight.target` / `DirectionalLight.target` — an `Object3D` at the
     /// origin by default, never added to the scene, so its `matrixWorld` is
     /// just its local matrix.
-    pub target: Option<Node>,
+    pub target: Option<ObjectRef>,
     /// `Object3D.castShadow`.
     pub cast_shadow: bool,
     /// `light.shadow` — present for the shadow-casting light types. Boxed
@@ -169,7 +169,7 @@ impl LightObject {
     }
 }
 
-fn into_node(object_type: &'static str, light: LightObject) -> Node {
+fn into_node(object_type: &'static str, light: LightObject) -> ObjectRef {
     let object = Object3D {
         object_type,
         is_light: true,
@@ -183,11 +183,11 @@ fn into_node(object_type: &'static str, light: LightObject) -> Node {
 pub struct AmbientLight;
 
 impl AmbientLight {
-    /// `new AmbientLight( color, intensity )`, as a scene-graph [`Node`]. An
+    /// `new AmbientLight( color, intensity )`, as a scene-graph [`ObjectRef`]. An
     /// ambient light adds no shadow and no direction: `LightsNode` reads only
     /// its colour and intensity.
-    #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `Node`, not `Self`; public API, not changing.
-    pub fn new(color: Color, intensity: f64) -> Node {
+    #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `ObjectRef`, not `Self`; public API, not changing.
+    pub fn new(color: Color, intensity: f64) -> ObjectRef {
         into_node(
             "AmbientLight",
             LightObject::base(LightKind::Ambient, color, intensity),
@@ -200,7 +200,7 @@ pub struct PointLight;
 
 impl PointLight {
     /// `new PointLight( color, intensity, distance = 0, decay = 2 )`, as a
-    /// scene-graph [`Node`]. `object.is_light` is what
+    /// scene-graph [`ObjectRef`]. `object.is_light` is what
     /// `Renderer._projectObject()` branches on, so the node is collected into
     /// `RenderList.lights` and never drawn — while anything added under it (the
     /// bulb sphere of `webgpu_lights_phong`) is an ordinary child and draws
@@ -208,8 +208,8 @@ impl PointLight {
     ///
     /// `this.shadow = new PointLightShadow()` — present whether or not the
     /// light casts; `Object3D.castShadow` is the switch.
-    #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `Node`, not `Self`; public API, not changing.
-    pub fn new(color: Color, intensity: f64, distance: f64) -> Node {
+    #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `ObjectRef`, not `Self`; public API, not changing.
+    pub fn new(color: Color, intensity: f64, distance: f64) -> ObjectRef {
         let mut light = LightObject::base(LightKind::Point, color, intensity);
         light.distance = distance;
         light.shadow = Some(Box::new(LightShadow::point()));
@@ -227,8 +227,8 @@ impl HemisphereLight {
     /// Object3D.DEFAULT_UP )`. That matters, because `HemisphereLightNode` takes
     /// its direction from `lightPosition( light ).normalize()` — at the origin
     /// the normalize would be undefined.
-    #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `Node`, not `Self`; public API, not changing.
-    pub fn new(sky_color: Color, ground_color: Color, intensity: f64) -> Node {
+    #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `ObjectRef`, not `Self`; public API, not changing.
+    pub fn new(sky_color: Color, ground_color: Color, intensity: f64) -> ObjectRef {
         let mut light = LightObject::base(LightKind::Hemisphere, sky_color, intensity);
         light.ground_color = ground_color;
         let node = into_node("HemisphereLight", light);
@@ -249,8 +249,8 @@ impl SpotLight {
     /// Object3D.DEFAULT_UP )`. A page that never moves the light sees it:
     /// `webgpu_backdrop` hangs its spot light on the camera, so the light
     /// sits one unit above the eye and the highlights sit high on the spheres.
-    #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `Node`, not `Self`; public API, not changing.
-    pub fn new(color: Color, intensity: f64) -> Node {
+    #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `ObjectRef`, not `Self`; public API, not changing.
+    pub fn new(color: Color, intensity: f64) -> ObjectRef {
         let mut light = LightObject::base(LightKind::Spot, color, intensity);
         light.target = Some(Object3D::new_node());
         light.shadow = Some(Box::new(LightShadow::spot()));
@@ -267,8 +267,8 @@ impl DirectionalLight {
     /// `new DirectionalLight( color, intensity )` — a target at the origin,
     /// a `DirectionalLightShadow`, and `this.position.copy(
     /// Object3D.DEFAULT_UP )`, so an unmoved light shines straight down.
-    #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `Node`, not `Self`; public API, not changing.
-    pub fn new(color: Color, intensity: f64) -> Node {
+    #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `ObjectRef`, not `Self`; public API, not changing.
+    pub fn new(color: Color, intensity: f64) -> ObjectRef {
         let mut light = LightObject::base(LightKind::Directional, color, intensity);
         light.target = Some(Object3D::new_node());
         light.shadow = Some(Box::new(LightShadow::directional()));
@@ -290,8 +290,8 @@ pub struct LightProbe;
 impl LightProbe {
     /// `new LightProbe( sh = new SphericalHarmonics3(), intensity = 1 )`. The
     /// colour is `Light`'s default, white; `LightProbeNode` never reads it.
-    #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `Node`, not `Self`; public API, not changing.
-    pub fn new(sh: SphericalHarmonics3, intensity: f64) -> Node {
+    #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `ObjectRef`, not `Self`; public API, not changing.
+    pub fn new(sh: SphericalHarmonics3, intensity: f64) -> ObjectRef {
         let mut light = LightObject::base(LightKind::Probe, Color::default(), intensity);
         light.sh = sh;
         into_node("LightProbe", light)
@@ -308,7 +308,7 @@ impl LightProbe {
     /// # Panics
     ///
     /// If either node is not a light.
-    pub fn copy(target: &Node, source: &Node) {
+    pub fn copy(target: &ObjectRef, source: &ObjectRef) {
         let (light, sh) = {
             let source = source.borrow();
             let source = source

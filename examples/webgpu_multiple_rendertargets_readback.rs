@@ -44,7 +44,7 @@ use three_rs::renderer::RenderTargetOptions;
 use three_rs::textures::Wrapping;
 use three_rs::utils::now_ms;
 use three_rs::{
-    Color, ColorSpace, Mesh, MeshBasicNodeMaterial, Node, PerspectiveCamera, QuadMesh,
+    Color, ColorSpace, Mesh, MeshBasicNodeMaterial, ObjectRef, PerspectiveCamera, QuadMesh,
     RenderTarget, Renderer, RendererParameters, Scene, Texture, TextureFilter, TextureLoader,
 };
 
@@ -82,7 +82,7 @@ pub struct App {
     pub renderer: Renderer,
     pub scene: Scene,
     pub camera: PerspectiveCamera,
-    pub torus: Node,
+    pub torus: ObjectRef,
     pub options: Options,
     pub quad_mesh: QuadMesh,
     pub scene_mrt: MrtNode,

@@ -32,7 +32,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use three_rs::addons::controls::OrbitControls;
-use three_rs::core::{Node, Object3D};
+use three_rs::core::{Object3D, ObjectRef};
 use three_rs::geometries::{plane_geometry, sphere_geometry, torus_geometry};
 use three_rs::loaders::ObjLoader;
 use three_rs::materials::{MeshBasicNodeMaterial, Side};
@@ -86,7 +86,7 @@ pub struct App {
     /// The page's `controls`.
     pub controls: OrbitControls,
     /// The page's `group`: everything but the lights.
-    pub group: Node,
+    pub group: ObjectRef,
     pub uniforms: Uniforms,
     /// The page's `outlinePass`.
     pub outline_pass: OutlineNode,
@@ -107,7 +107,7 @@ fn color_uniform(hex: u32) -> (NodeRef, SettableValue) {
 /// `loader.load( 'models/obj/tree.obj', function ( object ) { … } )`'s
 /// callback: centre the geometry, swap in a Phong material, scale the model
 /// to its bounding sphere and raise it.
-fn load_tree() -> Node {
+fn load_tree() -> ObjectRef {
     let object = ObjLoader::new()
         .load(examples_dir().join("models/obj/tree.obj"))
         .expect("tree.obj")

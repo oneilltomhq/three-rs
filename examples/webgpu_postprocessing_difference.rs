@@ -58,7 +58,7 @@ pub struct App {
     pub camera: Rc<RefCell<PerspectiveCamera>>,
     /// The page's `controls`.
     pub controls: OrbitControls,
-    pub mesh: three_rs::Node,
+    pub mesh: three_rs::ObjectRef,
     /// The page's module-level `timer`.
     pub timer: Timer,
     pub scene_pass: PassNode,

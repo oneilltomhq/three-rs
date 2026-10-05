@@ -22,7 +22,7 @@
 use std::rc::Rc;
 
 use three_rs::addons::controls::OrbitControls;
-use three_rs::core::Node;
+use three_rs::core::ObjectRef;
 use three_rs::geometries::{cylinder_geometry, plane_geometry};
 use three_rs::lights::ShadowCamera;
 use three_rs::math::{Vector3, Vector4};
@@ -43,7 +43,7 @@ pub struct App {
     pub renderer: Renderer,
     pub scene: Scene,
     pub camera: ArrayCamera,
-    pub mesh: Node,
+    pub mesh: ObjectRef,
     /// `window.innerWidth` / `innerHeight`, which `updateCameras()` reads.
     pub width: f64,
     pub height: f64,

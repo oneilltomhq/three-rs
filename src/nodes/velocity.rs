@@ -36,7 +36,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 
-use crate::core::{Node as SceneNode, WeakNode};
+use crate::core::{ObjectRef as SceneNode, WeakObjectRef};
 use crate::math::Matrix4;
 use crate::nodes::node::{Type, UniformGroup, UniformSource};
 use crate::nodes::tsl::{
@@ -142,7 +142,7 @@ struct CameraHistory {
 #[derive(Debug, Default)]
 pub struct VelocityState {
     /// `getPreviousMatrix( object )`, by `object.id`.
-    objects: HashMap<u32, (WeakNode, Matrix4)>,
+    objects: HashMap<u32, (WeakObjectRef, Matrix4)>,
     /// `getData( camera )`, by camera id, with the frame it was last read.
     cameras: HashMap<u32, (CameraHistory, u64)>,
     /// `_previousBoneMatricesData`, by skeleton address.

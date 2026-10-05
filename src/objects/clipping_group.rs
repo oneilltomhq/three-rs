@@ -1,6 +1,6 @@
 //! Port of `three.js/src/objects/ClippingGroup.js`.
 
-use crate::core::node::Node;
+use crate::core::object_ref::ObjectRef;
 use crate::core::Object3D;
 use crate::math::Plane;
 use crate::objects::Payload;
@@ -45,14 +45,14 @@ impl Default for ClippingGroup {
 }
 
 impl ClippingGroup {
-    /// `new ClippingGroup()`, as a scene-graph [`Node`], with no planes.
-    #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `Node`, not `Self`; public API, not changing.
-    pub fn new() -> Node {
+    /// `new ClippingGroup()`, as a scene-graph [`ObjectRef`], with no planes.
+    #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `ObjectRef`, not `Self`; public API, not changing.
+    pub fn new() -> ObjectRef {
         Self::of(Self::default())
     }
 
     /// A `ClippingGroup` node holding `group`.
-    pub fn of(group: Self) -> Node {
+    pub fn of(group: Self) -> ObjectRef {
         let mut object = Object3D {
             object_type: "ClippingGroup",
             is_group: true,

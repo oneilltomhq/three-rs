@@ -38,7 +38,7 @@ use three_rs::geometries::sphere_geometry;
 use three_rs::math::math_utils::deg_to_rad;
 use three_rs::objects::Mesh;
 use three_rs::{
-    CubeCamera, CubeRenderTarget, MeshBasicNodeMaterial, Node, PerspectiveCamera, Renderer,
+    CubeCamera, CubeRenderTarget, MeshBasicNodeMaterial, ObjectRef, PerspectiveCamera, Renderer,
     RendererParameters, Scene, TextureType, ToneMapping, Vector3,
 };
 
@@ -93,7 +93,7 @@ pub struct App {
     /// The page's `controls`.
     pub controls: OrbitControls,
     pub sky: SkyMesh,
-    pub sphere: Node,
+    pub sphere: ObjectRef,
     pub cube_camera: CubeCamera,
     pub effect_controller: EffectController,
 }

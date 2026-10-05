@@ -1,6 +1,6 @@
 //! Port of `three.js/src/math/Box3.js`.
 
-use crate::core::{BufferAttribute, Node};
+use crate::core::{BufferAttribute, ObjectRef};
 
 use super::math_utils::{js_max, js_min};
 use super::{Matrix4, Plane, Sphere, Triangle, Vector3};
@@ -101,7 +101,7 @@ impl Box3 {
     /// `matrix_world`; the default walks each geometry's own bounding box
     /// through the same matrix, which is cheaper and can be larger than
     /// strictly necessary.
-    pub fn set_from_object(&mut self, object: &Node, precise: bool) -> &mut Self {
+    pub fn set_from_object(&mut self, object: &ObjectRef, precise: bool) -> &mut Self {
         self.make_empty();
 
         self.expand_by_object(object, precise)
@@ -117,7 +117,7 @@ impl Box3 {
     /// `boundingBox` to prefer over the geometry's, since only `SkinnedMesh`
     /// has one here and it is not a [`Payload`](crate::objects::Payload)
     /// variant. An `InstancedMesh` takes the conservative path in three.js too.
-    pub fn expand_by_object(&mut self, object: &Node, precise: bool) -> &mut Self {
+    pub fn expand_by_object(&mut self, object: &ObjectRef, precise: bool) -> &mut Self {
         // Computes the world-axis-aligned bounding box of an object (including
         // its children), accounting for both the object's, and children's,
         // world transforms.

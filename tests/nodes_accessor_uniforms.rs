@@ -53,7 +53,7 @@ fn camera_view() -> Matrix4 {
 }
 
 /// A unit box, whose bounding sphere has radius `√3 / 2`.
-fn drawn_mesh() -> three_rs::Node {
+fn drawn_mesh() -> three_rs::ObjectRef {
     Mesh::new(
         Rc::new(three_rs::box_geometry(1.0, 1.0, 1.0, 1, 1, 1)),
         None,
@@ -193,7 +193,7 @@ fn model_direction_of_a_drawn_camera_is_negated() {
 
 /// `T( 1, 2, 3 ) · Ry( 90° ) · S( 2, 3, 4 )` as a scene object, its world
 /// matrix not yet computed.
-fn target() -> three_rs::Node {
+fn target() -> three_rs::ObjectRef {
     let target = Object3D::new_node();
     {
         let mut object = target.borrow_mut();

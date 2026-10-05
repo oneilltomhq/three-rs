@@ -3,7 +3,7 @@
 use std::f64::consts::PI;
 use std::rc::Rc;
 
-use crate::core::{BufferAttribute, Node, Object3D};
+use crate::core::{BufferAttribute, Object3D, ObjectRef};
 use crate::geometries::octahedron_geometry;
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::{Color, Vector3};
@@ -25,11 +25,11 @@ use crate::objects::Mesh;
 /// [`GridHelper`](super::GridHelper). `wireframe` is set as three sets it.
 pub struct HemisphereLightHelper {
     /// The `Object3D` itself.
-    pub node: Node,
+    pub node: ObjectRef,
     /// `HemisphereLightHelper.light`.
-    pub light: Node,
+    pub light: ObjectRef,
     /// `this.children[ 0 ]`, the octahedron.
-    pub mesh: Node,
+    pub mesh: ObjectRef,
     /// `HemisphereLightHelper.color`: `None` takes the light's two colours.
     pub color: Option<Color>,
 }
@@ -41,7 +41,7 @@ impl HemisphereLightHelper {
     /// Panics if `color` is `None` and `light` is not a light, here and on
     /// every [`update`](Self::update): only then does the helper read the
     /// light's colour.
-    pub fn new(light: &Node, size: f64, color: Option<Color>) -> Self {
+    pub fn new(light: &ObjectRef, size: f64, color: Option<Color>) -> Self {
         let node = Object3D {
             object_type: "HemisphereLightHelper",
             matrix_alias: Some(light.downgrade()),

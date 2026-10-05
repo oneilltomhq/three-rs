@@ -7,7 +7,7 @@
 //! because the four events an `Object3D` dispatches are the whole set and
 //! each carries known data; `docs/api.md` decision 12 says why there is no
 //! string-keyed dispatcher. The listener list lives on the [`Object3D`] and
-//! the methods that add, remove and dispatch are on [`Node`], next to the
+//! the methods that add, remove and dispatch are on [`ObjectRef`], next to the
 //! tree methods that dispatch.
 
 use std::cell::Cell;
@@ -15,7 +15,7 @@ use std::fmt;
 use std::rc::Rc;
 
 use crate::cameras::RenderCamera;
-use crate::core::{Group, Node};
+use crate::core::{Group, ObjectRef};
 use crate::objects::Scene;
 use crate::renderer::{RenderTarget, Renderer};
 
@@ -37,10 +37,10 @@ pub enum SceneEvent {
     Removed,
     /// `{ type: 'childadded', child }` — dispatched on the parent after
     /// [`Added`](Self::Added) has been dispatched on the child.
-    ChildAdded(Node),
+    ChildAdded(ObjectRef),
     /// `{ type: 'childremoved', child }` — dispatched on the old parent after
     /// [`Removed`](Self::Removed) has been dispatched on the child.
-    ChildRemoved(Node),
+    ChildRemoved(ObjectRef),
 }
 
 /// The `type` string of a [`SceneEvent`], which is what a listener is
@@ -71,7 +71,7 @@ impl SceneEvent {
 
     /// `event.child` — the child of a [`ChildAdded`](Self::ChildAdded) or
     /// [`ChildRemoved`](Self::ChildRemoved) event; `None` for the others.
-    pub fn child(&self) -> Option<&Node> {
+    pub fn child(&self) -> Option<&ObjectRef> {
         match self {
             Self::ChildAdded(child) | Self::ChildRemoved(child) => Some(child),
             Self::Added | Self::Removed => None,
@@ -79,8 +79,8 @@ impl SceneEvent {
     }
 }
 
-/// What [`Node::add_event_listener`] returns, and what
-/// [`Node::remove_event_listener`] and [`Node::has_event_listener`] take in
+/// What [`ObjectRef::add_event_listener`] returns, and what
+/// [`ObjectRef::remove_event_listener`] and [`ObjectRef::has_event_listener`] take in
 /// place of three's listener function.
 ///
 /// A JS function has an identity a Rust closure lacks, so the handle stands
@@ -112,12 +112,12 @@ impl ListenerHandle {
 /// the same listener. Keep mutable state in a `Cell` or `RefCell`. Getting the
 /// target as an argument, rather than capturing the node, is what keeps a
 /// listener from holding its own node alive.
-pub type SceneEventListener = Rc<dyn Fn(&SceneEvent, &Node)>;
+pub type SceneEventListener = Rc<dyn Fn(&SceneEvent, &ObjectRef)>;
 
 /// three's `object._listeners`: the listeners of one object, in the order
 /// they were added. Opaque — it is a public field of [`Object3D`] only so
 /// `Object3D { .., ..Default::default() }` keeps working outside the crate;
-/// the methods that use it are on [`Node`].
+/// the methods that use it are on [`ObjectRef`].
 #[derive(Clone, Default)]
 pub struct SceneEventListeners {
     entries: Vec<(SceneEventType, ListenerHandle, SceneEventListener)>,
@@ -177,7 +177,7 @@ impl SceneEventListeners {
 /// `Option` field of [`Object3D`].
 ///
 /// three passes `( renderer, scene, camera, geometry, material, group )` with
-/// the object as `this`. Here the first argument is the object's own [`Node`],
+/// the object as `this`. Here the first argument is the object's own [`ObjectRef`],
 /// not borrowed, so the hook can borrow it (or any other node) as it likes;
 /// the geometry and material are on its payload. The renderer is shared:
 /// the hook runs inside a render, and the port records every draw of a pass
@@ -190,7 +190,7 @@ impl SceneEventListeners {
 /// itself but not clear itself: clearing the field from inside the call is
 /// undone. Clear it outside a render instead.
 pub type ObjectRenderHook =
-    Box<dyn FnMut(&Node, &Renderer, &Scene, &dyn RenderCamera, Option<&Group>)>;
+    Box<dyn FnMut(&ObjectRef, &Renderer, &Scene, &dyn RenderCamera, Option<&Group>)>;
 
 /// `scene.onBeforeRender` / `scene.onAfterRender`, as a boxed closure in an
 /// `Option` field of [`Scene`].

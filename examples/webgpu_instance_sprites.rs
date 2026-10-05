@@ -26,8 +26,8 @@ use three_rs::nodes::Type;
 use three_rs::testing::DeterministicRandom;
 use three_rs::utils::date_now_ms;
 use three_rs::{
-    Color, FogExp2, MeshBasicNodeMaterial, Node, PerspectiveCamera, Renderer, RendererParameters,
-    Scene, Sprite, TextureLoader, Vector3,
+    Color, FogExp2, MeshBasicNodeMaterial, ObjectRef, PerspectiveCamera, Renderer,
+    RendererParameters, Scene, Sprite, TextureLoader, Vector3,
 };
 
 pub const INNER_WIDTH: f64 = 800.0;
@@ -41,7 +41,7 @@ pub struct App {
     pub renderer: Renderer,
     pub scene: Scene,
     pub camera: PerspectiveCamera,
-    pub particles: Node,
+    pub particles: ObjectRef,
     pub mouse_x: f64,
     pub mouse_y: f64,
 }

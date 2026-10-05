@@ -78,7 +78,7 @@ pub struct App {
     /// The page's `controls`.
     pub controls: OrbitControls,
     /// The page's `mainGroup`, whose children `animate()` turns.
-    pub main_group: three_rs::Node,
+    pub main_group: three_rs::ObjectRef,
     /// The page's module-level `timer`.
     pub timer: Timer,
     pub scene_pass: PassNode,
@@ -112,7 +112,11 @@ fn shape_geometries() -> Vec<Rc<BufferGeometry>> {
     ]
 }
 
-fn create_shapes(scene: &mut Scene, main_group: &three_rs::Node, random: &mut DeterministicRandom) {
+fn create_shapes(
+    scene: &mut Scene,
+    main_group: &three_rs::ObjectRef,
+    random: &mut DeterministicRandom,
+) {
     let materials = shape_materials();
     let geometries = shape_geometries();
 

@@ -4,7 +4,7 @@
 //! term and a Fresnel mix between the water colour and the reflection.
 //!
 //! Upstream's `WaterMesh extends Mesh`; the port's [`Mesh`] is a constructor
-//! returning a scene-graph [`Node`], so [`WaterMesh`] holds that node next to
+//! returning a scene-graph [`ObjectRef`], so [`WaterMesh`] holds that node next to
 //! the uniforms, which upstream keeps as fields of the mesh itself. Each
 //! uniform is a [`SettableValue`]: `water.sunDirection.value.copy( sun )` is
 //! `water.sun_direction.set( vec![ sun.x, sun.y, sun.z ] )`.
@@ -50,7 +50,7 @@
 //! (`positionWorld + distortion`), but no ported page casts a shadow onto the
 //! water, so nothing gates it.
 
-use crate::core::{BufferGeometry, Node};
+use crate::core::{BufferGeometry, ObjectRef};
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::{Color, Vector3};
 use crate::nodes::node::SettableValue;
@@ -119,7 +119,7 @@ impl WaterMeshOptions {
 pub struct WaterMesh {
     /// The `Mesh` itself: the geometry with the water material, and the
     /// mirror's `target` as its child (from the first render on).
-    pub mesh: Node,
+    pub mesh: ObjectRef,
     /// `water.resolutionScale`, as constructed. The mirror read it then; see
     /// the module docs.
     pub resolution_scale: f64,

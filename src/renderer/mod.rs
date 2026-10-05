@@ -47,7 +47,7 @@ pub use ssaa_pass::SsaaPassNode;
 
 use crate::cameras::{OrthographicCamera, PerspectiveCamera, RenderCamera};
 use crate::core::BufferKey;
-use crate::core::{BufferGeometry, Group, Index, Layers, Node};
+use crate::core::{BufferGeometry, Group, Index, Layers, ObjectRef};
 use crate::error::Error;
 use crate::geometries::{quad_geometry, sphere_geometry};
 use crate::lights::{
@@ -325,7 +325,7 @@ struct Renderable {
     /// `renderItem.object` — `frame.object` for a node whose `updateType` is
     /// `NodeUpdateType.OBJECT`. `None` for the draws three.js makes with its
     /// own `QuadMesh` or background mesh, which carry no application node.
-    object: Option<Node>,
+    object: Option<ObjectRef>,
     geometry: Rc<BufferGeometry>,
     material: MeshBasicNodeMaterial,
     /// `material.id` / `material.version` of the material this item was
@@ -2085,7 +2085,7 @@ impl Renderer {
             render_list
                 .lights
                 .iter()
-                .position(|light| Node::ptr_eq(light, &context.light))
+                .position(|light| ObjectRef::ptr_eq(light, &context.light))
                 .map(|index| (index, context.shadow.clone()))
         });
 
@@ -2661,7 +2661,10 @@ impl Renderer {
     /// but one `renderObject()` call), with the group the draw uses. Skips
     /// what the outline pass's render-object function does not draw.
     #[inline(never)]
-    fn hooked_items(&self, draws: &[(&RenderItem, Option<Side>)]) -> Vec<(Node, Option<Group>)> {
+    fn hooked_items(
+        &self,
+        draws: &[(&RenderItem, Option<Side>)],
+    ) -> Vec<(ObjectRef, Option<Group>)> {
         let mut hooked = Vec::new();
         for (item, side) in draws {
             if *side == Some(Side::Front) {
@@ -2688,7 +2691,7 @@ impl Renderer {
     #[inline(never)]
     fn call_object_hooks(
         &self,
-        hooked: &[(Node, Option<Group>)],
+        hooked: &[(ObjectRef, Option<Group>)],
         scene: &Scene,
         camera: &dyn RenderCamera,
         after: bool,
@@ -3210,7 +3213,7 @@ impl Renderer {
     fn render_point_shadow(
         &mut self,
         index: usize,
-        node: &Node,
+        node: &ObjectRef,
         scene: &Scene,
         camera: &dyn RenderCamera,
     ) {

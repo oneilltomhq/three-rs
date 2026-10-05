@@ -3,7 +3,7 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use crate::core::{BufferAttribute, BufferGeometry, Node};
+use crate::core::{BufferAttribute, BufferGeometry, ObjectRef};
 use crate::materials::LineBasicNodeMaterial;
 use crate::math::{Box3, Color};
 use crate::objects::LineSegments;
@@ -30,15 +30,15 @@ thread_local! {
 /// [`GridHelper`](super::GridHelper).
 pub struct BoxHelper {
     /// The `LineSegments` itself.
-    pub node: Node,
+    pub node: ObjectRef,
     /// `BoxHelper.object`.
-    pub object: Option<Node>,
+    pub object: Option<ObjectRef>,
 }
 
 impl BoxHelper {
     /// `new BoxHelper( object, color )`. Three's default colour is
     /// `0xffff00`.
-    pub fn new(object: Option<Node>, color: Color) -> Self {
+    pub fn new(object: Option<ObjectRef>, color: Color) -> Self {
         #[rustfmt::skip]
         let indices = [
             0, 1, 1, 2, 2, 3, 3, 0,
@@ -128,7 +128,7 @@ impl BoxHelper {
     }
 
     /// `BoxHelper.setFromObject( object )`.
-    pub fn set_from_object(&mut self, object: Node) -> &mut Self {
+    pub fn set_from_object(&mut self, object: ObjectRef) -> &mut Self {
         self.object = Some(object);
         self.update();
         self

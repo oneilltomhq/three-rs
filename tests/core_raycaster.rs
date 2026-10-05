@@ -7,7 +7,7 @@
 use std::rc::Rc;
 
 use three_rs::cameras::{OrthographicCamera, PerspectiveCamera};
-use three_rs::core::{BufferGeometry, Node, Raycaster};
+use three_rs::core::{BufferGeometry, ObjectRef, Raycaster};
 use three_rs::geometries::sphere_geometry;
 use three_rs::materials::MeshBasicNodeMaterial;
 use three_rs::math::{Vector2, Vector3};
@@ -31,11 +31,11 @@ fn get_raycaster() -> Raycaster {
     )
 }
 
-fn get_sphere() -> Node {
+fn get_sphere() -> ObjectRef {
     Mesh::new(Rc::new(sphere_geometry(1.0, 100, 100)), None)
 }
 
-fn get_objects_to_check() -> Vec<Node> {
+fn get_objects_to_check() -> Vec<ObjectRef> {
     let sphere1 = get_sphere();
     sphere1.borrow_mut().position.set(0.0, 0.0, -10.0);
     sphere1.borrow_mut().name = "1".into();
@@ -188,7 +188,7 @@ fn intersect_objects() {
     }
 }
 
-fn front_and_behind() -> (Node, Node) {
+fn front_and_behind() -> (ObjectRef, ObjectRef) {
     let front = get_sphere();
     front.borrow_mut().position.set(0.0, 0.0, -5.0);
     front.update_matrix_world(false);

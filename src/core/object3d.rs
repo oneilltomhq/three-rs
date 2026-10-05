@@ -5,7 +5,7 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use crate::core::node::{Node, WeakNode};
+use crate::core::object_ref::{ObjectRef, WeakObjectRef};
 use crate::core::{Layers, ObjectRenderHook, SceneEventListeners};
 use crate::math::{Euler, Matrix4, Quaternion, Vector3};
 use crate::objects::{InstancedBufferAttribute, Mesh, Payload};
@@ -24,7 +24,7 @@ fn next_id() -> u32 {
 }
 
 /// three.js' `Object3D`: the transform and the drawable state every scene node
-/// carries. The parent/children tree lives on [`Node`], the handle that wraps
+/// carries. The parent/children tree lives on [`ObjectRef`], the handle that wraps
 /// this in an `Rc<RefCell<..>>` — see `docs/scene-graph.md`.
 ///
 /// `Debug` is written out by hand because the render hooks are closures: it
@@ -38,9 +38,9 @@ pub struct Object3D {
     /// sets `'Group'`).
     pub object_type: &'static str,
     /// `Object3D.parent`, weak: see `docs/scene-graph.md`.
-    pub parent: Option<WeakNode>,
+    pub parent: Option<WeakObjectRef>,
     /// `Object3D.children`.
-    pub children: Vec<Node>,
+    pub children: Vec<ObjectRef>,
     /// `Object3D.visible`.
     pub visible: bool,
     /// `Object3D.layers` — tested against the camera's in `_projectObject`.
@@ -62,7 +62,7 @@ pub struct Object3D {
     /// `updateMatrixWorld()` reads `matrix`, which is when the alias would be
     /// observed. `None` for everything else, and for a clone (`copy()` copies
     /// the matrix's values, not the object).
-    pub matrix_alias: Option<crate::core::WeakNode>,
+    pub matrix_alias: Option<crate::core::WeakObjectRef>,
     /// `Object3D.isCamera` — `lookAt()` points a camera the other way round.
     pub is_camera: bool,
     /// `Object3D.isLight` — as `is_camera`.
@@ -110,7 +110,7 @@ pub struct Object3D {
     pub payload: Payload,
     /// `object._listeners` — the [`SceneEvent`](crate::core::SceneEvent)
     /// listeners, added and dispatched through
-    /// [`Node::add_event_listener`] and its siblings.
+    /// [`ObjectRef::add_event_listener`] and its siblings.
     pub listeners: SceneEventListeners,
     /// `object.onBeforeRender( renderer, scene, camera, geometry, material,
     /// group )` — called by the renderer once per draw of this object in a
@@ -250,14 +250,14 @@ impl Clone for Object3D {
 }
 
 impl Object3D {
-    /// A fresh `Object3D` as a scene-graph [`Node`].
-    pub fn new_node() -> Node {
-        Node::new(Self::default())
+    /// A fresh `Object3D` as a scene-graph [`ObjectRef`].
+    pub fn new_node() -> ObjectRef {
+        ObjectRef::new(Self::default())
     }
 
-    /// This object, moved into a scene-graph [`Node`].
-    pub fn into_node(self) -> Node {
-        Node::new(self)
+    /// This object, moved into a scene-graph [`ObjectRef`].
+    pub fn into_node(self) -> ObjectRef {
+        ObjectRef::new(self)
     }
 
     /// `object.onBeforeRender = function ( renderer, scene, camera, geometry,
@@ -267,7 +267,7 @@ impl Object3D {
     pub fn set_on_before_render(
         &mut self,
         hook: impl FnMut(
-                &Node,
+                &ObjectRef,
                 &crate::renderer::Renderer,
                 &crate::objects::Scene,
                 &dyn crate::cameras::RenderCamera,
@@ -283,7 +283,7 @@ impl Object3D {
     pub fn set_on_after_render(
         &mut self,
         hook: impl FnMut(
-                &Node,
+                &ObjectRef,
                 &crate::renderer::Renderer,
                 &crate::objects::Scene,
                 &dyn crate::cameras::RenderCamera,
@@ -625,7 +625,7 @@ impl Object3D {
     /// `Object3D.updateMatrixWorld( force )` for one object, returning the
     /// `force` its children should be updated with (three.js recurses here; an
     /// `Object3D` held by value has no children to recurse into, so the caller
-    /// — `Scene::update_matrix_world`, or `Node`'s tree methods — does
+    /// — `Scene::update_matrix_world`, or `ObjectRef`'s tree methods — does
     /// that part).
     pub(crate) fn update_matrix_world_forced(
         &mut self,

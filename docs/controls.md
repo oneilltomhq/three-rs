@@ -26,7 +26,7 @@ a map camera over a ground that is not a port; see the README's "Addons".
 - **The camera is an argument.** The camera belongs to the application and
   the controls sit beside it, so the methods that touch it take it. Orbit
   takes `&mut PerspectiveCamera` because it reads `fov`; FirstPerson and Fly
-  only need an `Object3D` and take a `&Node` (`&camera.node`). Transform
+  only need an `Object3D` and take a `&ObjectRef` (`&camera.node`). Transform
   takes any `TransformCamera` (perspective or orthographic), since it
   raycasts through it.
 - **Events are return values.** There is no `EventDispatcher`. Where the JS
@@ -64,7 +64,7 @@ the button is released), not only while it is over it.
 | `keydown` / `keyup` | `key_down(KeyCode)` / `key_up(KeyCode)` |
 | `mouseDragOn` (read-only) | `mouse_drag_on()` |
 
-`look_at` and `update` point the object with `Node::look_at`, which is
+`look_at` and `update` point the object with `ObjectRef::look_at`, which is
 three's `Object3D.lookAt` in full, so a camera inside a moved and turned group
 behaves as it does in three (the gate has a scenario for it).
 
@@ -106,7 +106,7 @@ scale rounded to 0 back into the snap, and the substring tests on axis names.
 | JS | port |
 |---|---|
 | `new TransformControls( camera, el )` | `TransformControls::new()` plus `set_element_size(w, h)` |
-| `getHelper()` | `get_helper() -> &Node` |
+| `getHelper()` | `get_helper() -> &ObjectRef` |
 | `attach( object )` / `detach()` / `reset()` | the same, each returning its events |
 | `disconnect()` | `disconnect()`: stops moves from dragging |
 | `setMode` / `setSpace` / `setSize` / `setTranslationSnap` / `setRotationSnap` / `setScaleSnap` | `set_mode(Mode)`, `set_space(Space)`, `set_size`, `set_*_snap(Option<f64>)` |

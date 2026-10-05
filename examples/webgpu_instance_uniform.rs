@@ -49,7 +49,7 @@ pub struct App {
     pub scene: Scene,
     pub camera: PerspectiveCamera,
     /// The page's `objects` array — the twelve teapots, without the grid.
-    pub objects: Vec<three_rs::core::Node>,
+    pub objects: Vec<three_rs::core::ObjectRef>,
     /// The page's `mesh.color`, which an `Object3D` has nowhere to keep.
     pub colors: Rc<RefCell<HashMap<u32, Color>>>,
     /// The page's `controls`.
@@ -125,7 +125,7 @@ pub fn init() -> App {
     // `Math.random()` is the harness' deterministic sequence: four draws per
     // mesh — the colour, then the three Euler angles.
     let mut random = DeterministicRandom::new();
-    let mut objects: Vec<three_rs::core::Node> = Vec::new();
+    let mut objects: Vec<three_rs::core::ObjectRef> = Vec::new();
     for _ in 0..12 {
         let mesh = Mesh::new(geometry.clone(), material.clone());
         {

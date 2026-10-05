@@ -19,7 +19,7 @@ use std::rc::Rc;
 
 use crate::animation::binding_target::{BindingTarget, TargetResolver};
 use crate::animation::property_binding::ParsedTrackName;
-use crate::core::Node;
+use crate::core::ObjectRef;
 use crate::objects::Skeleton;
 
 /// Which `Object3D` property a [`NodeTarget`] is bound to. Three picks one of
@@ -42,13 +42,13 @@ pub(crate) enum NodeProperty {
 
 /// One resolved `Object3D` property.
 pub(crate) struct NodeTarget {
-    node: Node,
+    node: ObjectRef,
     property: NodeProperty,
 }
 
 impl NodeTarget {
     /// The binding for `node.<property>`.
-    pub fn new(node: Node, property: NodeProperty) -> Self {
+    pub fn new(node: ObjectRef, property: NodeProperty) -> Self {
         Self { node, property }
     }
 }
@@ -111,7 +111,7 @@ fn write(buffer: &mut [f64], offset: usize, values: &[f64]) {
 /// `morphTargetInfluences`, which this crate keeps beside the node rather than
 /// on it.
 pub struct SceneResolver {
-    root: Node,
+    root: ObjectRef,
     /// `root.skeleton`, searched by `findNode` before the subtree.
     skeleton: Option<Rc<RefCell<Skeleton>>>,
     /// `node.id` to that node's `morphTargetInfluences`.
@@ -120,7 +120,7 @@ pub struct SceneResolver {
 
 impl SceneResolver {
     /// A resolver over `root`.
-    pub fn new(root: Node) -> Self {
+    pub fn new(root: ObjectRef) -> Self {
         Self {
             root,
             skeleton: None,
@@ -139,7 +139,7 @@ impl SceneResolver {
     /// `<node>.morphTargetInfluences` track can resolve.
     pub fn add_morph_target_influences(
         &mut self,
-        node: &Node,
+        node: &ObjectRef,
         influences: Rc<RefCell<Vec<f64>>>,
     ) -> &mut Self {
         self.morph_target_influences
@@ -148,7 +148,7 @@ impl SceneResolver {
     }
 
     /// `PropertyBinding.findNode( root, nodeName )`.
-    pub fn find_node(&self, node_name: Option<&str>) -> Option<Node> {
+    pub fn find_node(&self, node_name: Option<&str>) -> Option<ObjectRef> {
         let name = match node_name {
             // `nodeName === undefined || nodeName === '' || nodeName === '.' ||
             //  nodeName === - 1 || nodeName === root.name`
@@ -171,7 +171,7 @@ impl SceneResolver {
 
 /// `PropertyBinding.findNode`'s inner `searchNodeSubtree`. Note it does *not*
 /// test the root itself, and does not look at nested skeletons.
-fn search_node_subtree(children: &[Node], name: &str) -> Option<Node> {
+fn search_node_subtree(children: &[ObjectRef], name: &str) -> Option<ObjectRef> {
     for child in children {
         if child.borrow().name == name {
             return Some(child.clone());

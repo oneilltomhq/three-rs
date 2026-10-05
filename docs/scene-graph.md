@@ -3,30 +3,30 @@
 `Object3D` is the node payload; the tree is
 
 ```rust
-pub struct Node(Rc<RefCell<Object3D>>);      // Object3D.children entries
-pub struct WeakNode(Weak<RefCell<Object3D>>); // Object3D.parent
+pub struct ObjectRef(Rc<RefCell<Object3D>>);      // Object3D.children entries
+pub struct WeakObjectRef(Weak<RefCell<Object3D>>); // Object3D.parent
 ```
 
 Both are newtypes, as of 0.2.0 (#38); they were type aliases in 0.1.0.
-`Node` derefs to `RefCell<Object3D>`, so `node.borrow()` and
+`ObjectRef` derefs to `RefCell<Object3D>`, so `node.borrow()` and
 `node.borrow_mut()` reach the object exactly as they did through the alias and
 every call site is the same text. What the newtype buys is the rest of the
-surface: rustdoc prints `Node` in every signature instead of the plumbing, and
+surface: rustdoc prints `ObjectRef` in every signature instead of the plumbing, and
 the tree methods are **inherent**, so `light.add(&mesh)` compiles with no
-import. `WeakNode` has no `Deref` — the only thing to do with a weak handle is
-`upgrade()`, which hands back an `Option<Node>`.
+import. `WeakObjectRef` has no `Deref` — the only thing to do with a weak handle is
+`upgrade()`, which hands back an `Option<ObjectRef>`.
 
-Beside the ported methods, `Node` carries the `Rc` associated functions a
-consumer would otherwise reach for: `Node::ptr_eq(a, b)` for `a === b`,
+Beside the ported methods, `ObjectRef` carries the `Rc` associated functions a
+consumer would otherwise reach for: `ObjectRef::ptr_eq(a, b)` for `a === b`,
 `downgrade()`, `as_ptr()` for anyone keying a cache on the address (but read
 "Identity and eviction" below first — the renderer keys on `object.id`, and
-deliberately), and `Node::new(object)` / `Object3D::into_node()` to wrap one.
+deliberately), and `ObjectRef::new(object)` / `Object3D::into_node()` to wrap one.
 
 A parent holds its children strongly, a child holds its parent weakly. All the
 methods that reach outside a single object — `add`, `remove`, `attach`,
 `traverse*`, `getObjectBy*`, `updateMatrixWorld`, `updateWorldMatrix`, and the
 parent-aware `lookAt`/`localToWorld`/`worldToLocal`/`getWorld*` — are inherent
-on `Node`, because each of them has to reach outside the object it is called on
+on `ObjectRef`, because each of them has to reach outside the object it is called on
 and a `&mut Object3D` cannot. The transform-only methods (`rotateX`,
 `translateOnAxis`, `applyMatrix4`, `updateMatrix`, …) stay inherent methods on
 `Object3D`, so they stay available on a plain `&mut Object3D` — which is what
@@ -63,8 +63,8 @@ from atomics. If the renderer is ever parallelised, the swap is mechanical.
 
 ## Divergences from three.js
 
-- `Object3D.parent` is weak, so `object.parent()` returns `Option<Node>` by
-  upgrading, and the field itself is a `WeakNode`. In JS the parent link is
+- `Object3D.parent` is weak, so `object.parent()` returns `Option<ObjectRef>` by
+  upgrading, and the field itself is a `WeakObjectRef`. In JS the parent link is
   strong and the cycle is the GC's problem.
 - `getObjectByProperty( name, value )` has no Rust equivalent of dynamic
   property lookup; it takes a predicate (`&dyn Fn(&Object3D) -> bool`), and
@@ -77,7 +77,7 @@ from atomics. If the renderer is ever parallelised, the swap is mechanical.
   `SceneEvent` (`Added`, `Removed`, `ChildAdded(child)`,
   `ChildRemoved(child)`) at the points three dispatches its `'added'`,
   `'removed'`, `'childadded'` and `'childremoved'`, and
-  `Node::add_event_listener` returns a `ListenerHandle` that stands for the
+  `ObjectRef::add_event_listener` returns a `ListenerHandle` that stands for the
   listener function. There is no string-keyed dispatcher; `docs/api.md`
   decision 12 says why. `Clone` copies no listeners and no render hooks.
 
@@ -87,7 +87,7 @@ from atomics. If the renderer is ever parallelised, the swap is mechanical.
 order:
 
 1. `scene.update_matrix_world()` — `Object3D.updateMatrixWorld()` on the scene
-   root, recursing through `Node`'s children. It honours `matrixAutoUpdate`
+   root, recursing through `ObjectRef`'s children. It honours `matrixAutoUpdate`
    (whether the local matrix is recomposed), `matrixWorldAutoUpdate` (whether
    this object's world matrix is written) and `matrixWorldNeedsUpdate`, and
    threads three.js' `force` down the tree: an object that did recompute forces
@@ -112,7 +112,7 @@ pub enum Payload { None, Mesh(Mesh), InstancedMesh(InstancedMesh), Line(Line), L
 passes through without drawing. `object.is_mesh()` is a match on the payload, and
 `Mesh::new( geometry, material )` / `InstancedMesh::new( geometry, material,
 count )` / `Line::new( geometry, material )` /
-`LineSegments::new( geometry, material )` return a `Node` with the payload
+`LineSegments::new( geometry, material )` return a `ObjectRef` with the payload
 already set, so example code reads like the JS:
 
 ```rust
@@ -121,20 +121,20 @@ mesh.borrow_mut().position.set( x, y, z );
 scene.add( &mesh );
 ```
 
-`Scene` is not itself a `Node`; it owns one (`scene.node`, with `is_scene` true)
+`Scene` is not itself a `ObjectRef`; it owns one (`scene.node`, with `is_scene` true)
 plus the fields `Scene` adds to `Object3D` — `background`, `fogNode` and
 `overrideMaterial`. `scene.add()`, `scene.children()` and
 `scene.update_matrix_world()` forward to the root, so anything can nest under
 anything: a `Group` holding meshes, a light holding its bulb mesh
 (`webgpu_lights_phong`, rung 5), a loaded glTF hierarchy (rung 10).
 
-`PerspectiveCamera` owns a `Node` (`camera.node`) as of rung 6:
+`PerspectiveCamera` owns a `ObjectRef` (`camera.node`) as of rung 6:
 `webgpu_morphtargets` does `scene.add( camera )` and parents its point light to
 the camera, so the camera is both *in* the tree and a parent within it, which a
 bare `Object3D` cannot express. `camera.update_matrix_world()` walks the node and
 takes the inverse of its world matrix. `OrthographicCamera` still holds an
 `Object3D` by value — nothing on the ladder nests one yet, and rung 7's shadow
-cameras are the trigger to give it a `Node` too.
+cameras are the trigger to give it a `ObjectRef` too.
 
 ### projectObject
 
@@ -433,7 +433,7 @@ hairline shadow — but `computeLineDistances()` is not ported, since only
 ## Lights in the tree
 
 A light is an ordinary node: `PointLight::new( color, intensity, distance )`
-returns a `Node` whose payload is `Payload::Light( PointLight )` and whose
+returns a `ObjectRef` whose payload is `Payload::Light( PointLight )` and whose
 `object.is_light` is true, and it goes in with plain `scene.add( &light )`. There
 is no `Scene.lights`, no `add_light()` and no `Scene::drawables()`; rung 5 had all
 three and the tree walk removed the need for them:

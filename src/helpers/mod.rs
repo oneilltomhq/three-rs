@@ -5,7 +5,7 @@
 //! # Shape
 //!
 //! A helper without state of its own past construction ([`GridHelper`],
-//! [`PolarGridHelper`]) is a unit struct whose `new` returns the [`Node`]
+//! [`PolarGridHelper`]) is a unit struct whose `new` returns the [`ObjectRef`]
 //! three would return. A helper with methods is a struct holding the node as
 //! `pub node` beside three's public fields (`light`, `box3`, `plane`, `cone`,
 //! …), whose methods keep three's names in snake case (`update`,
@@ -33,7 +33,7 @@
 //!   [`SkeletonHelper`] recompute their transform or vertices in an
 //!   `updateMatrixWorld()` override. The port's traversal has no per-type
 //!   hook, so each exposes `update_matrix_world(force)` instead: the
-//!   override's body, then [`Node::update_matrix_world`]. Nothing calls it
+//!   override's body, then [`ObjectRef::update_matrix_world`]. Nothing calls it
 //!   for you, and [`Renderer::render`]'s own `scene.update_matrix_world()`
 //!   comes too late for a helper that reads another object's world matrix
 //!   ([`PlaneHelper`] its parent's, [`SkeletonHelper`] the bones'). So each
@@ -51,10 +51,10 @@
 //! - A material three shares between two children (`DirectionalLightHelper`)
 //!   is a clone per child here; `update()` writes both.
 //!
-//! [`Node`]: crate::core::Node
+//! [`ObjectRef`]: crate::core::ObjectRef
 //! [`MeshBasicNodeMaterial::line`]: crate::materials::MeshBasicNodeMaterial::line
 //! [`MeshBasicNodeMaterial::new`]: crate::materials::MeshBasicNodeMaterial::new
-//! [`Node::update_matrix_world`]: crate::core::Node::update_matrix_world
+//! [`ObjectRef::update_matrix_world`]: crate::core::ObjectRef::update_matrix_world
 //! [`Renderer::render`]: crate::Renderer::render
 //! [`Scene::update_matrix_world`]: crate::objects::Scene::update_matrix_world
 

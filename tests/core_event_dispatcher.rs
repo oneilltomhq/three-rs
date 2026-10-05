@@ -3,7 +3,7 @@
 //! 12).
 //!
 //! three's tests use an `'anyType'` string and a bare `EventDispatcher`; the
-//! port's dispatcher is the [`Node`] and its event types are closed, so they
+//! port's dispatcher is the [`ObjectRef`] and its event types are closed, so they
 //! use `SceneEventType::Added`, and `dispatch_event` is called directly with
 //! no tree change behind it. The listener `{}` three passes stands for a
 //! function's identity, which is the [`ListenerHandle`] here. Past the four
@@ -19,15 +19,15 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use three_rs::core::{ListenerHandle, Node, Object3D, SceneEvent, SceneEventType};
+use three_rs::core::{ListenerHandle, Object3D, ObjectRef, SceneEvent, SceneEventType};
 
 const ANY_TYPE: SceneEventType = SceneEventType::Added;
 const ANOTHER_TYPE: SceneEventType = SceneEventType::Removed;
 
-fn counter() -> (Rc<Cell<u32>>, impl Fn(&SceneEvent, &Node) + 'static) {
+fn counter() -> (Rc<Cell<u32>>, impl Fn(&SceneEvent, &ObjectRef) + 'static) {
     let count = Rc::new(Cell::new(0));
     let inner = count.clone();
-    (count, move |_: &SceneEvent, _: &Node| {
+    (count, move |_: &SceneEvent, _: &ObjectRef| {
         inner.set(inner.get() + 1)
     })
 }
@@ -134,7 +134,7 @@ fn dispatch_event_passes_the_event_and_its_target() {
     let child = Object3D::new_node();
 
     /// `event.type`, `event.child` and `event.target`.
-    type Seen = (SceneEventType, Option<Node>, Node);
+    type Seen = (SceneEventType, Option<ObjectRef>, ObjectRef);
     let seen: Rc<RefCell<Vec<Seen>>> = Rc::default();
     let log = seen.clone();
     event_dispatcher.add_event_listener(SceneEventType::ChildAdded, move |event, target| {
@@ -148,10 +148,13 @@ fn dispatch_event_passes_the_event_and_its_target() {
     assert_eq!(seen.len(), 1);
     assert_eq!(seen[0].0, SceneEventType::ChildAdded, "event.type");
     assert!(
-        Node::ptr_eq(seen[0].1.as_ref().unwrap(), &child),
+        ObjectRef::ptr_eq(seen[0].1.as_ref().unwrap(), &child),
         "event.child"
     );
-    assert!(Node::ptr_eq(&seen[0].2, &event_dispatcher), "event.target");
+    assert!(
+        ObjectRef::ptr_eq(&seen[0].2, &event_dispatcher),
+        "event.target"
+    );
 }
 
 #[test]

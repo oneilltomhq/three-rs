@@ -41,8 +41,8 @@ use std::rc::Rc;
 use three_rs::geometries::plane_geometry;
 use three_rs::nodes::display::oit_pass;
 use three_rs::{
-    pass, Color, Mesh, MeshBasicNodeMaterial, Node, PerspectiveCamera, RenderPipeline, Renderer,
-    RendererParameters, Scene,
+    pass, Color, Mesh, MeshBasicNodeMaterial, ObjectRef, PerspectiveCamera, RenderPipeline,
+    Renderer, RendererParameters, Scene,
 };
 
 const SIZE: u32 = 64;
@@ -152,7 +152,7 @@ fn bytes(linear: [f64; 3]) -> [u8; 3] {
     linear.map(srgb_byte)
 }
 
-fn quad(width: f64, height: f64, color: u32, opacity: Option<f64>) -> Node {
+fn quad(width: f64, height: f64, color: u32, opacity: Option<f64>) -> ObjectRef {
     let mut material = MeshBasicNodeMaterial::new();
     material.color = Color::from_hex(color);
     if let Some(opacity) = opacity {

@@ -48,7 +48,7 @@
 use std::path::Path;
 use std::rc::Rc;
 
-use crate::core::{BufferAttribute, BufferGeometry, Node};
+use crate::core::{BufferAttribute, BufferGeometry, ObjectRef};
 use crate::error::Error;
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::{Color, ColorSpace, Vector3};
@@ -57,7 +57,7 @@ use crate::objects::{Group, Mesh};
 /// `OBJLoader.parse()`'s return value: the `Group` and what three hangs on it.
 pub struct Obj {
     /// The `Group` holding one `Mesh` per object (`o` / `g`) that had faces.
-    pub group: Node,
+    pub group: ObjectRef,
     /// `container.materialLibraries`: every `mtllib` reference, in order.
     pub material_libraries: Vec<String>,
 }

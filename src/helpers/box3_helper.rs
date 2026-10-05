@@ -2,7 +2,7 @@
 
 use std::rc::Rc;
 
-use crate::core::{BufferAttribute, BufferGeometry, Node};
+use crate::core::{BufferAttribute, BufferGeometry, ObjectRef};
 use crate::materials::LineBasicNodeMaterial;
 use crate::math::{Box3, Color};
 use crate::objects::LineSegments;
@@ -15,7 +15,7 @@ use crate::objects::LineSegments;
 ///
 /// Three moves the helper onto the box in an `updateMatrixWorld()`
 /// override, so the scene's own traversal keeps it on the box. The port's
-/// traversal ([`Node::update_matrix_world`]) has no per-type overrides, so
+/// traversal ([`ObjectRef::update_matrix_world`]) has no per-type overrides, so
 /// the override is [`update_matrix_world`](Self::update_matrix_world) here,
 /// and something has to call it before each render. It reads nothing but
 /// its box, so its place against the scene's own update does not change what
@@ -31,7 +31,7 @@ use crate::objects::LineSegments;
 /// [`GridHelper`](super::GridHelper).
 pub struct Box3Helper {
     /// The `LineSegments` itself.
-    pub node: Node,
+    pub node: ObjectRef,
     /// `Box3Helper.box`, read on every
     /// [`update_matrix_world`](Self::update_matrix_world). Three holds the
     /// caller's `Box3` object; the port holds the value, so change the box

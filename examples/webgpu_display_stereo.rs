@@ -68,7 +68,7 @@ pub struct App {
     /// The page's `controls`.
     pub controls: OrbitControls,
     /// The instanced spheres, which `animate()` moves.
-    pub mesh: three_rs::Node,
+    pub mesh: three_rs::ObjectRef,
     pub timer: Timer,
     pub stereo: StereoPassNode,
     pub anaglyph: AnaglyphPassNode,

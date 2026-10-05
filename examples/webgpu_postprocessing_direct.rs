@@ -34,7 +34,7 @@
 use std::rc::Rc;
 
 use three_rs::addons::controls::OrbitControls;
-use three_rs::core::Node;
+use three_rs::core::ObjectRef;
 use three_rs::nodes::node::Type;
 use three_rs::nodes::tsl::{output_property, saturation, uniform_value, vec4_join};
 use three_rs::testing::DeterministicRandom;
@@ -62,7 +62,7 @@ pub struct App {
     pub camera: PerspectiveCamera,
     /// The page's `object`, the parent every sphere hangs off and the only
     /// thing `animate()` moves.
-    pub object: Node,
+    pub object: ObjectRef,
     pub render_pipeline: DirectRenderPipeline,
 }
 

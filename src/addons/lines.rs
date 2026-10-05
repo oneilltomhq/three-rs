@@ -18,7 +18,7 @@ use std::rc::Rc;
 
 use crate::core::{
     BoundingBox, BoundingSphere, BufferAttribute, BufferGeometry, InterleavedBuffer, Intersection,
-    Node, Raycaster, RaycasterCamera,
+    ObjectRef, Raycaster, RaycasterCamera,
 };
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::{Box3, Line3, Matrix4, Ray, Sphere, Vector2, Vector3, Vector4};
@@ -225,14 +225,14 @@ fn pairs(array: &[f32]) -> Vec<f32> {
 pub struct LineSegments2;
 
 impl LineSegments2 {
-    /// three.js' constructor, as a scene-graph [`Node`].
+    /// three.js' constructor, as a scene-graph [`ObjectRef`].
     ///
     /// `object_type` is `"LineSegments2"`, but the payload is a
     /// [`Payload::Mesh`]: `WebGPUUtils.getPrimitiveTopology()` reads
     /// `object.isLine`, which a `LineSegments2` does *not* set, so it draws
     /// `triangle-list` like any other mesh.
-    #[allow(clippy::new_ret_no_self)] // mirrors three.js' constructor: it returns a scene-graph `Node`.
-    pub fn new(geometry: &LineSegmentsGeometry, material: MeshBasicNodeMaterial) -> Node {
+    #[allow(clippy::new_ret_no_self)] // mirrors three.js' constructor: it returns a scene-graph `ObjectRef`.
+    pub fn new(geometry: &LineSegmentsGeometry, material: MeshBasicNodeMaterial) -> ObjectRef {
         Self::from_parts("LineSegments2", geometry, material)
     }
 
@@ -240,7 +240,7 @@ impl LineSegments2 {
         object_type: &'static str,
         geometry: &LineSegmentsGeometry,
         material: MeshBasicNodeMaterial,
-    ) -> Node {
+    ) -> ObjectRef {
         let mut object = crate::core::Object3D {
             object_type,
             ..Default::default()
@@ -261,10 +261,10 @@ impl LineSegments2 {
 pub struct Line2;
 
 impl Line2 {
-    /// three.js' constructor, as a scene-graph [`Node`]. See
+    /// three.js' constructor, as a scene-graph [`ObjectRef`]. See
     /// [`LineSegments2::new`] on the payload.
-    #[allow(clippy::new_ret_no_self)] // mirrors three.js' constructor: it returns a scene-graph `Node`.
-    pub fn new(geometry: &LineGeometry, material: MeshBasicNodeMaterial) -> Node {
+    #[allow(clippy::new_ret_no_self)] // mirrors three.js' constructor: it returns a scene-graph `ObjectRef`.
+    pub fn new(geometry: &LineGeometry, material: MeshBasicNodeMaterial) -> ObjectRef {
         LineSegments2::from_parts("Line2", geometry.as_segments(), material)
     }
 }
@@ -279,7 +279,7 @@ impl Line2 {
 pub(crate) fn raycast(
     mesh: &Mesh,
     matrix_world: &Matrix4,
-    object: &Node,
+    object: &ObjectRef,
     raycaster: &Raycaster,
     intersects: &mut Vec<Intersection>,
 ) {
@@ -422,7 +422,7 @@ fn world_space_half_width(
 
 /// The hit record both branches push: the closest points on the ray and on
 /// the (world-space) segment.
-fn segment_intersection(ray: &Ray, line: &Line3, i: usize, object: &Node) -> Intersection {
+fn segment_intersection(ray: &Ray, line: &Line3, i: usize, object: &ObjectRef) -> Intersection {
     let mut point = Vector3::ZERO;
     let mut point_on_line = Vector3::ZERO;
     ray.distance_sq_to_segment(
@@ -445,7 +445,7 @@ fn raycast_world_units(
     matrix_world: &Matrix4,
     line_width: f64,
     ray: &Ray,
-    object: &Node,
+    object: &ObjectRef,
     intersects: &mut Vec<Intersection>,
 ) {
     for i in 0..positions.len() / 6 {
@@ -473,7 +473,7 @@ fn raycast_screen_space(
     line_width: f64,
     camera: &RaycasterCamera,
     ray: &Ray,
-    object: &Node,
+    object: &ObjectRef,
     intersects: &mut Vec<Intersection>,
 ) {
     let projection_matrix = &camera.projection_matrix;

@@ -54,7 +54,7 @@ use three_rs::nodes::tsl;
 use three_rs::nodes::{NodeRef, Type};
 use three_rs::objects::InstancedMesh;
 use three_rs::textures::Texture;
-use three_rs::{MeshBasicNodeMaterial, Node};
+use three_rs::{MeshBasicNodeMaterial, ObjectRef};
 
 use crate::text::Text;
 use crate::vector_font::VectorFont;
@@ -96,7 +96,7 @@ impl Default for BatchedTextOptions {
 /// a subclass of there, and its `_memberGlyphs[ id ]` slice.
 struct Member {
     text: Text,
-    node: Node,
+    node: ObjectRef,
     glyph_start: usize,
     glyph_count: usize,
 }
@@ -105,7 +105,7 @@ struct Member {
 /// `BatchedText`. See the module doc for the shape of the instance data and
 /// where it deliberately diverges from the JS.
 pub struct BatchedText {
-    node: Node,
+    node: ObjectRef,
     /// `this.atlas`.
     pub atlas: VectorFontAtlas,
     font: Option<Rc<VectorFont>>,
@@ -199,7 +199,7 @@ impl BatchedText {
     }
 
     /// The scene-graph node: `scene.add( batch.node() )`.
-    pub fn node(&self) -> &Node {
+    pub fn node(&self) -> &ObjectRef {
         &self.node
     }
 
@@ -305,7 +305,7 @@ impl BatchedText {
     /// instance matrix, so rotation and scale are honoured along with position:
     /// `member_node( id ).borrow_mut().set_rotation( -PI / 2.0, 0.0, 0.0 )` lays
     /// the label flat on the floor. Members are not billboarded.
-    pub fn member_node(&self, member_id: usize) -> Option<&Node> {
+    pub fn member_node(&self, member_id: usize) -> Option<&ObjectRef> {
         self.members.get(member_id)?.as_ref().map(|m| &m.node)
     }
 
