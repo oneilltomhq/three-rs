@@ -1545,7 +1545,7 @@ dependencies = [
 
 [[package]]
 name = "sdf-text"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "bytemuck",
  "d3-hierarchy",
@@ -1771,7 +1771,7 @@ dependencies = [
 
 [[package]]
 name = "three-rs"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "basisu",
  "bytemuck",
@@ -1793,7 +1793,7 @@ dependencies = [
 
 [[package]]
 name = "three-rs-controls"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "sdf-text",
  "three-rs",
