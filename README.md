@@ -318,7 +318,7 @@ same screenshots at the same threshold (see
 | webgpu_ocean | 0 | 4.5 | 19 | 75 | yes |
 | webgpu_postprocessing_godrays | 3 | 12.1 | 54 | 9234 | yes |
 | webgpu_postprocessing_lensflare | 0 | 3.3 | 29 | 55534 | yes |
-| webgpu_postprocessing_dof_basic | 36 | 7.1 | 42 | 33694 | yes |
+| webgpu_postprocessing_dof_basic | 5 | 7.1 | 42 | 33694 | yes |
 | webgpu_postprocessing_ssr | 4 | 10.2 | 17 | 22888 | yes |
 | webgpu_postprocessing_3dlut | 0 | 1.9 | 4 | 5705 | yes |
 | webgpu_postprocessing_outline | 15 (Three itself scores 15 against the same JPEG) | 4.1 | 46 | 96243 | yes |
