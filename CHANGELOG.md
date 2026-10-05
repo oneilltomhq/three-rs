@@ -804,6 +804,11 @@ have their own sections after the release they ship with. The format follows [Ke
   map in a `BasicEnvironmentNode` in three; the port's unlit flow sampled it
   for every kind that reached it, while `unsupported_fields()` warned that
   those kinds ignore it. The warning stays; the sample is gone.
+- A glTF that lists `KHR_materials_iridescence` under `extensionsRequired`
+  loads (#330). The loader has read the extension since
+  `webgpu_loader_gltf_iridescence`, but it was missing from the list of
+  extensions the required-extension check accepts, so such a file was
+  refused. `IridescenceLamp.glb` only lists it under `extensionsUsed`.
 
 ## [0.2.0] - 2026-09-29
 

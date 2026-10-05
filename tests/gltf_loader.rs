@@ -424,6 +424,40 @@ fn unread_required_extension_is_an_error() {
     );
 }
 
+/// `KHR_materials_iridescence` in `extensionsRequired` loads (#330). The
+/// loader has read the extension since `webgpu_loader_gltf_iridescence`, but
+/// `SUPPORTED_EXTENSIONS` left it out, so a file that required it was refused
+/// by the check above. `IridescenceLamp.glb` lists it only under
+/// `extensionsUsed`, which is why the graded page never saw this.
+#[test]
+fn required_iridescence_loads() {
+    let json = br#"{
+        "asset": { "version": "2.0" },
+        "extensionsUsed": [ "KHR_materials_iridescence" ],
+        "extensionsRequired": [ "KHR_materials_iridescence" ],
+        "scenes": [ { "nodes": [] } ],
+        "scene": 0,
+        "materials": [ {
+            "extensions": {
+                "KHR_materials_iridescence": {
+                    "iridescenceFactor": 1.0,
+                    "iridescenceIor": 1.8,
+                    "iridescenceThicknessMaximum": 515.0
+                }
+            }
+        } ]
+    }"#;
+
+    let gltf = GltfLoader::parse(json, std::path::PathBuf::from("."))
+        .expect("a file requiring KHR_materials_iridescence loads");
+    let iridescence = gltf.materials[0]
+        .iridescence
+        .expect("KHR_materials_iridescence is read");
+    assert_eq!(iridescence.factor, 1.0);
+    assert_eq!(iridescence.ior, 1.8);
+    assert_eq!(iridescence.thickness_range, [100.0, 515.0]);
+}
+
 /// Every texture reference on a material is a `GltfTextureRef`, including the
 /// two the anisotropy rung left as bare indices: `anisotropyTexture` and
 /// `clearcoatNormalTexture` carry `texCoord` and `KHR_texture_transform` like

@@ -9,8 +9,9 @@
 //! type, `normalized`, `byteStride`, `sparse`), meshes/primitives into
 //! [`BufferGeometry`] with three.js' attribute renaming, nodes into the
 //! `Object3D` tree, skins into [`Skeleton`], animations into [`AnimationClip`].
-//! Materials and images come out as data records ([`GltfMaterial`],
-//! [`GltfImage`]) because the material types do not exist in this crate yet.
+//! Each primitive's material is built as `GLTFParser.loadMaterial` builds it
+//! (standard, physical or basic), and the parsed records stay on [`Gltf`] as
+//! [`GltfMaterial`], [`GltfTexture`] and [`GltfImage`].
 //!
 //! `KHR_draco_mesh_compression` primitives are decoded by
 //! [`draco`](crate::loaders::draco), to the typed arrays `DRACOLoader`
@@ -27,16 +28,27 @@
 //! `alphaMode`, and nothing else. `webgpu_postprocessing_retro`'s
 //! `coffeeMug.glb` is one.
 //!
-//! Not ported (explicit TODOs): extensions other than those in
-//! `SUPPORTED_EXTENSIONS`,
-//! Not ported (explicit TODOs): extensions (`KHR_*`, Draco, meshopt,
-//! `EXT_texture_avif`; `EXT_texture_webp` is read, see `load_textures`),
-//! `CUBICSPLINE` interpolation (needs `GLTFCubicSplineInterpolant`), cameras,
-//! primitive-key geometry deduplication and the `groups` it implies, and
-//! `GLTFMeshStandardSGMaterial`.
-//!
+//! The PBR material extensions `KHR_materials_anisotropy`, `_clearcoat`,
+//! `_diffuse_roughness`, `_emissive_strength`, `_ior`, `_iridescence`,
+//! `_sheen`, `_specular`, `_transmission` and `_volume` are read into
+//! [`GltfMaterial`] and onto the built material, as three's
+//! `GLTFMaterials*Extension.extendMaterialParams` do. `KHR_texture_transform`
+//! is read on every texture reference ([`GltfTextureRef`]),
+//! `EXT_texture_webp` images are decoded (see `load_textures`), and
 //! `KHR_texture_basisu` textures are transcoded by [`Ktx2Loader`]; see
 //! [`GltfLoader::load_with_ktx2`] for which one.
+//!
+//! `SUPPORTED_EXTENSIONS` lists every extension above. A file that names any
+//! other in `extensionsRequired` is refused with
+//! [`GltfError::UnsupportedRequiredExtension`], where three only warns; one
+//! that merely uses it loads without it, as in three.
+//!
+//! Not ported (explicit TODOs): every other extension (among them
+//! `KHR_lights_punctual`, `KHR_materials_dispersion`, `EXT_texture_avif` and
+//! `EXT_mesh_gpu_instancing`), `CUBICSPLINE` interpolation (needs
+//! `GLTFCubicSplineInterpolant`), cameras, primitive-key geometry
+//! deduplication and the `groups` it implies, and
+//! `GLTFMeshStandardSGMaterial`.
 
 use std::cell::{OnceCell, RefCell};
 use std::collections::HashMap;
@@ -2615,6 +2627,7 @@ const SUPPORTED_EXTENSIONS: &[&str] = &[
     "KHR_materials_diffuse_roughness",
     "KHR_materials_emissive_strength",
     "KHR_materials_ior",
+    "KHR_materials_iridescence",
     "KHR_materials_sheen",
     "KHR_materials_specular",
     "KHR_materials_transmission",
