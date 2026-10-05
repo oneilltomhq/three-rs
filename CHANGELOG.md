@@ -35,6 +35,12 @@ have their own sections after the release they ship with. The format follows [Ke
   `DepthTexture`, `CubeDepthTexture`, `RenderTarget`, `CubeRenderTarget`,
   `MeshBasicNodeMaterial` (`dispose(self)`) and `BufferGeometry`
   (`dispose(self: Rc<Self>)`), so three.js code ports line for line.
+- **The renderer's cache window is a documented contract** (#249,
+  `docs/api.md` decision 13): the renderer forgets what it has not drawn
+  for four frames. A thumbnail, an on-demand preview or a timer-driven view
+  drawn less often than every fourth frame rebuilds its programs, buffers
+  and bind groups on each draw. The behaviour is unchanged; a configurable
+  window and eviction by liveness stay open if a consumer needs them.
 
 - **`KHR_materials_iridescence` and `webgpu_loader_gltf_iridescence`**
   (graded, 0 pixels; #229): the thin-film half of `PhysicalLightingModel`

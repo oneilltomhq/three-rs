@@ -579,7 +579,59 @@ world matrix computed before it; a change to the material is seen this frame.
 The shadow passes draw from their own list and call no hooks, where three's
 `renderer.render()` of the shadow camera would.
 
+## 13. The renderer forgets what it has not drawn for four frames
+
+The contract, for a consumer: **anything the renderer has not drawn for four
+frames is forgotten, and the next render that draws it builds it again from
+scratch.** Draw a thing at least every fourth frame and it stays warm; draw it
+less often and each of its renders pays for a cold build.
+
+"Frame" is the renderer's frame clock, three's `NodeFrame.frameId`
+(`Renderer::node_frame()`), not the number of `render()` calls. A frame closes
+on a render to the screen, and every render into a render target before that
+(a pass's scene render, SSAA's eight samples) belongs to it. The window is
+`CACHE_GRACE_FRAMES` in `src/renderer/mod.rs`.
+
+What is forgotten is everything the renderer caches under the id of a value it
+does not own, and so cannot ask whether that value is still alive: a
+material's built node programs (`node_builder_states`), node-owned buffers
+such as a `range()` fill (`buffers`), each draw's uniform, bone and morph
+buffers (`slot_buffers`), texture views (`views`) and bind groups
+(`bind_group_cache`). Once no surviving material state names a compiled
+program for the same window, the program and its pipelines go too. What is
+*not* forgotten is what the renderer can watch die: geometries and textures
+are evicted by a `Weak` strong count when the consumer drops them, however
+long they sit unused (`docs/scene-graph.md`, "Identity and eviction").
+
+Who notices: a thumbnail rendered once and then again later, a preview
+refreshed on demand, a secondary view updated on a timer, a second scene
+drawn every fifth frame. Each of those renders rebuilds its programs,
+buffers and bind groups. `steady_frame_builds_nothing` cannot see it,
+because it renders every frame; `renderer.info().build` can, by counting
+what the render built.
+
+Why not zero: a consumer that renders two scenes, or one scene from two
+cameras, in alternating frames would evict each one's materials on the
+other's frame and rebuild them every time. Why four: it tolerates a handful
+of interleaved scenes and passes while bounding the maps at a few frames'
+worth of churn. A steady frame touches every entry, so it evicts nothing and
+builds nothing, whatever the window.
+
+Issue #249 offered two other answers, and both stay open if a consumer's
+cadence makes this contract hurt. One is a configurable window
+(`Renderer::set_cache_grace_frames`, or a builder option): cheap, but still
+frame-based, so the consumer has to know their own cadence. The other keys
+eviction on liveness instead of age, as `geometries` and the texture maps
+already do: a material state holding a `Weak` on its material would go when
+the consumer drops the material, not when it pauses, which removes the
+contract altogether at the cost of giving materials a liveness signal.
+Either can keep four frames as the default, so neither need break a
+consumer that relies on this one.
+
 ## Where each decision came from
+
+Decision 13 is issue #249's option 1: the window the renderer already had,
+written down as a contract.
 
 Decision 12 is issue #153's option C and its maintainer decisions, built in
 #159.

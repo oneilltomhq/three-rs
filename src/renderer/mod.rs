@@ -73,8 +73,16 @@ use crate::textures::{
 };
 
 /// How many **frames** a cache entry survives without being used, for the
-/// caches whose key has no liveness signal behind it (`node_builder_states`
-/// and `buffers`, both keyed on ids of values the renderer does not own).
+/// caches whose key has no liveness signal behind it (`node_builder_states`,
+/// `buffers`, `attribute_buffers`, `slot_buffers`, `views` and
+/// `bind_group_cache`, all keyed on ids of values the renderer does not own).
+///
+/// This is a contract, not a tuning knob: the renderer forgets what it has
+/// not drawn for four frames, so a consumer drawing something less often than
+/// that (a thumbnail, an on-demand preview, a timer-driven secondary view)
+/// pays a rebuild on every draw of it. `docs/api.md` decision 13 states it
+/// for consumers and keeps the alternatives (a configurable window, eviction
+/// by liveness) open; change this value only together with that decision.
 ///
 /// Zero would be wrong: a consumer that renders two scenes, or the same scene
 /// from two cameras, in alternating frames would evict each one's materials on
@@ -83,8 +91,8 @@ use crate::textures::{
 /// churn — a steady frame touches every entry, so a steady frame evicts
 /// nothing and still builds nothing.
 ///
-/// The clock is [`Renderer::frames`], not the number of `render()` calls: a
-/// post-processing frame is many renders, and
+/// The clock is the node frame's `frame_id` ([`Renderer::node_frame`]), not
+/// the number of `render()` calls: a post-processing frame is many renders, and
 /// `webgpu_postprocessing_ssaa` renders its scene eight times before the one
 /// draw that reads the `RenderPipeline` quad's material. Against a render
 /// clock that quad's program was evicted and rebuilt every frame.
@@ -981,7 +989,9 @@ pub struct Renderer {
     programs: HashMap<u64, ProgramEntry>,
     /// `NodeManager.nodeBuilderCache`: a material's built `NodeProgram`s, by
     /// `material.id`. A steady frame is served from here without touching the
-    /// node builder; see `node_builder_state()`.
+    /// node builder; see `node_builder_state()`. Aged out by
+    /// [`CACHE_GRACE_FRAMES`], a contract consumers rely on (`docs/api.md`
+    /// decision 13).
     node_builder_states: HashMap<usize, MaterialStates>,
     /// Three's `NodeFrame`: the clock (`time`, `deltaTime`, `frameId`,
     /// `renderId`) and the update maps behind the `NodeUpdateType` guards.
@@ -1045,8 +1055,9 @@ pub struct Renderer {
     /// `BufferNode` / `InstanceBuffer` storage, keyed by the node's own
     /// identity (`BufferId`, a never-reused counter) — a `range()` buffer must
     /// be filled only once, since filling it draws from `Math.random`. Aged out
-    /// by [`CACHE_GRACE_FRAMES`]; the node itself is a material's, not the
-    /// renderer's, so there is no strong count to read.
+    /// by [`CACHE_GRACE_FRAMES`] (`docs/api.md` decision 13); the node itself
+    /// is a material's, not the renderer's, so there is no strong count to
+    /// read.
     buffers: HashMap<usize, BufferEntry>,
     /// `InstancedBufferAttribute` buffers, keyed by `( attribute id, usage )`;
     /// see [`AttributeBuffer`]. One attribute is one buffer however many draws
@@ -1065,22 +1076,25 @@ pub struct Renderer {
     /// Each draw's uniform groups, bone matrices and morph influences, one
     /// persistent buffer per (draw, group, binding) that
     /// every frame writes into rather than re-creating. Keyed on ids, see
-    /// [`DrawKey`]; aged out by [`CACHE_GRACE_FRAMES`], since a draw's object
-    /// and material have no liveness signal the renderer can read.
+    /// [`DrawKey`]; aged out by [`CACHE_GRACE_FRAMES`] (`docs/api.md`
+    /// decision 13), since a draw's object and material have no liveness
+    /// signal the renderer can read.
     slot_buffers: HashMap<SlotKey, SlotBuffer>,
     /// Texture views, by `TextureId` and view dimension, one entry per
     /// `wgpu::Texture` that id has recently stood for; see
-    /// [`Renderer::texture_view`]. Aged out by [`CACHE_GRACE_FRAMES`], and
-    /// swept by liveness besides, so a cached view never keeps a dropped
-    /// texture's memory past the next render; see [`ViewEntry`]. The `bool`
+    /// [`Renderer::texture_view`]. Aged out by [`CACHE_GRACE_FRAMES`]
+    /// (`docs/api.md` decision 13), and swept by liveness besides, so a
+    /// cached view never keeps a dropped texture's memory past the next
+    /// render; see [`ViewEntry`]. The `bool`
     /// is the storage-binding view, one mip, of the same texture.
     views: HashMap<(usize, Option<wgpu::TextureViewDimension>, bool), Vec<ViewEntry>>,
     /// Samplers, by descriptor, for the renderer's life; see [`SamplerKey`].
     samplers: HashMap<SamplerKey, Serial<wgpu::Sampler>>,
     /// Bind groups, by layout and the serials of what they bind; see
     /// [`BindGroupKey`]. A frame that only rewrote its buffers' contents finds
-    /// every group here. Aged out by [`CACHE_GRACE_FRAMES`]: a group whose
-    /// member was replaced is never asked for again and goes with the window.
+    /// every group here. Aged out by [`CACHE_GRACE_FRAMES`] (`docs/api.md`
+    /// decision 13): a group whose member was replaced is never asked for
+    /// again and goes with the window.
     bind_group_cache: HashMap<BindGroupKey, BindGroupEntry>,
     /// The counter [`Serial`]s are numbered from.
     serials: Serials,

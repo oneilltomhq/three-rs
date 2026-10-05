@@ -98,8 +98,10 @@ the renderer and everything it caches are `Rc`-based and live on one thread.
 
 Most of those caches are swept at the top of `render()`: geometries and
 textures by weak count, the rest by frames since last use, with a grace
-window of `CACHE_GRACE_FRAMES` (four). A scene drawn less often than that
-is rebuilt each time it is drawn; whether that stays the contract is #249.
+window of `CACHE_GRACE_FRAMES` (four). That window is a contract, not a
+tuning knob: the renderer forgets what it has not drawn for four frames, so
+a thumbnail or timer-driven view drawn less often is rebuilt each time it is
+drawn (`docs/api.md` decision 13).
 The compiled programs follow what names them. `programs` (shader modules
 and layouts, keyed by content hash) is named only by the built states the
 material cache holds, so a program goes, with its `pipelines`, once no

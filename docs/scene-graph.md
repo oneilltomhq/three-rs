@@ -271,8 +271,8 @@ correct form for each kind of key. It happens once, at the top of `render()`:
 | `geometries` | `BufferGeometry.id` | a `Weak` beside the entry: strong count zero means the consumer dropped it |
 | morph textures | `BufferGeometry.id` | the same `Weak`, swept on the next `get_entry()` |
 | `textures_2d`, `cube_textures` | `TextureId` | a `Weak` on the texture handle beside the entry, as for geometries (issue #158) |
-| `node_builder_states` | `material.id` | unused for `CACHE_GRACE_RENDERS` (4) renders |
-| `buffers` (`range()`) | `BufferId` | unused for `CACHE_GRACE_RENDERS` renders |
+| `node_builder_states` | `material.id` | unused for `CACHE_GRACE_FRAMES` (4) frames; see `docs/api.md` decision 13 |
+| `buffers` (`range()`) | `BufferId` | unused for `CACHE_GRACE_FRAMES` frames |
 | `attribute_buffers` (`instanceMatrix`, `instanceColor`) | attribute id + buffer usage; rewritten when the attribute's version moves | unused for `CACHE_GRACE_FRAMES` frames |
 | `slot_buffers` (a draw's uniform groups, bone matrices, morph influences) | `DrawKey` (`Object3D.id`, `BufferGeometry.id`, `material.id`, variant, occurrence in the pass) + group + binding | unused for `CACHE_GRACE_FRAMES` frames |
 | `views` | `TextureId` + view dimension, one entry per `wgpu::Texture` behind the id | a `Weak` on the texture handle, of any texture class; otherwise unused for `CACHE_GRACE_FRAMES` frames |
