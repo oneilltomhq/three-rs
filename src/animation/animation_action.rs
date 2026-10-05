@@ -24,13 +24,17 @@
 //!   of the action, so `_setEndings` mutates all of them at once. Here the
 //!   settings live on the action and are pushed into each interpolant's
 //!   `data.settings` right before it is evaluated.
-//! - Events are dropped: Three's `_updateTime` dispatches `'loop'` and
-//!   `'finished'` on the mixer. The mixer has no events yet (`docs/api.md`
-//!   decision 12), so the state changes happen (`paused` / `enabled` /
-//!   clamped `time`) and the notification does not.
+//! - Three's `_updateTime` calls `this._mixer.dispatchEvent( … )` for
+//!   `'loop'` and `'finished'`. Here `_update` / `_updateTime` take the
+//!   action's own [`ActionHandle`] (Three's `action: this`) and the mixer's
+//!   event queue, and push a [`MixerEvent`] onto it at the same three points;
+//!   the caller drains it with `AnimationMixer::take_events` (`docs/api.md`
+//!   decision 12).
 
 use crate::animation::animation_clip::{AnimationBlendMode, AnimationClip};
-use crate::animation::animation_mixer::{BindingPool, ControlHandle, ControlPool, RootId};
+use crate::animation::animation_mixer::{
+    ActionHandle, BindingPool, ControlHandle, ControlPool, MixerEvent, RootId,
+};
 use crate::animation::keyframe_track::TrackInterpolant;
 use crate::math::interpolant::{Ending, InterpolantSettings};
 
@@ -358,14 +362,20 @@ impl AnimationAction {
     // Internal
 
     /// `_update( time, deltaTime, timeDirection, accuIndex )`.
+    ///
+    /// `handle` is this action's own handle and `events` the mixer's queue,
+    /// both passed down to [`update_time_`](Self::update_time_).
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn update_(
         &mut self,
+        handle: ActionHandle,
         time: f64,
         mut delta_time: f64,
         time_direction: f64,
         accu_index: usize,
         bindings: &mut BindingPool,
         control: &mut ControlPool,
+        events: &mut Vec<MixerEvent>,
     ) {
         // called by the mixer
 
@@ -391,7 +401,7 @@ impl AnimationAction {
         // apply time scale and advance time
 
         delta_time *= self.update_time_scale_(time, control);
-        let clip_time = self.update_time_(delta_time);
+        let clip_time = self.update_time_(delta_time, handle, events);
 
         // note: _updateTime may disable the action resulting in
         // an effective weight of 0
@@ -497,9 +507,15 @@ impl AnimationAction {
 
     /// `_updateTime( deltaTime )`.
     ///
-    /// The `'loop'` / `'finished'` events are dropped (see the module docs);
-    /// everything else is Three's control flow verbatim.
-    pub(crate) fn update_time_(&mut self, delta_time: f64) -> f64 {
+    /// Three's control flow verbatim. `this._mixer.dispatchEvent( … )` becomes
+    /// a push onto the mixer's `events` queue, with `handle` standing for
+    /// `action: this`.
+    pub(crate) fn update_time_(
+        &mut self,
+        delta_time: f64,
+        handle: ActionHandle,
+        events: &mut Vec<MixerEvent>,
+    ) -> f64 {
         let duration = self.clip.duration;
         let loop_mode = self.loop_mode;
 
@@ -550,7 +566,10 @@ impl AnimationAction {
 
                 self.time = time;
 
-                // DROPPED: mixer.dispatchEvent( { type: 'finished', … } ).
+                events.push(MixerEvent::Finished {
+                    action: handle,
+                    direction: if delta_time < 0.0 { -1.0 } else { 1.0 },
+                });
 
                 break;
             }
@@ -596,7 +615,10 @@ impl AnimationAction {
 
                     self.time = time;
 
-                    // DROPPED: mixer.dispatchEvent( { type: 'finished', … } ).
+                    events.push(MixerEvent::Finished {
+                        action: handle,
+                        direction: if delta_time > 0.0 { 1.0 } else { -1.0 },
+                    });
                 } else {
                     // keep running
 
@@ -613,7 +635,10 @@ impl AnimationAction {
 
                     self.time = time;
 
-                    // DROPPED: mixer.dispatchEvent( { type: 'loop', … } ).
+                    events.push(MixerEvent::Loop {
+                        action: handle,
+                        loop_delta,
+                    });
                 }
             } else {
                 self.loop_count = loop_count;

@@ -147,8 +147,9 @@ loader is synchronous; there is no `LoadingManager`, `Cache` or
 
 **Animation.** Keyframe tracks of every value type, clips, `PropertyMixer`,
 `PropertyBinding` (position, quaternion, scale and morph influences),
-`AnimationAction`, `AnimationMixer` (without its `loop` / `finished`
-events), `AnimationObjectGroup` and `AnimationUtils`. Bézier tracks have no
+`AnimationAction`, `AnimationMixer` (its `loop` / `finished` events are a
+`MixerEvent` queue drained with `take_events()`), `AnimationObjectGroup` and
+`AnimationUtils`. Bézier tracks have no
 interpolant.
 
 **Workspace crate.** `sdf-text`: signed-distance-field text rendering with

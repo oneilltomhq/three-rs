@@ -47,10 +47,11 @@
 //! - `AnimationObjectGroup`: deferred to the object-tree branch. It is a
 //!   `TargetResolver` that fans out over its members; nothing in the mixer needs
 //!   to change to accept one, so there is nothing to stub here.
-//! - `EventDispatcher`: Three's mixer dispatches `'loop'` and `'finished'`.
-//!   The crate's events are typed per dispatcher (`docs/api.md` decision 12)
-//!   and the mixer has none yet, so the state changes happen and the
-//!   notifications do not.
+//! - `EventDispatcher`: Three's mixer `extends EventDispatcher` to dispatch
+//!   `'loop'` and `'finished'`. Here those two are a [`MixerEvent`] queue that
+//!   [`AnimationMixer::update`] fills and the caller drains with
+//!   [`AnimationMixer::take_events`]; there is no `addEventListener`
+//!   (`docs/api.md` decision 12).
 //! - `clipAction( 'name' )` / `existingAction( 'name' )`: the string form calls
 //!   `AnimationClip.findByName( root, name )`, which reads `root.animations` off
 //!   an `Object3D`. Deferred to the object-tree branch; pass the clip itself.
@@ -268,6 +269,46 @@ struct ActionsForClip {
     action_by_root: HashMap<RootId, ActionHandle>,
 }
 
+/// An event the mixer dispatches from `AnimationAction._updateTime`, the
+/// `event` argument of three.js' `mixer.dispatchEvent( event )`.
+///
+/// The set is closed: these are the two events three's mixer dispatches.
+/// three's `event.target` is always the mixer, the receiver of
+/// [`AnimationMixer::take_events`], so it is not a field here.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum MixerEvent {
+    /// `{ type: 'loop', action, loopDelta }` — a repeating action
+    /// (`LoopRepeat` / `LoopPingPong`) wrapped around its clip and has
+    /// repetitions left.
+    Loop {
+        /// `action`, the action that looped.
+        action: ActionHandle,
+        /// `loopDelta`: `Math.floor( time / duration )` for the unwrapped
+        /// time, so `1.0` for one forward wrap, `-1.0` for one backward wrap,
+        /// and larger in magnitude if a single update spanned several loops.
+        loop_delta: f64,
+    },
+    /// `{ type: 'finished', action, direction }` — an action ran out of
+    /// repetitions (or, for `LoopOnce`, reached either end of its clip) and
+    /// has been paused (`clampWhenFinished`) or disabled.
+    Finished {
+        /// `action`, the action that finished.
+        action: ActionHandle,
+        /// `direction`: `1.0` if it finished playing forwards, `-1.0`
+        /// backwards.
+        direction: f64,
+    },
+}
+
+impl MixerEvent {
+    /// `event.action` — the action either event is about.
+    pub fn action(&self) -> ActionHandle {
+        match *self {
+            Self::Loop { action, .. } | Self::Finished { action, .. } => action,
+        }
+    }
+}
+
 /// The three pool sizes Three exposes through `mixer.stats`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct MixerStats {
@@ -281,8 +322,9 @@ pub struct MixerStats {
 
 /// `AnimationMixer`.
 ///
-/// Three extends `EventDispatcher`; the mixer's events are not ported (see the
-/// module docs).
+/// Three extends `EventDispatcher`; here the mixer's `'loop'` and `'finished'`
+/// events are a queue, read with [`take_events`](Self::take_events) after
+/// [`update`](Self::update).
 pub struct AnimationMixer {
     /// `_root` is `roots[ 0 ]`; the rest are the registered `optionalRoot`s.
     roots: Vec<Box<dyn TargetResolver>>,
@@ -304,6 +346,8 @@ pub struct AnimationMixer {
     pub time: f64,
     /// `timeScale`.
     pub time_scale: f64,
+    /// The events dispatched by the last `update()`, oldest first.
+    events: Vec<MixerEvent>,
 }
 
 impl AnimationMixer {
@@ -320,6 +364,7 @@ impl AnimationMixer {
             accu_index: 0,
             time: 0.0,
             time_scale: 1.0,
+            events: Vec::new(),
         }
     }
 
@@ -739,7 +784,16 @@ impl AnimationMixer {
     }
 
     /// `update( deltaTime )`.
+    ///
+    /// Clears the events the previous `update()` queued, then queues the
+    /// ones this one dispatches; read them with
+    /// [`take_events`](Self::take_events).
     pub fn update(&mut self, delta_time: f64) -> &mut Self {
+        // Not in Three: a listener added after a dispatch never hears it, so
+        // an event nobody drained before the next update is dropped, and a
+        // caller that never drains does not grow the queue without bound.
+        self.events.clear();
+
         let delta_time = delta_time * self.time_scale;
 
         self.time += delta_time;
@@ -765,12 +819,14 @@ impl AnimationMixer {
             // touches the action arena.
             let mut action = self.actions[slot].take().expect("three-rs: live action");
             action.update_(
+                ActionHandle(slot),
                 time,
                 delta_time,
                 time_direction,
                 accu_index,
                 &mut self.bindings,
                 &mut self.control,
+                &mut self.events,
             );
             self.actions[slot] = Some(action);
         }
@@ -785,6 +841,28 @@ impl AnimationMixer {
         }
 
         self
+    }
+
+    /// Drains the `'loop'` and `'finished'` events the last
+    /// [`update`](Self::update) (or [`set_time`](Self::set_time)) dispatched,
+    /// in the order three would have called its listeners:
+    /// `mixer.addEventListener( 'finished', listener )` becomes a loop over
+    /// this after each `update()`.
+    ///
+    /// A drained queue rather than listeners, because the caller already
+    /// calls `update()` once a frame and can read the events on the next
+    /// line; because the mixer is borrowed mutably throughout `update()`,
+    /// so a listener could not reach the mixer to act on the event (three's
+    /// listeners usually `play()` or `fadeIn()` another action); and because
+    /// a closure has no identity, so `removeEventListener` would need a
+    /// handle type of its own, as `ObjectRef`'s listeners need
+    /// `ListenerHandle`. A listener
+    /// in three runs in the middle of `update()`, between one action's
+    /// `_update` and the next; here the response runs after the whole update,
+    /// so a change it makes to the actions is first seen by the next
+    /// `update()`.
+    pub fn take_events(&mut self) -> Vec<MixerEvent> {
+        std::mem::take(&mut self.events)
     }
 
     /// `setTime( time )`.

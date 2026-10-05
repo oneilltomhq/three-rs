@@ -519,10 +519,22 @@ shape its events need:
   are a public field of opaque type, `Object3D::listeners`, so `Object3D {
   .., ..Default::default() }` still builds outside the crate; `Clone` does
   not copy them, as three's `copy()` does not.
-- **The animation mixer** does not dispatch three's `'loop'` and
-  `'finished'` yet: the state changes happen and the notifications do not.
-  When they land they are a queue the caller drains after `update()`, not
-  listeners, because the mixer is borrowed mutably while it updates.
+- **The animation mixer** queues a `MixerEvent`: `Loop { action,
+  loop_delta }` and `Finished { action, direction }`, the two events
+  `AnimationAction._updateTime` dispatches on the mixer, with three's
+  `action` as the `ActionHandle` and `loopDelta` / `direction` as the `f64`s
+  three computes. `AnimationMixer::update()` clears the queue and refills it
+  in three's dispatch order; the caller drains it with `take_events()` on the
+  next line, so `mixer.addEventListener( 'finished', ... )` becomes a loop
+  over `take_events()` after each `update()`. A queue rather than listeners
+  because the caller already polls `update()` once a frame, because the
+  mixer is borrowed mutably throughout `update()` so a listener could not
+  reach it to `play()` or `fadeIn()` the next action (what three's listeners
+  usually do), and because it needs no `ListenerHandle`. The cost is timing:
+  three's listener runs inside `update()`, here the response runs after it,
+  so a change it makes is first seen by the next `update()`. Clearing on
+  `update()` keeps a caller that never drains from growing the queue, and
+  matches three, where an event with no listener at dispatch time is gone.
 - **`dispose`** is `Drop`. A texture, render target or geometry is an `Rc`
   handle and the renderer frees what it made for it once the last handle is
   gone (`docs/scene-graph.md`, "Identity and eviction"); a material ages out.
@@ -582,7 +594,7 @@ The shadow passes draw from their own list and call no hooks, where three's
 ## Where each decision came from
 
 Decision 12 is issue #153's option C and its maintainer decisions, built in
-#159.
+#159; the mixer's event queue was built in #326.
 
 Decision 11 is the last of issue #14 (with #37).
 

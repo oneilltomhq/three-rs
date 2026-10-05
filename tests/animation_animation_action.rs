@@ -18,7 +18,7 @@ use std::rc::Rc;
 use three_rs::animation::property_binding::ParsedTrackName;
 use three_rs::animation::KeyframeTrack;
 use three_rs::animation::LoopMode;
-use three_rs::animation::{ActionHandle, AnimationMixer};
+use three_rs::animation::{ActionHandle, AnimationMixer, MixerEvent};
 use three_rs::animation::{AnimationBlendMode, AnimationClip};
 use three_rs::animation::{BindingTarget, TargetResolver};
 
@@ -883,9 +883,61 @@ fn get_root() {
 
 // OTHERS
 
-// SKIPPED: 'StartAt when already executed once'. The test drives the action from
-// a `mixer.addEventListener( 'finished', … )` handler, and this port drops
-// `EventDispatcher` (see the `animation_mixer` module docs).
+#[test]
+fn start_at_when_already_executed_once() {
+    let root = StubRoot::new();
+    let mut mixer = AnimationMixer::new(Box::new(root.clone()));
+    let track =
+        KeyframeTrack::number(".rotation[x]", vec![0.0, 750.0], vec![0.0, 270.0], None).unwrap();
+    let clip = AnimationClip::new("clip1", 750.0, vec![track], AnimationBlendMode::Normal);
+
+    let animation_action = mixer.clip_action(&clip, None, None);
+    mixer.set_loop(animation_action, LoopMode::Once, f64::INFINITY);
+    mixer.action_mut(animation_action).clamp_when_finished = true;
+    mixer.play(animation_action);
+
+    // `mixer.addEventListener( 'finished', () => { … } )` — the listener body,
+    // run over the drained queue after each `mixer.update()`.
+    let update = |mixer: &mut AnimationMixer, delta_time: f64| {
+        mixer.update(delta_time);
+        for event in mixer.take_events() {
+            if let MixerEvent::Finished { .. } = event {
+                mixer.action_mut(animation_action).time_scale *= -1.0;
+                mixer.action_mut(animation_action).paused = false;
+                let time = mixer.time;
+                mixer.start_at(animation_action, time + 2000.0);
+                mixer.play(animation_action);
+            }
+        }
+    };
+
+    update(&mut mixer, 250.0);
+    assert_eq!(root.value("rotation[x]"), 90.0, "first");
+    update(&mut mixer, 250.0);
+    assert_eq!(root.value("rotation[x]"), 180.0, "first");
+    update(&mut mixer, 250.0);
+    assert_eq!(root.value("rotation[x]"), 270.0, "first");
+    //first loop done
+    update(&mut mixer, 2000.0);
+    // startAt Done
+    assert_eq!(root.value("rotation[x]"), 270.0, "third");
+    update(&mut mixer, 250.0);
+    assert_eq!(root.value("rotation[x]"), 180.0, "fourth");
+    update(&mut mixer, 250.0);
+    assert_eq!(root.value("rotation[x]"), 90.0, "fourth");
+    update(&mut mixer, 250.0);
+    assert_eq!(root.value("rotation[x]"), 0.0, "sixth");
+    update(&mut mixer, 1.0);
+    assert_eq!(root.value("rotation[x]"), 0.0, "seventh");
+    update(&mut mixer, 1000.0);
+    assert_eq!(root.value("rotation[x]"), 0.0, "seventh");
+    update(&mut mixer, 1000.0);
+    assert_eq!(root.value("rotation[x]"), 0.0, "seventh");
+    update(&mut mixer, 250.0);
+    assert_eq!(root.value("rotation[x]"), 90.0, "seventh");
+    update(&mut mixer, 250.0);
+    assert_eq!(root.value("rotation[x]"), 180.0, "seventh");
+}
 
 #[test]
 fn loop_repeat_with_time_scale_reversal_during_first_loop() {

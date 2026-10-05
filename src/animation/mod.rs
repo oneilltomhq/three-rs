@@ -13,7 +13,9 @@ pub(crate) mod property_mixer;
 
 pub use animation_action::{AnimationAction, LoopMode};
 pub use animation_clip::{AnimationBlendMode, AnimationClip};
-pub use animation_mixer::{ActionHandle, AnimationMixer, BindingPool, MixerStats, RootId};
+pub use animation_mixer::{
+    ActionHandle, AnimationMixer, BindingPool, MixerEvent, MixerStats, RootId,
+};
 pub use animation_object_group::AnimationObjectGroup;
 pub use binding_target::{BindingTarget, BufferTarget, TargetResolver};
 pub use keyframe_track::{InterpolationMode, KeyframeTrack, TrackInterpolant, TrackValueType};
