@@ -10,7 +10,7 @@ use std::cmp::Ordering;
 use std::rc::Rc;
 
 use crate::cameras::RenderCamera;
-use crate::core::{Group, Layers, Node, Object3D};
+use crate::core::{Group, Layers, Object3D, ObjectRef};
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::{CoordinateSystem, Frustum, Matrix4};
 use crate::nodes::clipping::{ClippingContext, ClippingView};
@@ -24,7 +24,7 @@ use crate::objects::Payload;
 #[derive(Clone)]
 pub(crate) struct RenderItem {
     /// `renderItem.object`.
-    pub node: Node,
+    pub node: ObjectRef,
     /// `renderItem.id` — `object.id`, the final sort tie-break.
     pub id: u32,
     /// `renderItem.groupOrder` — the `renderOrder` of the nearest `Group`
@@ -93,7 +93,7 @@ pub(crate) struct RenderList {
     pub transparent: Vec<RenderItem>,
     /// `RenderList.lightsArray` — every visible light in the tree, in traversal
     /// order, which is what `LightsNode.setLights()` receives.
-    pub lights: Vec<Node>,
+    pub lights: Vec<ObjectRef>,
 }
 
 impl RenderList {
@@ -112,7 +112,7 @@ impl RenderList {
     }
 
     /// `RenderList.pushLight( light )`.
-    fn push_light(&mut self, light: Node) {
+    fn push_light(&mut self, light: ObjectRef) {
         self.lights.push(light);
     }
 
@@ -242,7 +242,7 @@ impl ProjectCamera {
 /// parent hides its whole subtree, while failing the `layers` test only skips
 /// *this* object's own render item — its children are still projected.
 pub(crate) fn project_object(
-    object: &Node,
+    object: &ObjectRef,
     camera: &ProjectCamera,
     group_order: f64,
     render_list: &mut RenderList,
@@ -254,7 +254,7 @@ pub(crate) fn project_object(
 /// [`project_object`] with the walk's `clippingContext` argument: the
 /// context of the nearest enabled `ClippingGroup` above `object`.
 fn project(
-    object: &Node,
+    object: &ObjectRef,
     camera: &ProjectCamera,
     group_order: f64,
     render_list: &mut RenderList,
@@ -332,7 +332,7 @@ fn project(
 /// `error( 'Renderer: Objects of type THREE.LineLoop are not supported…' )`, so
 /// the port has no `LineLoop` to reach here.
 fn project_drawable(
-    object: &Node,
+    object: &ObjectRef,
     camera: &ProjectCamera,
     group_order: f64,
     render_list: &mut RenderList,
@@ -509,13 +509,13 @@ mod tests {
         Rc::new(box_geometry(1.0, 1.0, 1.0, 1, 1, 1))
     }
 
-    fn mesh_at(z: f64) -> Node {
+    fn mesh_at(z: f64) -> ObjectRef {
         let node = Mesh::new(unit_box(), MeshBasicNodeMaterial::new());
         node.borrow_mut().position.z = z;
         node
     }
 
-    fn world_x(node: &Node) -> f64 {
+    fn world_x(node: &ObjectRef) -> f64 {
         let mut position = Vector3::ZERO;
         position.set_from_matrix_position(&node.borrow().matrix_world);
         position.x
@@ -874,7 +874,7 @@ mod tests {
         inner.add(&both);
 
         let list = project(&scene, &camera());
-        let context = |node: &Node| {
+        let context = |node: &ObjectRef| {
             list.items()
                 .find(|item| item.node.borrow().id == node.borrow().id)
                 .unwrap()
@@ -947,7 +947,7 @@ mod tests {
             &mut list,
             true,
         );
-        let clipped = |node: &Node| {
+        let clipped = |node: &ObjectRef| {
             list.items()
                 .find(|item| item.node.borrow().id == node.borrow().id)
                 .unwrap()

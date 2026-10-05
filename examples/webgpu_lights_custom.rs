@@ -16,7 +16,7 @@
 use std::rc::Rc;
 
 use three_rs::addons::controls::OrbitControls;
-use three_rs::core::Node;
+use three_rs::core::ObjectRef;
 use three_rs::materials::lighting_model::{DirectLightData, LightingBuilder, LightingModel};
 use three_rs::testing::DeterministicRandom;
 use three_rs::utils::date_now_ms;
@@ -51,7 +51,7 @@ pub struct App {
     pub scene: Scene,
     pub camera: PerspectiveCamera,
     /// `light1`, `light2`, `light3`, which `animate()` moves.
-    pub lights: Vec<Node>,
+    pub lights: Vec<ObjectRef>,
     /// The page's `controls`.
     pub controls: OrbitControls,
 }
@@ -67,7 +67,7 @@ pub fn init() -> App {
 
     let sphere_geometry = Rc::new(sphere_geometry(0.02, 16, 8));
 
-    let add_light = |scene: &Scene, hex: u32| -> Node {
+    let add_light = |scene: &Scene, hex: u32| -> ObjectRef {
         // `new THREE.NodeMaterial()` — a bare `NodeMaterial`, which the port
         // models as the `Basic` kind (see `MaterialKind`).
         let material = MeshBasicNodeMaterial {

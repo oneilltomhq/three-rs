@@ -20,7 +20,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use three_rs::addons::controls::OrbitControls;
-use three_rs::core::Node;
+use three_rs::core::ObjectRef;
 use three_rs::geometries::box_geometry;
 use three_rs::nodes::display::{traa, TraaNode};
 use three_rs::nodes::mrt;
@@ -48,7 +48,7 @@ pub struct App {
     /// Shared with `scene_pass` and `traa_node`, which jitters it.
     pub camera: Rc<RefCell<PerspectiveCamera>>,
     /// `scene.children`, which `animate()` turns.
-    pub children: Vec<Node>,
+    pub children: Vec<ObjectRef>,
     /// The page's module-level `index`.
     pub index: u64,
     pub scene_pass: PassNode,

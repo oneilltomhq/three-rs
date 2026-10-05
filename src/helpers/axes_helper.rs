@@ -2,7 +2,7 @@
 
 use std::rc::Rc;
 
-use crate::core::{BufferAttribute, BufferGeometry, Node};
+use crate::core::{BufferAttribute, BufferGeometry, ObjectRef};
 use crate::materials::LineBasicNodeMaterial;
 use crate::math::Color;
 use crate::objects::LineSegments;
@@ -16,7 +16,7 @@ use crate::objects::LineSegments;
 /// [`GridHelper`](super::GridHelper): the port tone maps in the output pass.
 pub struct AxesHelper {
     /// The `LineSegments` itself.
-    pub node: Node,
+    pub node: ObjectRef,
 }
 
 impl AxesHelper {

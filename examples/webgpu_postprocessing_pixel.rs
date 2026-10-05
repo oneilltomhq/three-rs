@@ -39,7 +39,7 @@ use three_rs::nodes::tsl::uniform_settable;
 use three_rs::objects::Background;
 use three_rs::textures::{MinFilter, Texture, TextureFilter, Wrapping};
 use three_rs::{
-    AmbientLight, Color, ColorSpace, DirectionalLight, Mesh, MeshPhongNodeMaterial, Node,
+    AmbientLight, Color, ColorSpace, DirectionalLight, Mesh, MeshPhongNodeMaterial, ObjectRef,
     OrthographicCamera, PerspectiveCamera, RenderPipeline, Renderer, RendererParameters, Scene,
     SpotLight, TextureLoader, Timer, Vector3,
 };
@@ -62,7 +62,7 @@ pub struct App {
     pub renderer: Renderer,
     pub scene: Rc<RefCell<Scene>>,
     pub camera: Rc<RefCell<OrthographicCamera>>,
-    pub crystal_mesh: Node,
+    pub crystal_mesh: ObjectRef,
     /// The page's module-level `timer`.
     pub timer: Timer,
     pub params: Params,
@@ -111,30 +111,31 @@ pub fn init() -> App {
     let mut box_material = MeshPhongNodeMaterial::phong(Color::from_hex(0xffffff));
     box_material.map = Some(tex_checker2);
 
-    let add_box = |scene: &Scene, box_side_length: f64, x: f64, z: f64, rotation: f64| -> Node {
-        let mesh = Mesh::new(
-            Rc::new(box_geometry(
-                box_side_length,
-                box_side_length,
-                box_side_length,
-                1,
-                1,
-                1,
-            )),
-            box_material.clone(),
-        );
-        {
-            let mut object = mesh.borrow_mut();
-            object.cast_shadow = true;
-            object.receive_shadow = true;
-            let current = object.rotation;
-            object.set_rotation(current.x, rotation, current.z);
-            object.position.y = box_side_length / 2.0;
-            object.position.set(x, box_side_length / 2.0 + 0.0001, z);
-        }
-        scene.add(&mesh);
-        mesh
-    };
+    let add_box =
+        |scene: &Scene, box_side_length: f64, x: f64, z: f64, rotation: f64| -> ObjectRef {
+            let mesh = Mesh::new(
+                Rc::new(box_geometry(
+                    box_side_length,
+                    box_side_length,
+                    box_side_length,
+                    1,
+                    1,
+                    1,
+                )),
+                box_material.clone(),
+            );
+            {
+                let mut object = mesh.borrow_mut();
+                object.cast_shadow = true;
+                object.receive_shadow = true;
+                let current = object.rotation;
+                object.set_rotation(current.x, rotation, current.z);
+                object.position.y = box_side_length / 2.0;
+                object.position.set(x, box_side_length / 2.0 + 0.0001, z);
+            }
+            scene.add(&mesh);
+            mesh
+        };
 
     add_box(&scene, 0.4, 0.0, 0.0, PI / 4.0);
     add_box(&scene, 0.5, -0.5, -0.5, PI / 4.0);

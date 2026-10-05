@@ -12,7 +12,9 @@
 
 use std::rc::Rc;
 
-use crate::core::{ArrayKind, BufferAttribute, BufferGeometry, Index, Node, Object3D, TypedArray};
+use crate::core::{
+    ArrayKind, BufferAttribute, BufferGeometry, Index, Object3D, ObjectRef, TypedArray,
+};
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::{Box3, CoordinateSystem, Frustum, Matrix4, Sphere, Vector3};
 use crate::nodes::batch::BatchEntry;
@@ -152,14 +154,14 @@ pub struct BatchedMesh {
 
 impl BatchedMesh {
     /// `new BatchedMesh( maxInstanceCount, maxVertexCount, maxIndexCount, material )`,
-    /// as a scene-graph [`Node`].
+    /// as a scene-graph [`ObjectRef`].
     #[allow(clippy::new_ret_no_self)] // mirrors three.js' constructor, which returns the object the scene holds
     pub fn new(
         max_instance_count: usize,
         max_vertex_count: usize,
         max_index_count: usize,
         material: MeshBasicNodeMaterial,
-    ) -> Node {
+    ) -> ObjectRef {
         let mut object = Object3D {
             object_type: "BatchedMesh",
             ..Default::default()
@@ -607,7 +609,7 @@ impl BatchedMesh {
     pub fn raycast(
         &mut self,
         matrix_world: &Matrix4,
-        object: &Node,
+        object: &ObjectRef,
         raycaster: &crate::core::Raycaster,
         intersects: &mut Vec<crate::core::Intersection>,
     ) {

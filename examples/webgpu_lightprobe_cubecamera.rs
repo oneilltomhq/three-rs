@@ -57,7 +57,7 @@ pub struct App {
     /// The page's `cubeCamera`.
     pub cube_camera: CubeCamera,
     /// The page's `lightProbe`.
-    pub light_probe: three_rs::core::Node,
+    pub light_probe: three_rs::core::ObjectRef,
     /// The `LightProbeHelper` the loader callback adds.
     pub helper: LightProbeHelper,
 }

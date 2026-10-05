@@ -46,7 +46,7 @@ pub struct App {
     pub scene: Scene,
     pub camera: PerspectiveCamera,
     /// The page's `objects` array — the teapots, without the grid helper.
-    pub objects: Vec<three_rs::core::Node>,
+    pub objects: Vec<three_rs::core::ObjectRef>,
 }
 
 fn examples_dir() -> std::path::PathBuf {

@@ -58,11 +58,11 @@ pub struct App {
     /// The page's `controls`.
     pub controls: OrbitControls,
     /// The page's `spheres` group.
-    pub spheres: three_rs::Node,
+    pub spheres: three_rs::ObjectRef,
     /// The meshes of the page's `transparentMaterials`, planes first: the
     /// materials live on the meshes here, so the handler reaches them
     /// through these.
-    pub transparent_meshes: Vec<three_rs::Node>,
+    pub transparent_meshes: Vec<three_rs::ObjectRef>,
     pub params: Params,
     /// `scenePassOIT`.
     pub scene_pass_oit: OitPassNode,

@@ -2,7 +2,7 @@
 
 use std::rc::Rc;
 
-use crate::core::{BufferGeometry, Face, Intersection, Node, Object3D, Raycaster};
+use crate::core::{BufferGeometry, Face, Intersection, Object3D, ObjectRef, Raycaster};
 use crate::materials::{MeshBasicNodeMaterial, Side};
 use crate::math::{Box3, Matrix4, Ray, Sphere, Triangle, Vector2, Vector3};
 use crate::objects::Payload;
@@ -51,7 +51,7 @@ pub struct Mesh {
 }
 
 impl Mesh {
-    /// `new Mesh( geometry, material )`, as a scene-graph [`Node`].
+    /// `new Mesh( geometry, material )`, as a scene-graph [`ObjectRef`].
     ///
     /// The material is `impl Into<Option<MeshBasicNodeMaterial>>`, so a call
     /// passes the material by value as `Line::new` and `InstancedMesh::new` do,
@@ -59,11 +59,11 @@ impl Mesh {
     /// falls back to a default white `MeshBasicMaterial` — which is what
     /// `webgpu_postprocessing_masking` and `webgpu_depth_texture` rely on,
     /// together with `scene.overrideMaterial`.
-    #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `Node`, not `Self`; public API, not changing.
+    #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `ObjectRef`, not `Self`; public API, not changing.
     pub fn new(
         geometry: Rc<BufferGeometry>,
         material: impl Into<Option<MeshBasicNodeMaterial>>,
-    ) -> Node {
+    ) -> ObjectRef {
         let mut object = Object3D {
             object_type: "Mesh",
             ..Default::default()
@@ -93,7 +93,7 @@ impl Mesh {
     pub fn with_materials(
         geometry: Rc<BufferGeometry>,
         materials: Vec<MeshBasicNodeMaterial>,
-    ) -> Node {
+    ) -> ObjectRef {
         let node = Self::new(geometry, None);
         if let Payload::Mesh(mesh) = &mut node.borrow_mut().payload {
             mesh.materials = materials;
@@ -101,7 +101,7 @@ impl Mesh {
         node
     }
 
-    /// The `Mesh` state alone, for a caller that already has the [`Node`] to
+    /// The `Mesh` state alone, for a caller that already has the [`ObjectRef`] to
     /// install it on — `GLTFLoader`, whose tree node exists before the
     /// primitive that turns it into a mesh, the way
     /// [`SkinnedMesh::of`](crate::objects::SkinnedMesh::of) serves the skinned
@@ -149,7 +149,7 @@ impl Mesh {
     pub fn raycast(
         &self,
         matrix_world: &Matrix4,
-        object: &Node,
+        object: &ObjectRef,
         raycaster: &Raycaster,
         intersects: &mut Vec<Intersection>,
     ) {
@@ -240,7 +240,7 @@ impl MeshRaycast<'_> {
         &self,
         sphere: &Sphere,
         bounding_box: Option<&Box3>,
-        object: &Node,
+        object: &ObjectRef,
         raycaster: &Raycaster,
         intersects: &mut Vec<Intersection>,
     ) {
@@ -283,7 +283,7 @@ impl MeshRaycast<'_> {
         &self,
         raycaster: &Raycaster,
         ray_local_space: &Ray,
-        object: &Node,
+        object: &ObjectRef,
         intersects: &mut Vec<Intersection>,
     ) {
         let geometry = self.geometry;
@@ -332,7 +332,7 @@ impl MeshRaycast<'_> {
         a: usize,
         b: usize,
         c: usize,
-        object: &Node,
+        object: &ObjectRef,
     ) -> Option<Intersection> {
         let v_a = (self.vertex_position)(a);
         let v_b = (self.vertex_position)(b);

@@ -5,7 +5,7 @@
 
 use std::rc::Rc;
 
-use three_rs::core::{BufferAttribute, BufferGeometry, Node};
+use three_rs::core::{BufferAttribute, BufferGeometry, ObjectRef};
 use three_rs::math::{Box3, Matrix4, Plane, Sphere, Triangle, Vector3};
 use three_rs::objects::{Group, Mesh};
 
@@ -601,7 +601,7 @@ fn unit_cube_geometry() -> Rc<BufferGeometry> {
 }
 
 /// A parent holding two unit cubes translated to `(-2, 0, 0)` and `(3, 1, 0)`.
-fn two_cubes() -> Node {
+fn two_cubes() -> ObjectRef {
     let parent = Group::new();
 
     let geometry = unit_cube_geometry();

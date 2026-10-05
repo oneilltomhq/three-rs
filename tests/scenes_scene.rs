@@ -1,6 +1,6 @@
 //! Port of `three.js/test/unit/src/scenes/Scene.tests.js`.
 //!
-//! `Scene` holds its `Object3D` as a scene-graph `Node` (three.js' `extends
+//! `Scene` holds its `Object3D` as a scene-graph `ObjectRef` (three.js' `extends
 //! Object3D`), so `Extending` ports as "the scene root is an `Object3D` node".
 //! The `environment`/`backgroundBlurriness` assertions have nothing to port
 //! yet; `Fog` and `FogExp2` have their own files (`scenes_fog.rs`,

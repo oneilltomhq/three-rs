@@ -3,7 +3,7 @@
 //! (`WebGPUCoordinateSystem` camera, the same scene).
 
 use three_rs::cameras::PerspectiveCamera;
-use three_rs::core::{Node, Object3D, Raycaster};
+use three_rs::core::{Object3D, ObjectRef, Raycaster};
 use three_rs::math::Vector2;
 use three_rs::objects::Sprite;
 
@@ -80,7 +80,7 @@ fn raycast() {
     let hits = raycaster.intersect_object(&sprite, false);
     assert_eq!(hits.len(), 1);
     let hit = &hits[0];
-    assert!(Node::ptr_eq(&hit.object, &sprite));
+    assert!(ObjectRef::ptr_eq(&hit.object, &sprite));
     assert!(close(hit.distance, 5.010405838519137));
     assert!(close(hit.point.x, 0.28867513459481237) && close(hit.point.y, 0.14433756729740618));
     let uv = hit.uv.unwrap();

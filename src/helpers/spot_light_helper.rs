@@ -3,7 +3,7 @@
 use std::f64::consts::PI;
 use std::rc::Rc;
 
-use crate::core::{BufferAttribute, BufferGeometry, Node, Object3D};
+use crate::core::{BufferAttribute, BufferGeometry, Object3D, ObjectRef};
 use crate::materials::LineBasicNodeMaterial;
 use crate::math::{Color, Vector3};
 use crate::objects::LineSegments;
@@ -26,11 +26,11 @@ use super::directional_light_helper::light_color;
 /// [`GridHelper`](super::GridHelper).
 pub struct SpotLightHelper {
     /// The `Object3D` itself.
-    pub node: Node,
+    pub node: ObjectRef,
     /// `SpotLightHelper.light`.
-    pub light: Node,
+    pub light: ObjectRef,
     /// `SpotLightHelper.cone`.
-    pub cone: Node,
+    pub cone: ObjectRef,
     /// `SpotLightHelper.color`: `None` follows the light's colour.
     pub color: Option<Color>,
 }
@@ -39,7 +39,7 @@ impl SpotLightHelper {
     /// `new SpotLightHelper( light, color )`.
     ///
     /// Panics if `light` is not a light with a target.
-    pub fn new(light: &Node, color: Option<Color>) -> Self {
+    pub fn new(light: &ObjectRef, color: Option<Color>) -> Self {
         let node = Object3D {
             object_type: "SpotLightHelper",
             matrix_auto_update: false,

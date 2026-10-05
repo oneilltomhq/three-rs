@@ -46,7 +46,7 @@ use std::rc::Rc;
 use serde_json::Value;
 
 use crate::animation::{AnimationClip, InterpolationMode, KeyframeTrack, SceneResolver};
-use crate::core::{BufferAttribute, BufferGeometry, Index, Node, Object3D};
+use crate::core::{BufferAttribute, BufferGeometry, Index, Object3D, ObjectRef};
 use crate::error::{Error, GltfError};
 use crate::loaders::draco::{
     self, DracoArray, DracoArrayType, DracoAttribute, DracoPrimitive, Request as DracoRequest,
@@ -420,7 +420,7 @@ pub struct GltfTexture {
 /// `<name>_<i>` when three.js splits it.
 pub struct GltfPrimitive {
     /// The scene-graph node this primitive hangs off.
-    pub node: Node,
+    pub node: ObjectRef,
     /// The primitive's geometry — `BufferGeometryLoader`'s attributes and
     /// index, per `primitive.attributes` / `.indices`.
     pub geometry: Rc<BufferGeometry>,
@@ -439,11 +439,11 @@ pub struct GltfPrimitive {
 /// the side tables this crate needs because `Object3D` carries no geometry.
 pub struct Gltf {
     /// `gltf.scene` — `scenes[ json.scene || 0 ]`.
-    pub scene: Node,
+    pub scene: ObjectRef,
     /// `gltf.scenes`.
-    pub scenes: Vec<Node>,
-    /// One [`Node`] per glTF node index, in glTF order.
-    pub nodes: Vec<Node>,
+    pub scenes: Vec<ObjectRef>,
+    /// One [`ObjectRef`] per glTF node index, in glTF order.
+    pub nodes: Vec<ObjectRef>,
     /// `gltf.animations`.
     pub animations: Vec<AnimationClip>,
     /// One [`Skeleton`] per glTF skin index.
@@ -453,7 +453,7 @@ pub struct Gltf {
     /// The skinned primitives' nodes, bound to their skeletons. Each carries a
     /// [`Payload::SkinnedMesh`](crate::objects::Payload::SkinnedMesh), so
     /// adding `gltf.scene` to a scene is enough for the renderer to draw them.
-    pub skinned_meshes: Vec<Node>,
+    pub skinned_meshes: Vec<ObjectRef>,
     /// `gltf.parser.json.materials`.
     pub materials: Vec<GltfMaterial>,
     /// `gltf.parser.json.textures`.
@@ -486,10 +486,10 @@ impl Gltf {
 
     /// The primitive hanging off a given scene-graph node, if any — the bridge
     /// the renderer needs, because `Object3D` carries no geometry.
-    pub fn primitive(&self, node: &Node) -> Option<&GltfPrimitive> {
+    pub fn primitive(&self, node: &ObjectRef) -> Option<&GltfPrimitive> {
         self.primitives
             .iter()
-            .find(|primitive| Node::ptr_eq(&primitive.node, node))
+            .find(|primitive| ObjectRef::ptr_eq(&primitive.node, node))
     }
 }
 
@@ -1188,7 +1188,7 @@ impl GltfLoader {
     }
 
     /// `GLTFParser.loadScene`.
-    fn load_scenes(&self, nodes: &[Node]) -> Vec<Node> {
+    fn load_scenes(&self, nodes: &[ObjectRef]) -> Vec<ObjectRef> {
         let mut scenes = Vec::new();
 
         for scene_def in self
@@ -1225,7 +1225,7 @@ impl GltfLoader {
     fn load_mesh(
         &self,
         index: usize,
-        node: &Node,
+        node: &ObjectRef,
         skin: Option<usize>,
     ) -> Result<Vec<GltfPrimitive>, Error> {
         let mesh_def = self
@@ -2335,7 +2335,7 @@ impl GltfLoader {
     }
 
     /// `GLTFParser.loadAnimation`.
-    fn load_animations(&self, nodes: &[Node]) -> Result<Vec<AnimationClip>, Error> {
+    fn load_animations(&self, nodes: &[ObjectRef]) -> Result<Vec<AnimationClip>, Error> {
         let mut clips = Vec::new();
 
         for (index, animation_def) in self

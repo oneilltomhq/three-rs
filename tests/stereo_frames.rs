@@ -36,7 +36,7 @@ use three_rs::{
 };
 
 /// A plane far larger than the view, seen by one eye only.
-fn eye_plane(scene: &Scene, hex: u32, layer: u32) -> three_rs::Node {
+fn eye_plane(scene: &Scene, hex: u32, layer: u32) -> three_rs::ObjectRef {
     let mut material = MeshBasicNodeMaterial::new();
     material.color = Color::from_hex(hex);
     let mesh = Mesh::new(Rc::new(plane_geometry(100.0, 100.0, 1, 1)), material);

@@ -10,9 +10,9 @@ have their own sections after the release they ship with. The format follows [Ke
 
 - **Scene-graph events** (#159, #153 option C): `SceneEvent` (`Added`,
   `Removed`, `ChildAdded(child)`, `ChildRemoved(child)`), `SceneEventType`,
-  and `Node::add_event_listener` / `has_event_listener` /
+  and `ObjectRef::add_event_listener` / `has_event_listener` /
   `remove_event_listener` / `dispatch_event`, with an opaque
-  `ListenerHandle` standing for the listener. `Node::add`, `remove` (and so
+  `ListenerHandle` standing for the listener. `ObjectRef::add`, `remove` (and so
   `clear` and `remove_from_parent`) and `attach` dispatch at three's points
   and in three's order. Dispatch copies the list first, so a listener may
   remove itself. `tests/core_event_dispatcher.rs` ports
@@ -20,7 +20,7 @@ have their own sections after the release they ship with. The format follows [Ke
   from the tree methods. No string-keyed dispatcher: `docs/api.md`
   decision 12 says why.
 - **`on_before_render` / `on_after_render`** (#159): `Option<Box<dyn ...>>`
-  fields on `Object3D` (`ObjectRenderHook`: `FnMut(&Node, &Renderer,
+  fields on `Object3D` (`ObjectRenderHook`: `FnMut(&ObjectRef, &Renderer,
   &Scene, &dyn RenderCamera, Option<&Group>)`) and on `Scene`
   (`SceneRenderHook`: `Fn(&Renderer, &Scene, &dyn RenderCamera,
   Option<&RenderTarget>)`), with `set_on_before_render` /
@@ -261,7 +261,7 @@ have their own sections after the release they ship with. The format follows [Ke
   of the pinned 5f610f5 (r187dev), with the same fields, defaults and `update( delta )`. Input
   arrives as method calls (`pointer_down`, `pointer_move`, `key_down` with a
   new `KeyCode`, …) rather than DOM listeners, the camera is passed to
-  `update` as a `&Node`, and Fly's `change` event is `update`'s return value.
+  `update` as a `&ObjectRef`, and Fly's `change` event is `update`'s return value.
   `tools/first_person_controls_reference.mjs` and
   `tools/fly_controls_reference.mjs` run three's own classes under node over
   scripted input and write `tests/fixtures/first_person_controls.json` and
@@ -295,7 +295,7 @@ have their own sections after the release they ship with. The format follows [Ke
     existed and are now gated.
   - Model and object: `model_direction`, `model_position`, `model_scale`,
     `model_view_position` and `model_radius`, plus the `object_*` forms of
-    each, which take the target `&Node`. Also `mediump_model_view_matrix`,
+    each, which take the target `&ObjectRef`. Also `mediump_model_view_matrix`,
     `highp_model_view_matrix` and `highp_model_normal_view_matrix`.
   - `transform_normal` (function and method), `transform_normal_to_view`,
     `reflect_view`, `refract_view`, `refract_vector` and `clip_space`.
@@ -648,6 +648,15 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Changed
 
+- **The scene-graph handle is `ObjectRef`, not `Node`** (#250, breaking).
+  `core::Node` is renamed `ObjectRef` and `WeakNode` is `WeakObjectRef`;
+  the crate-root re-export follows. The shader-graph `nodes::Node` keeps
+  its name. The handle wraps `Object3D` and every other `Rc` handle in the
+  crate is already `<Thing>Ref` after the struct it points at, so the
+  scene handle now matches `NodeRef`, `SceneRef` and `CameraRef`; why
+  this name and not `core::Object` is `docs/api.md` decision 2. Migration
+  is a rename: `three_rs::Node` → `three_rs::ObjectRef`, `WeakNode` →
+  `WeakObjectRef`. No method moved.
 - **`Object3D` has three more public fields**, `listeners`,
   `on_before_render` and `on_after_render` (#159). A struct literal that
   ends in `..Default::default()` still builds; one that names every field

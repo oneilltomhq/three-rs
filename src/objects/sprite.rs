@@ -7,7 +7,7 @@
 
 use std::rc::Rc;
 
-use crate::core::{BufferAttribute, BufferGeometry, Intersection, Node, Object3D, Raycaster};
+use crate::core::{BufferAttribute, BufferGeometry, Intersection, Object3D, ObjectRef, Raycaster};
 use crate::materials::{MeshBasicNodeMaterial, SpriteNodeMaterial};
 use crate::math::{Matrix4, Sphere, Triangle, Vector2, Vector3};
 use crate::objects::Payload;
@@ -68,12 +68,12 @@ pub struct Sprite {
 }
 
 impl Sprite {
-    /// `new Sprite( material )`, as a scene-graph [`Node`].
+    /// `new Sprite( material )`, as a scene-graph [`ObjectRef`].
     ///
     /// `None` is three's default argument, `new SpriteMaterial()`, which under
     /// `WebGPURenderer` is a `SpriteNodeMaterial`.
-    #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `Node`, not `Self`; public API, not changing.
-    pub fn new(material: impl Into<Option<SpriteNodeMaterial>>) -> Node {
+    #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `ObjectRef`, not `Self`; public API, not changing.
+    pub fn new(material: impl Into<Option<SpriteNodeMaterial>>) -> ObjectRef {
         let mut object = Object3D {
             object_type: "Sprite",
             ..Default::default()
@@ -116,7 +116,7 @@ impl Sprite {
     pub fn raycast(
         &self,
         matrix_world: &Matrix4,
-        object: &Node,
+        object: &ObjectRef,
         raycaster: &Raycaster,
         intersects: &mut Vec<Intersection>,
     ) {

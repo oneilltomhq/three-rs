@@ -2,7 +2,7 @@
 
 use std::rc::Rc;
 
-use crate::core::{BufferAttribute, BufferGeometry, Node};
+use crate::core::{BufferAttribute, BufferGeometry, ObjectRef};
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::Color;
 use crate::objects::LineSegments;
@@ -24,8 +24,8 @@ pub struct GridHelper;
 impl GridHelper {
     /// Builds the helper's geometry and material and returns the scene-graph
     /// node, exactly as three's constructor does.
-    #[allow(clippy::new_ret_no_self)] // mirrors three.js's constructor: a scene-graph `Node`, not `Self`.
-    pub fn new(size: f64, divisions: usize, color1: Color, color2: Color) -> Node {
+    #[allow(clippy::new_ret_no_self)] // mirrors three.js's constructor: a scene-graph `ObjectRef`, not `Self`.
+    pub fn new(size: f64, divisions: usize, color1: Color, color2: Color) -> ObjectRef {
         let (geometry, material) = Self::parts(size, divisions, color1, color2);
         let node = LineSegments::new(Rc::new(geometry), material);
         node.borrow_mut().object_type = "GridHelper";

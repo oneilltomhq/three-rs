@@ -4,15 +4,15 @@
 //! scene graph stores its payload as [`Object3D`], which has no `is_bone`
 //! field, so the marker is `object_type == "Bone"`; [`is_bone`] is the test.
 
-use crate::core::{Node, Object3D};
+use crate::core::{Object3D, ObjectRef};
 
 /// `class Bone extends Object3D`.
 pub struct Bone;
 
 impl Bone {
-    /// `new Bone()`, as a scene-graph [`Node`].
-    #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `Node`, not `Self`; public API, not changing.
-    pub fn new() -> Node {
+    /// `new Bone()`, as a scene-graph [`ObjectRef`].
+    #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `ObjectRef`, not `Self`; public API, not changing.
+    pub fn new() -> ObjectRef {
         let object = Object3D {
             object_type: "Bone",
             ..Default::default()
@@ -21,7 +21,7 @@ impl Bone {
     }
 
     /// `new Bone()` with a name, which is how `GLTFLoader` builds them.
-    pub fn named(name: &str) -> Node {
+    pub fn named(name: &str) -> ObjectRef {
         let node = Self::new();
         node.borrow_mut().name = name.to_string();
         node

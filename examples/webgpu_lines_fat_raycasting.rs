@@ -33,7 +33,7 @@ use std::rc::Rc;
 
 use three_rs::addons::controls::OrbitControls;
 use three_rs::addons::lines::{Line2, LineGeometry, LineSegments2, LineSegmentsGeometry};
-use three_rs::core::Node;
+use three_rs::core::ObjectRef;
 use three_rs::geometries::sphere_geometry;
 use three_rs::math::ColorSpace;
 use three_rs::{
@@ -56,12 +56,12 @@ pub struct App {
     pub raycaster: Raycaster,
     /// `new THREE.Vector2( Infinity, Infinity )`, moved by `onPointerMove`.
     pub pointer: Vector2,
-    pub line: Node,
-    pub threshold_line: Node,
-    pub segments: Node,
-    pub threshold_segments: Node,
-    pub sphere_inter: Node,
-    pub sphere_on_line: Node,
+    pub line: ObjectRef,
+    pub threshold_line: ObjectRef,
+    pub segments: ObjectRef,
+    pub threshold_segments: ObjectRef,
+    pub sphere_inter: ObjectRef,
+    pub sphere_on_line: ObjectRef,
     /// `params.animate`.
     pub animate: bool,
 }
@@ -278,7 +278,7 @@ pub fn animate(app: &mut App) {
 
 /// `threshold.position.copy( line.position ); threshold.quaternion.copy(
 /// line.quaternion )`.
-fn copy_placement(from: &Node, to: &Node) {
+fn copy_placement(from: &ObjectRef, to: &ObjectRef) {
     let (position, quaternion) = {
         let from = from.borrow();
         (from.position, from.quaternion)
@@ -288,7 +288,7 @@ fn copy_placement(from: &Node, to: &Node) {
 }
 
 /// `sphere.material.color.copy( color ).offsetHSL( h, 0, 0 )`.
-fn set_sphere_color(sphere: &Node, color: &Color, h: f64) {
+fn set_sphere_color(sphere: &ObjectRef, color: &Color, h: f64) {
     let mut sphere = sphere.borrow_mut();
     if let Some(material) = sphere.mesh_mut().and_then(|mesh| mesh.material.as_mut()) {
         material.color.copy(color).offset_hsl(h, 0.0, 0.0);

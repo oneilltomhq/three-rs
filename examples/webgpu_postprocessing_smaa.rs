@@ -15,7 +15,7 @@ use three_rs::addons::controls::OrbitControls;
 use three_rs::geometries::box_geometry;
 use three_rs::nodes::display::{smaa, SmaaNode};
 use three_rs::{
-    pass, Color, ColorSpace, Mesh, MeshBasicNodeMaterial, Node, PassNode, PerspectiveCamera,
+    pass, Color, ColorSpace, Mesh, MeshBasicNodeMaterial, ObjectRef, PassNode, PerspectiveCamera,
     RenderPipeline, Renderer, RendererParameters, Scene, TextureLoader,
 };
 
@@ -39,7 +39,7 @@ pub struct App {
     pub scene: Rc<RefCell<Scene>>,
     pub camera: Rc<RefCell<PerspectiveCamera>>,
     /// `scene.children`, the two boxes `animate()` turns.
-    pub children: Vec<Node>,
+    pub children: Vec<ObjectRef>,
     pub params: Params,
     pub scene_pass: PassNode,
     pub smaa_pass: SmaaNode,

@@ -10,7 +10,7 @@ use three_rs::geometries::plane_geometry;
 use three_rs::math::Vector3;
 use three_rs::objects::{BindMode, Bone, Skeleton, SkinnedMesh};
 
-fn skinned() -> three_rs::core::Node {
+fn skinned() -> three_rs::core::ObjectRef {
     SkinnedMesh::new(Rc::new(plane_geometry(1.0, 1.0, 1, 1)), None)
 }
 

@@ -53,7 +53,7 @@ pub struct App {
     pub scene: Rc<RefCell<Scene>>,
     /// Shared with `scene_pass`.
     pub camera: Rc<RefCell<PerspectiveCamera>>,
-    pub group: three_rs::Node,
+    pub group: three_rs::ObjectRef,
     /// The page's module-level `timer`.
     pub timer: Timer,
     pub scene_pass: PassNode,

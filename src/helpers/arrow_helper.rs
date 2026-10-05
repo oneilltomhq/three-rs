@@ -2,7 +2,7 @@
 
 use std::rc::Rc;
 
-use crate::core::{BufferAttribute, BufferGeometry, Node, Object3D};
+use crate::core::{BufferAttribute, BufferGeometry, Object3D, ObjectRef};
 use crate::geometries::cone_geometry;
 use crate::materials::{LineBasicNodeMaterial, MeshBasicNodeMaterial};
 use crate::math::{Color, Vector3};
@@ -39,11 +39,11 @@ thread_local! {
 /// no counterpart in the port.
 pub struct ArrowHelper {
     /// The `Object3D` itself.
-    pub node: Node,
+    pub node: ObjectRef,
     /// `ArrowHelper.line`.
-    pub line: Node,
+    pub line: ObjectRef,
     /// `ArrowHelper.cone`.
-    pub cone: Node,
+    pub cone: ObjectRef,
 }
 
 impl Default for ArrowHelper {

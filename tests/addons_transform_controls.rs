@@ -40,7 +40,7 @@ use three_rs::addons::controls::{
     TransformPointerEvent,
 };
 use three_rs::cameras::{OrthographicCamera, PerspectiveCamera};
-use three_rs::core::{Node, Object3D};
+use three_rs::core::{Object3D, ObjectRef};
 use three_rs::materials::Side;
 use three_rs::math::{Color, Quaternion, Vector3, Vector4};
 
@@ -92,7 +92,7 @@ fn event_name(event: &TransformControlsEvent) -> String {
 /// Sets an object's transform the way the script does:
 /// `position.fromArray( p )`, `quaternion.fromArray( q ).normalize()`,
 /// `scale.fromArray( s )`.
-fn transform(object: &Node, t: &Value) {
+fn transform(object: &ObjectRef, t: &Value) {
     let mut o = object.borrow_mut();
     let p = nums(&t["p"]);
     let q = nums(&t["q"]);
@@ -107,8 +107,8 @@ fn transform(object: &Node, t: &Value) {
 /// The scene a scenario runs in: the object (in its parent, if any) first,
 /// the helper (in its parent, if any) last, as in the script.
 struct World {
-    scene: Node,
-    object: Node,
+    scene: ObjectRef,
+    object: ObjectRef,
     controls: TransformControls,
     /// `materialLib.active.color`, for the highlight string.
     active: Color,
@@ -168,7 +168,7 @@ impl World {
 
     /// The root's `[ gizmo, plane ]` and the gizmo's nine groups, gizmo,
     /// picker and helper, each translate, rotate and scale.
-    fn group(&self, kind: usize, mode: Mode) -> Node {
+    fn group(&self, kind: usize, mode: Mode) -> ObjectRef {
         let index = match mode {
             Mode::Translate => 0,
             Mode::Rotate => 1,
@@ -177,7 +177,7 @@ impl World {
         self.controls.get_helper().children()[0].children()[kind * 3 + index].clone()
     }
 
-    fn plane(&self) -> Node {
+    fn plane(&self) -> ObjectRef {
         self.controls.get_helper().children()[1].clone()
     }
 
@@ -374,7 +374,7 @@ fn compare_step(world: &World, step: &Value, events: Option<Vec<String>>, check:
         &q4(world.plane().borrow().quaternion),
     );
 
-    let handles: Vec<(Node, bool)> = [1, 0, 2]
+    let handles: Vec<(ObjectRef, bool)> = [1, 0, 2]
         .iter()
         .flat_map(|&kind| {
             world
@@ -661,7 +661,7 @@ fn matches_three_js_run_now() {
 /// difference can round one stored `f32` the other way.
 const GEOMETRY_TOLERANCE: f64 = 1e-6;
 
-fn graph_rows(controls: &TransformControls) -> Vec<(String, Node)> {
+fn graph_rows(controls: &TransformControls) -> Vec<(String, ObjectRef)> {
     let root = controls.get_helper();
     let gizmo = root.children()[0].clone();
     let mut rows = Vec::new();

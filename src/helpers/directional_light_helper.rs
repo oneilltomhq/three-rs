@@ -2,7 +2,7 @@
 
 use std::rc::Rc;
 
-use crate::core::{BufferAttribute, BufferGeometry, Node, Object3D};
+use crate::core::{BufferAttribute, BufferGeometry, Object3D, ObjectRef};
 use crate::materials::LineBasicNodeMaterial;
 use crate::math::{Color, Vector3};
 use crate::objects::Line;
@@ -24,13 +24,13 @@ use crate::objects::Line;
 /// [`GridHelper`](super::GridHelper).
 pub struct DirectionalLightHelper {
     /// The `Object3D` itself.
-    pub node: Node,
+    pub node: ObjectRef,
     /// `DirectionalLightHelper.light`.
-    pub light: Node,
+    pub light: ObjectRef,
     /// `DirectionalLightHelper.lightPlane`.
-    pub light_plane: Node,
+    pub light_plane: ObjectRef,
     /// `DirectionalLightHelper.targetLine`.
-    pub target_line: Node,
+    pub target_line: ObjectRef,
     /// `DirectionalLightHelper.color`: `None` follows the light's colour.
     pub color: Option<Color>,
 }
@@ -40,7 +40,7 @@ impl DirectionalLightHelper {
     /// size is 1.
     ///
     /// Panics if `light` is not a light with a target.
-    pub fn new(light: &Node, size: f64, color: Option<Color>) -> Self {
+    pub fn new(light: &ObjectRef, size: f64, color: Option<Color>) -> Self {
         let node = Object3D {
             object_type: "DirectionalLightHelper",
             matrix_alias: Some(light.downgrade()),
@@ -130,7 +130,7 @@ impl DirectionalLightHelper {
 }
 
 /// `light.color`.
-pub(super) fn light_color(light: &Node) -> Color {
+pub(super) fn light_color(light: &ObjectRef) -> Color {
     light
         .borrow()
         .light()

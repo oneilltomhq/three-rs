@@ -1,6 +1,6 @@
 //! Port of `three.js/examples/jsm/helpers/LightProbeHelperGPU.js`.
 
-use crate::core::Node;
+use crate::core::ObjectRef;
 use crate::geometries::sphere_geometry;
 use crate::materials::MeshBasicNodeMaterial;
 use crate::nodes::tsl::{
@@ -21,9 +21,9 @@ use crate::objects::Mesh;
 /// probe by itself; the constructor also runs it once, as three's does.
 pub struct LightProbeHelper {
     /// The `Mesh` itself.
-    pub node: Node,
+    pub node: ObjectRef,
     /// `this.lightProbe`.
-    pub light_probe: Node,
+    pub light_probe: ObjectRef,
     /// `this.size` — the sphere's radius. The installed hook reads its own
     /// copy, which [`update`](Self::update) refreshes: after changing this,
     /// call `update()` once.
@@ -39,7 +39,7 @@ impl LightProbeHelper {
     ///
     /// When the helper draws after `light_probe` was dropped, or if
     /// `light_probe` is not a light.
-    pub fn new(light_probe: &Node, size: f64) -> Self {
+    pub fn new(light_probe: &ObjectRef, size: f64) -> Self {
         let probe = light_probe.downgrade();
         let sh = uniform_array_live(9, move || {
             let probe = probe

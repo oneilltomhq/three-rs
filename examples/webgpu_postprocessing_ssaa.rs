@@ -46,7 +46,7 @@ pub struct App {
     pub renderer: Renderer,
     pub scene: Scene,
     pub camera: PerspectiveCamera,
-    pub mesh: three_rs::Node,
+    pub mesh: three_rs::ObjectRef,
     /// The page's module-level `timer`.
     pub timer: Timer,
     pub ssaa_pass: SsaaPassNode,

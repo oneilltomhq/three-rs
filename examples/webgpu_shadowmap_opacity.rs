@@ -13,7 +13,7 @@
 //! map it renders is the same one each time.
 
 use three_rs::addons::controls::OrbitControls;
-use three_rs::core::Node;
+use three_rs::core::ObjectRef;
 use three_rs::loaders::GltfLoader;
 use three_rs::materials::ToneMapping;
 use three_rs::nodes::tsl::{float, mix, vec3};
@@ -102,7 +102,7 @@ pub fn init() -> App {
     // `dragon.clone()` then `dragon2.material = dragon.material.clone()`: the
     // port's `Object3D` clone already copies the material (with a fresh id),
     // which is where the page ends up.
-    let dragon2 = Node::new(dragon.borrow().clone());
+    let dragon2 = ObjectRef::new(dragon.borrow().clone());
     {
         let mut object = dragon2.borrow_mut();
         object

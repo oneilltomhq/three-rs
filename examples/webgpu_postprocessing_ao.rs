@@ -76,7 +76,7 @@ pub struct App {
     /// The page's `traaPass`.
     pub traa_node: TraaNode,
     /// The page's `transparentMesh`, hidden until the GUI shows it.
-    pub transparent_mesh: three_rs::core::Node,
+    pub transparent_mesh: three_rs::core::ObjectRef,
     pub render_pipeline: RenderPipeline,
 }
 

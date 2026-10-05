@@ -21,7 +21,7 @@
 use std::rc::Rc;
 
 use three_rs::addons::controls::OrbitControls;
-use three_rs::core::Node;
+use three_rs::core::ObjectRef;
 use three_rs::nodes::tsl::{checker, fog, mix, normal_map, range_fog_factor, texture, uv};
 use three_rs::textures::Wrapping;
 use three_rs::utils::now_ms;
@@ -41,7 +41,7 @@ pub struct App {
     pub camera: PerspectiveCamera,
     /// `light1` … `light4`, the page's module-level handles, which `animate()`
     /// moves. They are in the scene, so the renderer finds them by walking it.
-    pub lights: Vec<Node>,
+    pub lights: Vec<ObjectRef>,
     /// The page's `controls`.
     pub controls: OrbitControls,
 }
@@ -80,7 +80,7 @@ pub fn init() -> App {
     // ordinary child of the light, so it inherits the light's world matrix and
     // draws through the scene walk, while the light itself is collected into
     // `RenderList.lights` instead of being drawn.
-    let add_light = |scene: &Scene, hex: u32| -> Node {
+    let add_light = |scene: &Scene, hex: u32| -> ObjectRef {
         let mut material = MeshPhongNodeMaterial::phong(Color::default());
         material.color_node = Some(Color::from_hex(hex).into());
         material.lights = false;

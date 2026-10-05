@@ -18,7 +18,7 @@ use three_rs::objects::{BatchedMesh, CustomSort};
 use three_rs::testing::DeterministicRandom;
 use three_rs::utils::sort_utils::{radix_sort, to_uint32};
 use three_rs::{
-    box_geometry, sphere_geometry, Color, Euler, Matrix4, Node, PerspectiveCamera, Quaternion,
+    box_geometry, sphere_geometry, Color, Euler, Matrix4, ObjectRef, PerspectiveCamera, Quaternion,
     Renderer, RendererParameters, Scene, Vector3,
 };
 
@@ -43,7 +43,7 @@ pub struct App {
     pub camera: PerspectiveCamera,
     /// The page's `controls`.
     pub controls: OrbitControls,
-    pub mesh: Node,
+    pub mesh: ObjectRef,
     /// `mesh.userData.rotationSpeeds`.
     rotation_speeds: Vec<Matrix4>,
     /// `ids` — the page keeps them, and `addInstance` returns them in order.
@@ -89,7 +89,7 @@ pub fn build() -> (
     Scene,
     PerspectiveCamera,
     OrbitControls,
-    Node,
+    ObjectRef,
     Vec<Matrix4>,
     Vec<usize>,
 ) {
@@ -264,7 +264,7 @@ pub fn controls_and_camera(app: &mut App) -> Option<(&mut OrbitControls, &mut Pe
 
 /// `animateMeshes()`, plus the per-frame `api` assignments the page's
 /// `animate()` makes on the mesh right after it.
-pub fn animate_meshes(mesh: &Node, ids: &[usize], rotation_speeds: &[Matrix4]) {
+pub fn animate_meshes(mesh: &ObjectRef, ids: &[usize], rotation_speeds: &[Matrix4]) {
     let mut object = mesh.borrow_mut();
     let batched = object
         .payload

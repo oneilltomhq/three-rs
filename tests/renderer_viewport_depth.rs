@@ -11,7 +11,7 @@ use std::rc::Rc;
 use three_rs::nodes::display::viewport_depth_texture;
 use three_rs::nodes::tsl::vec3_join;
 use three_rs::{
-    plane_geometry, Color, Mesh, MeshBasicNodeMaterial, Node, OrthographicCamera, Renderer,
+    plane_geometry, Color, Mesh, MeshBasicNodeMaterial, ObjectRef, OrthographicCamera, Renderer,
     RendererParameters, Scene,
 };
 
@@ -19,7 +19,7 @@ const W: u32 = 16;
 const H: u32 = 16;
 
 /// A 2x2 plane at `z` with `material`.
-fn quad(material: MeshBasicNodeMaterial, z: f64) -> Node {
+fn quad(material: MeshBasicNodeMaterial, z: f64) -> ObjectRef {
     let mesh = Mesh::new(Rc::new(plane_geometry(2.0, 2.0, 1, 1)), material);
     mesh.borrow_mut().position.z = z;
     mesh

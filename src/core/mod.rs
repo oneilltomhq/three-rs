@@ -5,8 +5,8 @@ mod buffer_geometry;
 mod events;
 mod indirect_storage_buffer_attribute;
 mod layers;
-pub(crate) mod node;
 mod object3d;
+pub(crate) mod object_ref;
 mod raycaster;
 mod timer;
 
@@ -24,7 +24,7 @@ pub use events::{
 };
 pub use indirect_storage_buffer_attribute::IndirectStorageBufferAttribute;
 pub use layers::Layers;
-pub use node::{Node, WeakNode};
 pub use object3d::Object3D;
+pub use object_ref::{ObjectRef, WeakObjectRef};
 pub use raycaster::{Face, Intersection, Raycaster, RaycasterCamera, RaycasterParams, Threshold};
 pub use timer::Timer;

@@ -2,7 +2,7 @@
 
 use std::rc::Rc;
 
-use crate::core::{BufferAttribute, BufferGeometry, Node};
+use crate::core::{BufferAttribute, BufferGeometry, ObjectRef};
 use crate::materials::{LineBasicNodeMaterial, MeshBasicNodeMaterial};
 use crate::math::{Color, Plane};
 use crate::objects::{Line, Mesh};
@@ -28,7 +28,7 @@ use crate::objects::{Line, Mesh};
 /// [`GridHelper`](super::GridHelper).
 pub struct PlaneHelper {
     /// The `Line` itself.
-    pub node: Node,
+    pub node: ObjectRef,
     /// `PlaneHelper.plane`. Three holds the caller's `Plane` object; the port
     /// holds the value, so change the plane here.
     pub plane: Plane,

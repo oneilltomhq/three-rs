@@ -12,13 +12,13 @@
 
 use std::rc::Rc;
 
-use three_rs::core::{BufferAttribute, Node, Object3D, Raycaster};
+use three_rs::core::{BufferAttribute, Object3D, ObjectRef, Raycaster};
 use three_rs::geometries::{box_geometry, plane_geometry};
 use three_rs::materials::{MeshBasicNodeMaterial, Side};
 use three_rs::math::{Vector2, Vector3};
 use three_rs::objects::Mesh;
 
-fn mesh() -> Node {
+fn mesh() -> ObjectRef {
     Mesh::new(Rc::new(plane_geometry(1.0, 1.0, 1, 1)), None)
 }
 
@@ -67,7 +67,7 @@ fn raycast() {
 
     let intersection = &intersections[0];
     assert!(
-        Node::ptr_eq(&intersection.object, &mesh),
+        ObjectRef::ptr_eq(&intersection.object, &mesh),
         "intersection object"
     );
     assert_eq!(intersection.distance, 1.0, "intersection distance");

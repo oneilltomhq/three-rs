@@ -86,7 +86,7 @@ pub struct App {
 fn fit_camera_to_selection(
     camera: &mut PerspectiveCamera,
     controls: &mut OrbitControls,
-    selection: &three_rs::Node,
+    selection: &three_rs::ObjectRef,
     fit_offset: f64,
 ) {
     let mut bounds = Box3::default();

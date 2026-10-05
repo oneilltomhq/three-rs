@@ -65,9 +65,9 @@ pub struct App {
     /// The PMREM of the pisa cube that `envMap: cubeTexture` reads.
     pub environment: PmremEnvironment,
     /// The page's `lightProbe`.
-    pub light_probe: three_rs::core::Node,
+    pub light_probe: three_rs::core::ObjectRef,
     /// The page's `directionalLight`.
-    pub directional_light: three_rs::core::Node,
+    pub directional_light: three_rs::core::ObjectRef,
     /// The `LightProbeHelper` beside the sphere.
     pub helper: LightProbeHelper,
 }

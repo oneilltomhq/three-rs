@@ -1,7 +1,7 @@
 //! Port of `three.js/src/math/Frustum.js`.
 
 use super::{Box3, CoordinateSystem, Matrix4, Plane, Sphere, Vector3};
-use crate::core::Node;
+use crate::core::ObjectRef;
 
 /// Port of three.js' `Frustum`: the six planes that bound a camera's field of
 /// view, used to cull objects that lie outside it before rendering.
@@ -119,7 +119,7 @@ impl Frustum {
     /// `position` attribute has no bounding sphere at all here, where three.js
     /// would leave `geometry.boundingSphere` `null` and throw. This returns
     /// `false` (nothing to intersect) instead.
-    pub fn intersects_object(&self, object: &Node) -> bool {
+    pub fn intersects_object(&self, object: &ObjectRef) -> bool {
         let object = object.borrow();
         let Some(sphere) = object.payload.bounding_sphere_in(&object.matrix_world) else {
             return false;
@@ -131,7 +131,7 @@ impl Frustum {
     /// `Frustum.intersectsSprite()`: the sprite's quad, bounded by a sphere of
     /// radius `√½` plus the `center` offset at its origin, against the six
     /// planes. `false` for a node that is not a [`Sprite`](crate::objects::Sprite).
-    pub fn intersects_sprite(&self, sprite: &Node) -> bool {
+    pub fn intersects_sprite(&self, sprite: &ObjectRef) -> bool {
         let object = sprite.borrow();
         let Some(sprite) = object.payload.sprite() else {
             return false;

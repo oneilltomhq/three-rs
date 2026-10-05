@@ -39,8 +39,8 @@ use three_rs::nodes::Type;
 use three_rs::testing::DeterministicRandom;
 use three_rs::{
     pass, AmbientLight, BufferGeometry, Color, DirectionalLight, InstancedMesh,
-    MeshPhongNodeMaterial, Node, Object3D, PassNode, PerspectiveCamera, RenderPipeline, Renderer,
-    RendererParameters, Scene, TextureLoader, Timer, Vector3,
+    MeshPhongNodeMaterial, Object3D, ObjectRef, PassNode, PerspectiveCamera, RenderPipeline,
+    Renderer, RendererParameters, Scene, TextureLoader, Timer, Vector3,
 };
 
 pub const INNER_WIDTH: f64 = 800.0;
@@ -70,7 +70,7 @@ pub struct FxScene {
     pub scene: Rc<RefCell<Scene>>,
     /// Shared with the scene's own pass.
     pub camera: Rc<RefCell<PerspectiveCamera>>,
-    pub mesh: Node,
+    pub mesh: ObjectRef,
     rotation_speed: Vector3,
 }
 
@@ -133,7 +133,7 @@ fn generate_instanced_mesh(
     material: MeshPhongNodeMaterial,
     count: usize,
     random: &mut DeterministicRandom,
-) -> Node {
+) -> ObjectRef {
     let mesh = InstancedMesh::new(Rc::new(geometry), material, count);
 
     let mut dummy = Object3D::default();

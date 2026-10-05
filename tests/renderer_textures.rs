@@ -22,7 +22,7 @@ use three_rs::nodes::tsl::{cube_texture, normal_world, texture};
 use three_rs::nodes::NodeRef;
 use three_rs::textures::Image;
 use three_rs::{
-    plane_geometry, Color, CubeTexture, Mesh, MeshBasicNodeMaterial, Node, OrthographicCamera,
+    plane_geometry, Color, CubeTexture, Mesh, MeshBasicNodeMaterial, ObjectRef, OrthographicCamera,
     RenderTarget, Renderer, RendererParameters, Scene, Texture,
 };
 
@@ -38,12 +38,12 @@ fn camera() -> OrthographicCamera {
 }
 
 /// A 2x2 plane whose material's `colorNode` the steps swap.
-fn plane(material: MeshBasicNodeMaterial) -> Node {
+fn plane(material: MeshBasicNodeMaterial) -> ObjectRef {
     Mesh::new(Rc::new(plane_geometry(2.0, 2.0, 1, 1)), material)
 }
 
 /// `mesh.material.colorNode = node; mesh.material.needsUpdate = true`.
-fn set_color_node(mesh: &Node, node: Option<NodeRef>) {
+fn set_color_node(mesh: &ObjectRef, node: Option<NodeRef>) {
     let mut object = mesh.borrow_mut();
     let material = object
         .mesh_mut()

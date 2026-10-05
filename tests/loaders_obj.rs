@@ -13,7 +13,7 @@
 //! Regenerate with `node tests/obj/gen.mjs` after a vendor bump.
 
 use serde_json::Value;
-use three_rs::core::Node;
+use three_rs::core::ObjectRef;
 use three_rs::loaders::{Obj, ObjLoader};
 use three_rs::objects::Payload;
 use three_rs::testing::three_js_dir;
@@ -33,7 +33,7 @@ fn fnv1a64(bytes: &[u8]) -> String {
     format!("{h:016x}")
 }
 
-fn check_mesh(case: &str, mesh: &Node, want: &Value) {
+fn check_mesh(case: &str, mesh: &ObjectRef, want: &Value) {
     let object = mesh.borrow();
     assert_eq!(
         object.object_type,

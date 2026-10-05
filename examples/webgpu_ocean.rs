@@ -55,7 +55,7 @@ use three_rs::objects::Mesh;
 use three_rs::textures::Wrapping;
 use three_rs::utils::now_ms;
 use three_rs::{
-    pass, Color, MeshStandardNodeMaterial, Node, PassNode, PerspectiveCamera, RenderPipeline,
+    pass, Color, MeshStandardNodeMaterial, ObjectRef, PassNode, PerspectiveCamera, RenderPipeline,
     Renderer, RendererParameters, Scene, ToneMapping, Vector3,
 };
 
@@ -95,7 +95,7 @@ pub struct App {
     pub water: WaterMesh,
     pub sky: SkyMesh,
     /// The page's `mesh`, the cube.
-    pub mesh: Node,
+    pub mesh: ObjectRef,
     /// The page's `sun`.
     pub sun: Vector3,
     pub parameters: Parameters,

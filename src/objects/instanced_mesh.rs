@@ -7,7 +7,7 @@
 
 use std::rc::Rc;
 
-use crate::core::{AttributeId, BufferGeometry, Node, Object3D};
+use crate::core::{AttributeId, BufferGeometry, Object3D, ObjectRef};
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::{Color, Matrix4, Sphere};
 use crate::objects::{Mesh, Payload};
@@ -154,13 +154,13 @@ pub struct InstancedMesh {
 }
 
 impl InstancedMesh {
-    /// `new InstancedMesh( geometry, material, count )`, as a scene-graph [`Node`].
-    #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `Node`, not `Self`; public API, not changing.
+    /// `new InstancedMesh( geometry, material, count )`, as a scene-graph [`ObjectRef`].
+    #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `ObjectRef`, not `Self`; public API, not changing.
     pub fn new(
         geometry: Rc<BufferGeometry>,
         material: MeshBasicNodeMaterial,
         count: usize,
-    ) -> Node {
+    ) -> ObjectRef {
         let mut object = Object3D {
             object_type: "InstancedMesh",
             ..Default::default()
@@ -236,7 +236,7 @@ impl InstancedMesh {
     pub fn raycast(
         &mut self,
         matrix_world: &Matrix4,
-        object: &crate::core::Node,
+        object: &crate::core::ObjectRef,
         raycaster: &crate::core::Raycaster,
         intersects: &mut Vec<crate::core::Intersection>,
     ) {

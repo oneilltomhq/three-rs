@@ -2,7 +2,7 @@
 //!
 //! `Extending` ports as "a `Group` *is* an `Object3D` node": three.js' `Group`
 //! is a subclass with no state of its own, so here it is a constructor that
-//! returns a `Node` with `type = 'Group'`.
+//! returns a `ObjectRef` with `type = 'Group'`.
 
 use three_rs::core::Object3D;
 use three_rs::objects::Group;

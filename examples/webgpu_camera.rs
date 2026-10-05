@@ -33,7 +33,7 @@ use std::f64::consts::PI;
 use std::rc::Rc;
 
 use three_rs::addons::controls::OrbitControls;
-use three_rs::core::{BufferAttribute, BufferGeometry, Node};
+use three_rs::core::{BufferAttribute, BufferGeometry, ObjectRef};
 use three_rs::geometries::sphere_geometry;
 use three_rs::testing::DeterministicRandom;
 use three_rs::{
@@ -66,10 +66,10 @@ pub struct App {
     pub camera_ortho: OrthographicCamera,
     pub camera_perspective_helper: CameraHelper,
     pub camera_ortho_helper: CameraHelper,
-    pub camera_rig: Node,
-    pub mesh: Node,
+    pub camera_rig: ObjectRef,
+    pub mesh: ObjectRef,
     /// `mesh.children[ 0 ]`.
-    pub mesh2: Node,
+    pub mesh2: ObjectRef,
     pub active: Active,
     pub screen_width: f64,
     pub screen_height: f64,

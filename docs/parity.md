@@ -155,10 +155,10 @@ Ported, `#[ignore]`d. Each row gives three's own score against its reference JPE
 | `InterleavedBuffer` | Absent | — | — | geometry has no interleaved buffers; comment only: src/objects/sprite.rs:24 |
 | `InstancedBufferAttribute` | Present | BufferAttribute::new_instanced (src/core/buffer_geometry.rs:149) + objects::InstancedBufferAttribute (src/objects/instanced_mesh.rs:17) | webgpu_struct_drawindirect, webgpu_instance_mesh |  |
 | `GLBufferAttribute` | N.A. | — | — | WebGL-only |
-| `Object3D` | Present | Object3D (src/core/object3d.rs:30) + scene-graph Node (src/core/node.rs:28) | tests/core_object3d.rs | toJSON/clone/copy QUnit cases skipped |
+| `Object3D` | Present | Object3D (src/core/object3d.rs:30) + scene-graph ObjectRef (src/core/object_ref.rs:28) | tests/core_object3d.rs | toJSON/clone/copy QUnit cases skipped |
 | `Raycaster` | Present | Raycaster (src/core/raycaster.rs:179) | tests/core_raycaster.rs; webgpu_lines_fat_raycasting | no reversed-depth cases |
 | `Layers` | Present | Layers (src/core/layers.rs:12) | tests/core_layers.rs; webgpu_layers |  |
-| `EventDispatcher` | Partial | typed per dispatcher: SceneEvent + Node::add_event_listener (src/core/events.rs) | tests/core_event_dispatcher.rs, tests/core_object3d.rs | no string-keyed dispatcher by design (docs/api.md decision 12); the mixer's `loop`/`finished` and the controls' `change` are not dispatched (#153) |
+| `EventDispatcher` | Partial | typed per dispatcher: SceneEvent + ObjectRef::add_event_listener (src/core/events.rs) | tests/core_event_dispatcher.rs, tests/core_object3d.rs | no string-keyed dispatcher by design (docs/api.md decision 12); the mixer's `loop`/`finished` and the controls' `change` are not dispatched (#153) |
 | `Clock` | Absent | — | — | deprecated r183; Timer ported instead |
 | `Timer` | Present | Timer (src/core/timer.rs:26) | webgpu_shadowmap, webgpu_deferred, webgpu_loader_gltf | no connect()/page-visibility (DOM) |
 | `RendererUtils` | Absent | — | — | state save/restore inlined privately; no public API; comment only: src/nodes/display/bloom.rs:468, src/nodes/display/rtt.rs:221 |
@@ -1384,12 +1384,12 @@ Partial: `tangentViewFrame`, `bitangentViewFrame`, `builtin`, `cameraViewport`, 
 | `clearcoatNormalView` | Present | clearcoat_normal_view (src/nodes/tsl.rs:2968) | indirect: used by src/materials/environment.rs |  |
 | `transformNormal` | Present | transform_normal (src/nodes/tsl/wrappers.rs:478) | tests/nodes_tsl_batch.rs (transform_normal_matches) | also `NodeRef::transform_normal` |
 | `transformNormalToView` | Present | transform_normal_to_view (src/nodes/tsl/wrappers.rs:496) | tests/nodes_tsl_batch.rs (transform_normal_to_view_matches; webgpu_tsl_raging_sea (graded)) | reads `modelNormalViewMatrix` from the context at construction |
-| `objectDirection` | Present | object_direction (src/nodes/tsl.rs:4950) | tests/nodes_tsl_batch.rs (object_scopes_match) | takes `&Node`; refreshes the world matrix and negates for a camera, as getWorldDirection() |
+| `objectDirection` | Present | object_direction (src/nodes/tsl.rs:4950) | tests/nodes_tsl_batch.rs (object_scopes_match) | takes `&ObjectRef`; refreshes the world matrix and negates for a camera, as getWorldDirection() |
 | `objectWorldMatrix` | Present | object_world_matrix (src/nodes/tsl.rs:3789) | webgpu_skinning_points (graded) |  |
-| `objectPosition` | Present | object_position (src/nodes/tsl.rs:4967) | tests/nodes_tsl_batch.rs (object_scopes_match) | takes `&Node` |
-| `objectScale` | Present | object_scale (src/nodes/tsl.rs:4976) | tests/nodes_tsl_batch.rs (object_scopes_match) | takes `&Node` |
-| `objectViewPosition` | Present | object_view_position (src/nodes/tsl.rs:4985) | tests/nodes_tsl_batch.rs (object_scopes_match) | takes `&Node` |
-| `objectRadius` | Present | object_radius (src/nodes/tsl.rs:4996) | tests/nodes_tsl_batch.rs (object_scopes_match) | takes `&Node`; the drawn object's geometry, the target's matrixWorld, as three |
+| `objectPosition` | Present | object_position (src/nodes/tsl.rs:4967) | tests/nodes_tsl_batch.rs (object_scopes_match) | takes `&ObjectRef` |
+| `objectScale` | Present | object_scale (src/nodes/tsl.rs:4976) | tests/nodes_tsl_batch.rs (object_scopes_match) | takes `&ObjectRef` |
+| `objectViewPosition` | Present | object_view_position (src/nodes/tsl.rs:4985) | tests/nodes_tsl_batch.rs (object_scopes_match) | takes `&ObjectRef` |
+| `objectRadius` | Present | object_radius (src/nodes/tsl.rs:4996) | tests/nodes_tsl_batch.rs (object_scopes_match) | takes `&ObjectRef`; the drawn object's geometry, the target's matrixWorld, as three |
 | `pointUV` | N.A. | — | — | GLSL-only; PointUVNode.js |
 | `clipSpace` | Present | clip_space (src/nodes/tsl.rs:3056) | tests/nodes_tsl_batch.rs (clip_space_matches) | fragment stage only; reads the `clipSpace` build-context key (docs/nodes.md §67) |
 | `positionGeometry` | Present | position_geometry (src/nodes/tsl.rs:1966) | webgpu_deferred (graded) |  |

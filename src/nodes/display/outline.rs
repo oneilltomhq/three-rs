@@ -54,7 +54,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::rc::Rc;
 
-use crate::core::Node;
+use crate::core::ObjectRef;
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::Color;
 use crate::nodes::node::{SettableValue, TextureSource, Type};
@@ -77,7 +77,7 @@ const MAX_RADIUS: f64 = 4.0;
 /// `outline( scene, camera, params )`'s `params`, with its defaults.
 pub struct OutlineParams {
     /// `params.selectedObjects`, default `[]`.
-    pub selected_objects: Vec<Node>,
+    pub selected_objects: Vec<ObjectRef>,
     /// `params.edgeThickness`, default `float( 1 )` — the half-resolution
     /// blur's kernel radius.
     pub edge_thickness: NodeRef,
@@ -121,7 +121,7 @@ pub struct OutlineState {
     scene: SceneRef,
     camera: CameraRef,
     /// `this.selectedObjects`.
-    selected_objects: RefCell<Vec<Node>>,
+    selected_objects: RefCell<Vec<ObjectRef>>,
     /// `this.downSampleRatio`.
     down_sample_ratio: f64,
     depth_buffer: RenderTarget,
@@ -493,13 +493,13 @@ impl OutlineNode {
 
 impl OutlineState {
     /// `outlinePass.selectedObjects` — a copy of the list.
-    pub fn selected_objects(&self) -> Vec<Node> {
+    pub fn selected_objects(&self) -> Vec<ObjectRef> {
         self.selected_objects.borrow().clone()
     }
 
     /// `outlinePass.selectedObjects = objects` (or the page's `length = 0`
     /// followed by `push()`).
-    pub fn set_selected_objects(&self, objects: Vec<Node>) {
+    pub fn set_selected_objects(&self, objects: Vec<ObjectRef>) {
         *self.selected_objects.borrow_mut() = objects;
     }
 

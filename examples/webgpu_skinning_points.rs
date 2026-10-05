@@ -38,8 +38,8 @@ use three_rs::nodes::tsl::{
 use three_rs::nodes::{ComputeFlow, NodeRef};
 use three_rs::Timer;
 use three_rs::{
-    AmbientLight, Background, Color, Node, PerspectiveCamera, Renderer, RendererParameters, Scene,
-    Sprite,
+    AmbientLight, Background, Color, ObjectRef, PerspectiveCamera, Renderer, RendererParameters,
+    Scene, Sprite,
 };
 
 pub const INNER_WIDTH: f64 = 800.0;
@@ -64,7 +64,7 @@ pub struct App {
 /// the node once per call of this function, which the page does twice (the
 /// per-frame kernel and its `onInit`) — see `compute_skinning()`.
 fn update_skinning_points(
-    child: &Node,
+    child: &ObjectRef,
     skinning_position: &NodeRef,
     point_position_array: &StorageArray,
     point_speed_array: &StorageArray,
@@ -91,13 +91,16 @@ fn update_skinning_points(
 /// One mesh's point cloud: the two `instancedArray`s, the material that reads
 /// them, and the kernels (as its `positionNode`) that write them — the body of
 /// the page's `traverse` callback between `countOfPoints` and `new Sprite()`.
-pub fn point_cloud_material(child: &Node, count_of_points: usize) -> PointsNodeMaterial {
+pub fn point_cloud_material(child: &ObjectRef, count_of_points: usize) -> PointsNodeMaterial {
     let (update, point_position_array, point_speed_array) = kernels(child, count_of_points);
     material(update, &point_position_array, &point_speed_array)
 }
 
 /// The per-frame kernel (with its `onInit` twin) and the arrays it writes.
-pub fn kernels(child: &Node, count_of_points: usize) -> (ComputeFlow, StorageArray, StorageArray) {
+pub fn kernels(
+    child: &ObjectRef,
+    count_of_points: usize,
+) -> (ComputeFlow, StorageArray, StorageArray) {
     // `.setPBO( true )` is a WebGL-backend hint; WebGPU ignores it.
     let point_position_array = instanced_array(count_of_points, Type::Vec3);
     let point_speed_array = instanced_array(count_of_points, Type::Vec3);

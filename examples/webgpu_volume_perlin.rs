@@ -196,7 +196,7 @@ pub struct App {
     pub scene: Scene,
     pub camera: PerspectiveCamera,
     pub controls: OrbitControls,
-    pub mesh: three_rs::Node,
+    pub mesh: three_rs::ObjectRef,
 }
 
 pub fn init() -> App {

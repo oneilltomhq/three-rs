@@ -23,10 +23,10 @@ the SDF rasteriser, and a git or filesystem scan all run on other threads and
 hand finished data to the scene thread. `wgpu` itself is thread-safe. A
 compositor drives the scene from one thread and feeds it messages.
 
-`Rc`, not `Arc`; `RefCell`, not `Mutex`. The compiler refuses to let a `Node`
+`Rc`, not `Arc`; `RefCell`, not `Mutex`. The compiler refuses to let a `ObjectRef`
 cross a thread, which is the guarantee wanted.
 
-## 2. A scene object is a `Node`, a newtype over `Rc<RefCell<Object3D>>`
+## 2. A scene object is an `ObjectRef`, a newtype over `Rc<RefCell<Object3D>>`
 
 0.1.0 spells the handle out as a type alias, `pub type Node =
 Rc<RefCell<Object3D>>`, with the tree operations on an `Object3DNode` trait.
@@ -50,7 +50,19 @@ they are added), `attach()` across parents stops being expressible, and the
 QUnit ports have no arena to pass. The arena earns its cost only under
 decision 1's first camp, which this crate is not in.
 
-Users hold `Node` clones across frames; that is what every consumer does. The
+0.3.0 renames the handle `ObjectRef` (#250). `Node` had been three.js'
+word for the shader-graph node (`nodes::Node`, behind `NodeRef`) as well,
+and `ARCHITECTURE.md` spent a paragraph on which one a sentence meant.
+Every other `Rc` handle in the crate is already named `<Thing>Ref` after
+the struct it points at: `NodeRef`, `SceneRef`, `CameraRef`, `SkeletonRef`,
+`CurveRef`. `ObjectRef` over `Object3D` is that pattern; `core::Object`
+beside `Object3D` would have read as two things that are one, and
+`Object3DRef` buys nothing over the short form. `WeakNode` is
+`WeakObjectRef`. The shader-graph `Node` keeps its name: three.js calls it
+that, and so does all of `docs/nodes.md`. Call sites are unchanged apart
+from the type name; most never spell it.
+
+Users hold `ObjectRef` clones across frames; that is what every consumer does. The
 parent link is `Weak`, the one place the port's ownership differs from
 three.js: a child does not keep its parent alive, so a subtree removed and
 not held is freed.
@@ -102,7 +114,7 @@ not held is freed.
 - **Lights, cameras and textures** take three.js's positional constructor
   arguments and expose the rest as fields or one-line setters, for the same
   reason.
-  `LightProbe::new( sh, intensity )` returns a `Node`, as every other light
+  `LightProbe::new( sh, intensity )` returns a `ObjectRef`, as every other light
   does, and keeps its coefficients in the light's `sh` field. The addons that
   three.js writes as classes with static methods (`LightProbeGenerator`) are
   unit structs with associated functions, so the call reads
@@ -150,7 +162,7 @@ not held is freed.
   attribute's own type over three's vertex format, so a normalized `Uint8`
   colour is `unorm8x4` into a `vec4<f32>` and a `Uint32` index a `vec4<u32>`;
   the table and the reasons are the module note on `core::buffer_attribute`.
-- **`Scene` and the cameras own a `node` field** and are not `Node`s
+- **`Scene` and the cameras own a `node` field** and are not `ObjectRef`s
   themselves. `Scene` adds `background`, `fog_node` and `override_material`;
   a camera adds its projection state. Both forward `add()`, `children()` and
   `update_matrix_world()` to their node, so both can sit inside the tree.
@@ -490,14 +502,14 @@ shape its events need:
 
 - **The scene graph** dispatches a `SceneEvent`: `Added`, `Removed`,
   `ChildAdded(child)` and `ChildRemoved(child)`, the four events
-  `Object3D` dispatches, which are the whole set. `Node::add_event_listener(
+  `Object3D` dispatches, which are the whole set. `ObjectRef::add_event_listener(
   SceneEventType, listener)` returns an opaque `ListenerHandle`, which stands
   for the listener in `remove_event_listener` and `has_event_listener`
-  because a closure has no identity to compare. `Node::dispatch_event` copies
+  because a closure has no identity to compare. `ObjectRef::dispatch_event` copies
   the listener list before calling it, as three's `listenerArray.slice( 0 )`
   does, and holds no borrow during the calls: a listener may remove itself or
   any other listener, borrow its node, or change the tree, which dispatches
-  again. A listener is `Fn(&SceneEvent, &Node)`, the second argument being
+  again. A listener is `Fn(&SceneEvent, &ObjectRef)`, the second argument being
   three's `event.target`; `Fn` because of that re-entrancy, and the target is
   passed in so a listener need not capture, and so keep alive, its own node.
   `add()` and `attach()` dispatch `Added` on the child and then `ChildAdded`
@@ -534,10 +546,10 @@ or by a `set_on_before_render` / `set_on_after_render` that spares writing
 the closure's argument types.
 
 - `Object3D::on_before_render` / `on_after_render` are an
-  `ObjectRenderHook`: `FnMut(&Node, &Renderer, &Scene, &dyn RenderCamera,
+  `ObjectRenderHook`: `FnMut(&ObjectRef, &Renderer, &Scene, &dyn RenderCamera,
   Option<&Group>)`. three passes `( renderer, scene, camera, geometry,
   material, group )` with the object as `this`. The object comes first, as
-  its unborrowed `Node`: the renderer takes the hook out of the object for
+  its unborrowed `ObjectRef`: the renderer takes the hook out of the object for
   the call, so the hook can borrow its own node or any other, and puts it back
   unless the hook installed a replacement. The geometry and material are on
   that node's payload. The renderer is `&Renderer`, not `&mut`: the hook runs

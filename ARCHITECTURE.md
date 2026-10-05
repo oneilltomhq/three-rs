@@ -27,11 +27,10 @@ rungs use, exactly as their three.js pages do.
 `Renderer::render( scene, camera )` in `src/renderer/mod.rs` is
 `Renderer.render()`, in the same order:
 
-1. **Scene graph.** A scene object is a `core::Node`, a newtype over
-   `Rc<RefCell<Object3D>>` (`src/core/node.rs`). It shares its name with the
-   shader-graph `nodes::Node` of step 4 and nothing else; which one a
-   sentence means is clear from its module. Whether that stays so is #250.
-   `update_matrix_world()` walks it as three.js does. Why `Rc<RefCell>` and
+1. **Scene graph.** A scene object is an `ObjectRef`, a newtype over
+   `Rc<RefCell<Object3D>>` (`src/core/object_ref.rs`), named after the
+   `Object3D` it points at the way `NodeRef`, `SceneRef` and `CameraRef`
+   are named after theirs (#250). `update_matrix_world()` walks it as three.js does. Why `Rc<RefCell>` and
    not an arena: [`docs/scene-graph.md`](docs/scene-graph.md).
 2. **Projection.** `src/renderer/render_list.rs` walks the tree into sorted
    opaque and transparent lists (`projectObject` and `RenderList`); `render()`

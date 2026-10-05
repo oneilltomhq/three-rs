@@ -1,6 +1,6 @@
 //! Port of `three.js/src/cameras/CubeCamera.js`.
 
-use crate::core::{Node, Object3D};
+use crate::core::{Object3D, ObjectRef};
 use crate::math::Vector3;
 use crate::objects::Scene;
 use crate::renderer::cube_render_target::{CubeRenderTarget, FACES, FOV};
@@ -13,7 +13,7 @@ use super::PerspectiveCamera;
 /// into [`CubeCamera::render_target`].
 ///
 /// As in three, the face cameras are children of the cube camera's own
-/// [`Node`], so moving or rotating `node` moves the six views with it.
+/// [`ObjectRef`], so moving or rotating `node` moves the six views with it.
 ///
 /// Three builds the face orientations lazily, in `updateCoordinateSystem()`,
 /// the first time `update()` sees a renderer, because a WebGL and a WebGPU
@@ -26,7 +26,7 @@ use super::PerspectiveCamera;
 /// cube camera into a lower level.
 pub struct CubeCamera {
     /// The `CubeCamera`'s `Object3D` — the parent of the six face cameras.
-    pub node: Node,
+    pub node: ObjectRef,
     /// `cubeCamera.renderTarget`.
     pub render_target: CubeRenderTarget,
     /// px, nx, py, ny, pz, nz — `this.children` in three.

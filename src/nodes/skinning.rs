@@ -188,7 +188,7 @@ pub fn skinning(entry: &SkinEntry) -> Vec<NodeRef> {
 /// # Panics
 ///
 /// If `mesh` is not a skinned mesh with a skeleton and skin attributes.
-pub fn compute_skinning(mesh: &crate::core::Node) -> NodeRef {
+pub fn compute_skinning(mesh: &crate::core::ObjectRef) -> NodeRef {
     use crate::nodes::node::{LiveValue, SkeletonRef};
     use crate::objects::Payload;
 

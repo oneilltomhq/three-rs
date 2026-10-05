@@ -1,6 +1,6 @@
 //! Port of `three.js/examples/jsm/lights/LightProbeGenerator.js`.
 
-use crate::core::Node;
+use crate::core::ObjectRef;
 use crate::error::Error;
 use crate::lights::LightProbe;
 use crate::math::{Color, ColorSpace, SphericalHarmonics3, Vector3};
@@ -134,7 +134,7 @@ impl LightProbeGenerator {
     /// canvas could not draw either — and [`Error::UnsupportedFormat`] for
     /// a cube without six faces of pixels (a render target's, which
     /// [`from_cube_render_target`](Self::from_cube_render_target) reads).
-    pub fn from_cube_texture(cube_texture: &CubeTexture) -> Result<Node, Error> {
+    pub fn from_cube_texture(cube_texture: &CubeTexture) -> Result<ObjectRef, Error> {
         let texture_type = cube_texture.texture_type();
         if texture_type != TextureType::UnsignedByte {
             return Err(Error::UnsupportedTextureType {
@@ -217,7 +217,7 @@ impl LightProbeGenerator {
     pub async fn from_cube_render_target_async(
         renderer: &mut Renderer,
         cube_render_target: &CubeTexture,
-    ) -> Result<Node, Error> {
+    ) -> Result<ObjectRef, Error> {
         let texture_type = cube_render_target.texture_type();
         let color_space = cube_render_target.color_space();
 
@@ -260,7 +260,7 @@ impl LightProbeGenerator {
     pub fn from_cube_render_target(
         renderer: &mut Renderer,
         cube_render_target: &CubeTexture,
-    ) -> Result<Node, Error> {
+    ) -> Result<ObjectRef, Error> {
         pollster::block_on(Self::from_cube_render_target_async(
             renderer,
             cube_render_target,

@@ -146,13 +146,13 @@ pub trait RenderCamera: sealed::Sealed {
     /// what needs the object itself rather than a copy of its matrices
     /// (`CameraHelper`'s `this.matrix = camera.matrixWorld`). `None` for a
     /// camera the port keeps outside the graph (`OrthographicCamera`).
-    fn node(&self) -> Option<&crate::core::Node> {
+    fn node(&self) -> Option<&crate::core::ObjectRef> {
         None
     }
 }
 
 impl RenderCamera for PerspectiveCamera {
-    fn node(&self) -> Option<&crate::core::Node> {
+    fn node(&self) -> Option<&crate::core::ObjectRef> {
         Some(&self.node)
     }
     fn set_view_offset(

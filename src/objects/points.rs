@@ -10,7 +10,7 @@
 
 use std::rc::Rc;
 
-use crate::core::{BufferGeometry, Intersection, Node, Object3D, Raycaster};
+use crate::core::{BufferGeometry, Intersection, Object3D, ObjectRef, Raycaster};
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::{Matrix4, Sphere, Vector3};
 use crate::objects::Payload;
@@ -35,8 +35,8 @@ pub struct Points {
 
 impl Points {
     /// `new Points( geometry, material )`.
-    #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `Node`, not `Self`; public API, not changing.
-    pub fn new(geometry: Rc<BufferGeometry>, material: MeshBasicNodeMaterial) -> Node {
+    #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `ObjectRef`, not `Self`; public API, not changing.
+    pub fn new(geometry: Rc<BufferGeometry>, material: MeshBasicNodeMaterial) -> ObjectRef {
         let mut object = Object3D {
             object_type: "Points",
             ..Default::default()
@@ -66,7 +66,7 @@ impl Points {
         &self,
         matrix_world: &Matrix4,
         scale: &Vector3,
-        object: &Node,
+        object: &ObjectRef,
         raycaster: &Raycaster,
         intersects: &mut Vec<Intersection>,
     ) {

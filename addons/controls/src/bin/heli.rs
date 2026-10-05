@@ -26,7 +26,7 @@ use three_rs::core::{BufferAttribute, BufferGeometry};
 use three_rs::materials::Side;
 use three_rs::math::math_utils::{DEG2RAD, RAD2DEG};
 use three_rs::{
-    plane_geometry, Color, LineSegments, Matrix4, Mesh, MeshBasicNodeMaterial, Node,
+    plane_geometry, Color, LineSegments, Matrix4, Mesh, MeshBasicNodeMaterial, ObjectRef,
     PerspectiveCamera, Renderer, RendererParameters, Scene, Vector3,
 };
 use three_rs_controls::{Ground, MapControls, Mode, Pane, Pose};
@@ -235,8 +235,8 @@ struct App {
     camera: PerspectiveCamera,
     controls: MapControls,
     panes: Vec<Pane>,
-    grid: Node,
-    pane_nodes: Vec<Node>,
+    grid: ObjectRef,
+    pane_nodes: Vec<ObjectRef>,
     legend: Option<Legend>,
     /// The radius the grid's vertices were last built for.
     grid_radius: f64,
@@ -270,7 +270,7 @@ impl App {
 
         // The panes: one shared geometry, one material each.
         let pane_geometry = Rc::new(plane_geometry(PANE_WIDTH, PANE_HEIGHT, 1, 1));
-        let pane_nodes: Vec<Node> = panes
+        let pane_nodes: Vec<ObjectRef> = panes
             .iter()
             .enumerate()
             .map(|(index, _)| {

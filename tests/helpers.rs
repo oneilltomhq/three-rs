@@ -17,7 +17,7 @@
 
 use std::rc::Rc;
 
-use three_rs::core::{Node, Object3D};
+use three_rs::core::{Object3D, ObjectRef};
 use three_rs::geometries::{box_geometry_default, sphere_geometry};
 use three_rs::helpers::{
     ArrowHelper, AxesHelper, Box3Helper, BoxHelper, CameraHelper, DirectionalLightHelper,
@@ -34,22 +34,22 @@ fn hex(hex: u32) -> Color {
     Color::from_hex(hex)
 }
 
-fn object_type(node: &Node) -> &'static str {
+fn object_type(node: &ObjectRef) -> &'static str {
     node.borrow().object_type
 }
 
-fn is_line_segments(node: &Node) -> bool {
+fn is_line_segments(node: &ObjectRef) -> bool {
     node.borrow().is_line_segments()
 }
 
 /// `object instanceof Line` but not `LineSegments`.
-fn is_plain_line(node: &Node) -> bool {
+fn is_plain_line(node: &ObjectRef) -> bool {
     let object = node.borrow();
     object.is_line() && !object.is_line_segments()
 }
 
 /// A plain `Object3D`: nothing to draw of its own.
-fn is_plain_object3d(node: &Node) -> bool {
+fn is_plain_object3d(node: &ObjectRef) -> bool {
     matches!(node.borrow().payload, Payload::None)
 }
 

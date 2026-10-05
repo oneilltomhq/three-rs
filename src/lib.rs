@@ -25,9 +25,9 @@
 //! and a compositor drives the scene from one thread and sends it messages.
 //! See [decision 1 of the API design note][api-md].
 //!
-//! A scene object is a [`Node`] — a newtype over `Rc<RefCell<Object3D>>`, so
+//! A scene object is a [`ObjectRef`] — a newtype over `Rc<RefCell<Object3D>>`, so
 //! `borrow()` / `borrow_mut()` work as they would on the `RefCell` directly.
-//! Users hold `Node` clones across frames, as every three-rs consumer does.
+//! Users hold `ObjectRef` clones across frames, as every three-rs consumer does.
 //! The one place this port's ownership differs from three.js: a child's
 //! `parent` link is a `Weak`, not a strong reference, so a subtree that is
 //! removed and not held anywhere else is freed rather than kept alive by its
@@ -55,7 +55,7 @@
 //!   three.js ships separately.
 //! - [`animation`] — ports of `three.js/src/animation`.
 //! - [`cameras`] — ports of `three.js/src/cameras`.
-//! - [`core`] — ports of `three.js/src/core`: `Object3D`, [`Node`],
+//! - [`core`] — ports of `three.js/src/core`: `Object3D`, [`ObjectRef`],
 //!   `BufferGeometry`, the raycaster.
 //! - [`environments`] — ports of `three.js/examples/jsm/environments/`, scenes
 //!   built for [`renderer::pmrem::PmremGenerator::from_scene`] rather than for
@@ -160,7 +160,7 @@ pub mod utils;
 pub use cameras::{
     ArrayCamera, CubeCamera, OrthographicCamera, PerspectiveCamera, RenderCamera, StereoCamera,
 };
-pub use core::{BufferGeometry, Intersection, Node, Object3D, Raycaster, Timer};
+pub use core::{BufferGeometry, Intersection, Object3D, ObjectRef, Raycaster, Timer};
 pub use environments::RoomEnvironment;
 pub use error::{Error, GltfError};
 pub use extras::{

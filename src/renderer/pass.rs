@@ -22,7 +22,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::cameras::RenderCamera;
-use crate::core::{Layers, Node};
+use crate::core::{Layers, ObjectRef};
 use crate::nodes::node::SettableValue;
 use crate::nodes::tsl::{
     pass_depth_texture, perspective_depth_to_view_z, texture_uv, to_var, uniform_settable, uv,
@@ -137,7 +137,7 @@ pub struct PassState {
 #[derive(Clone)]
 pub(crate) struct ShadowContext {
     /// `light` — compared by identity, as three's `light === shadowLight`.
-    pub light: Node,
+    pub light: ObjectRef,
     /// `shadowNode`.
     pub shadow: NodeRef,
 }
@@ -371,7 +371,7 @@ impl PassNode {
     /// The node is part of each receiving material's program key, so
     /// replacing it builds new programs; keep one node for the pass's
     /// lifetime.
-    pub fn set_context_shadow(&self, shadow: NodeRef, light: &Node) {
+    pub fn set_context_shadow(&self, shadow: NodeRef, light: &ObjectRef) {
         *self.0.context_shadow.borrow_mut() = Some(ShadowContext {
             light: light.clone(),
             shadow,

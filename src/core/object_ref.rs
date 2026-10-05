@@ -21,19 +21,19 @@ use crate::math::{Matrix4, Quaternion, Vector3};
 /// it is called on — up to the parent or down into the children — which a
 /// `&mut Object3D` cannot do.
 ///
-/// `Node` derefs to `RefCell<Object3D>`, so `node.borrow()` and
-/// `node.borrow_mut()` reach the object exactly as they did when `Node` was a
+/// `ObjectRef` derefs to `RefCell<Object3D>`, so `node.borrow()` and
+/// `node.borrow_mut()` reach the object exactly as they did when `ObjectRef` was a
 /// type alias.
 #[derive(Clone)]
-pub struct Node(Rc<RefCell<Object3D>>);
+pub struct ObjectRef(Rc<RefCell<Object3D>>);
 
 /// `Object3D.parent`, stored weakly so a child holding its parent does not keep
 /// the parent alive (three.js' `parent` is a strong reference, but JS has a GC
 /// and we do not).
 #[derive(Clone, Default)]
-pub struct WeakNode(Weak<RefCell<Object3D>>);
+pub struct WeakObjectRef(Weak<RefCell<Object3D>>);
 
-impl Deref for Node {
+impl Deref for ObjectRef {
     type Target = RefCell<Object3D>;
 
     fn deref(&self) -> &Self::Target {
@@ -41,44 +41,44 @@ impl Deref for Node {
     }
 }
 
-impl std::fmt::Debug for Node {
+impl std::fmt::Debug for ObjectRef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
     }
 }
 
-impl std::fmt::Debug for WeakNode {
+impl std::fmt::Debug for WeakObjectRef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
     }
 }
 
-impl WeakNode {
-    /// `Weak::new()` — a `WeakNode` that never upgrades.
+impl WeakObjectRef {
+    /// `Weak::new()` — a `WeakObjectRef` that never upgrades.
     pub fn new() -> Self {
         Self(Weak::new())
     }
 
     /// The node, if it is still alive.
-    pub fn upgrade(&self) -> Option<Node> {
-        self.0.upgrade().map(Node)
+    pub fn upgrade(&self) -> Option<ObjectRef> {
+        self.0.upgrade().map(ObjectRef)
     }
 }
 
-impl Node {
+impl ObjectRef {
     /// `object`, moved into a fresh scene-graph node.
     pub fn new(object: Object3D) -> Self {
         Self(Rc::new(RefCell::new(object)))
     }
 
     /// `a === b`: whether two handles are the same object. Was `Rc::ptr_eq`.
-    pub fn ptr_eq(a: &Node, b: &Node) -> bool {
+    pub fn ptr_eq(a: &ObjectRef, b: &ObjectRef) -> bool {
         Rc::ptr_eq(&a.0, &b.0)
     }
 
     /// The weak handle `Object3D.parent` holds.
-    pub fn downgrade(&self) -> WeakNode {
-        WeakNode(Rc::downgrade(&self.0))
+    pub fn downgrade(&self) -> WeakObjectRef {
+        WeakObjectRef(Rc::downgrade(&self.0))
     }
 
     /// The address of the object, for a consumer keying a cache on identity.
@@ -90,20 +90,23 @@ impl Node {
     }
 
     /// `Object3D.parent`, upgraded.
-    pub fn parent(&self) -> Option<Node> {
-        self.borrow().parent.as_ref().and_then(WeakNode::upgrade)
+    pub fn parent(&self) -> Option<ObjectRef> {
+        self.borrow()
+            .parent
+            .as_ref()
+            .and_then(WeakObjectRef::upgrade)
     }
 
     /// `Object3D.children`, cloned (cheap: a `Vec` of `Rc`s). Cloning is what
     /// lets a traversal run without holding a borrow on the parent.
-    pub fn children(&self) -> Vec<Node> {
+    pub fn children(&self) -> Vec<ObjectRef> {
         self.borrow().children.clone()
     }
 
     /// `Object3D.add( object )`.
-    pub fn add(&self, object: &Node) -> &Self {
+    pub fn add(&self, object: &ObjectRef) -> &Self {
         // `Object3D.add: object can't be added as a child of itself.`
-        if Node::ptr_eq(self, object) {
+        if ObjectRef::ptr_eq(self, object) {
             return self;
         }
 
@@ -118,12 +121,12 @@ impl Node {
     }
 
     /// `Object3D.remove( object )`.
-    pub fn remove(&self, object: &Node) -> &Self {
+    pub fn remove(&self, object: &ObjectRef) -> &Self {
         let index = self
             .borrow()
             .children
             .iter()
-            .position(|child| Node::ptr_eq(child, object));
+            .position(|child| ObjectRef::ptr_eq(child, object));
 
         if let Some(index) = index {
             object.borrow_mut().parent = None;
@@ -155,7 +158,7 @@ impl Node {
     }
 
     /// `Object3D.attach( object )`.
-    pub fn attach(&self, object: &Node) -> &Self {
+    pub fn attach(&self, object: &ObjectRef) -> &Self {
         // adds object as a child of this, while maintaining the object's world
         // transform
         self.update_world_matrix(true, false);
@@ -194,7 +197,7 @@ impl Node {
     pub fn add_event_listener(
         &self,
         ty: SceneEventType,
-        listener: impl Fn(&SceneEvent, &Node) + 'static,
+        listener: impl Fn(&SceneEvent, &ObjectRef) + 'static,
     ) -> ListenerHandle {
         self.borrow_mut().listeners.add(ty, Rc::new(listener))
     }
@@ -232,18 +235,18 @@ impl Node {
     }
 
     /// `Object3D.getObjectById( id )`.
-    pub fn get_object_by_id(&self, id: u32) -> Option<Node> {
+    pub fn get_object_by_id(&self, id: u32) -> Option<ObjectRef> {
         self.get_object_by_property(&|object| object.id == id)
     }
 
     /// `Object3D.getObjectByName( name )`.
-    pub fn get_object_by_name(&self, name: &str) -> Option<Node> {
+    pub fn get_object_by_name(&self, name: &str) -> Option<ObjectRef> {
         self.get_object_by_property(&|object| object.name == name)
     }
 
     /// `Object3D.getObjectByProperty( name, value )`. Rust has no dynamic
     /// property lookup, so the property test is a predicate.
-    pub fn get_object_by_property(&self, test: &dyn Fn(&Object3D) -> bool) -> Option<Node> {
+    pub fn get_object_by_property(&self, test: &dyn Fn(&Object3D) -> bool) -> Option<ObjectRef> {
         if test(&self.borrow()) {
             return Some(self.clone());
         }
@@ -258,7 +261,7 @@ impl Node {
     }
 
     /// `Object3D.getObjectsByProperty( name, value, result )`.
-    pub fn get_objects_by_property(&self, test: &dyn Fn(&Object3D) -> bool) -> Vec<Node> {
+    pub fn get_objects_by_property(&self, test: &dyn Fn(&Object3D) -> bool) -> Vec<ObjectRef> {
         let mut result = Vec::new();
 
         if test(&self.borrow()) {
@@ -273,7 +276,7 @@ impl Node {
     }
 
     /// `Object3D.traverse( callback )`.
-    pub fn traverse(&self, callback: &mut dyn FnMut(&Node)) {
+    pub fn traverse(&self, callback: &mut dyn FnMut(&ObjectRef)) {
         callback(self);
 
         for child in self.children() {
@@ -282,7 +285,7 @@ impl Node {
     }
 
     /// `Object3D.traverseVisible( callback )`.
-    pub fn traverse_visible(&self, callback: &mut dyn FnMut(&Node)) {
+    pub fn traverse_visible(&self, callback: &mut dyn FnMut(&ObjectRef)) {
         if !self.borrow().visible {
             return;
         }
@@ -295,7 +298,7 @@ impl Node {
     }
 
     /// `Object3D.traverseAncestors( callback )`.
-    pub fn traverse_ancestors(&self, callback: &mut dyn FnMut(&Node)) {
+    pub fn traverse_ancestors(&self, callback: &mut dyn FnMut(&ObjectRef)) {
         if let Some(parent) = self.parent() {
             callback(&parent);
             parent.traverse_ancestors(callback);
@@ -434,7 +437,7 @@ impl Node {
 /// The `updateWorldMatrix`/`updateMatrixWorld` body both methods share: compose
 /// the local matrix, then multiply the parent's world matrix into it. Returns
 /// the new `force` for the children.
-fn update_own_matrix_world(node: &Node, force: bool) -> bool {
+fn update_own_matrix_world(node: &ObjectRef, force: bool) -> bool {
     if node.borrow().matrix_auto_update {
         node.borrow_mut().update_matrix();
     }
@@ -445,7 +448,7 @@ fn update_own_matrix_world(node: &Node, force: bool) -> bool {
         .borrow()
         .matrix_alias
         .as_ref()
-        .and_then(WeakNode::upgrade);
+        .and_then(WeakObjectRef::upgrade);
     if let Some(source) = alias {
         let matrix_world = source.borrow().matrix_world;
         node.borrow_mut().matrix = matrix_world;
@@ -496,7 +499,7 @@ fn update_own_matrix_world(node: &Node, force: bool) -> bool {
 /// identity bind matrix, so everything the skin's own node contributes — a
 /// glTF `Character` node's 0.01 scale and ±90° rotation, say — lives there and
 /// nowhere else.
-fn update_bind_matrix_inverse(node: &Node) {
+fn update_bind_matrix_inverse(node: &ObjectRef) {
     let mut object = node.borrow_mut();
     if !object.payload.is_skinned_mesh() {
         return;
@@ -509,7 +512,7 @@ fn update_bind_matrix_inverse(node: &Node) {
 
 /// `updateWorldMatrix( false, true, force )` — the recursive child half, which
 /// differs from the public method only in that it threads `force` through.
-fn update_children_world_matrix(node: &Node, force: bool) {
+fn update_children_world_matrix(node: &ObjectRef, force: bool) {
     let force = update_own_matrix_world(node, force);
 
     for child in node.children() {

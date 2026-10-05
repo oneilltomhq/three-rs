@@ -26,7 +26,7 @@ use std::f64::consts::PI;
 use std::rc::Rc;
 
 use three_rs::addons::controls::OrbitControls;
-use three_rs::core::Node;
+use three_rs::core::ObjectRef;
 use three_rs::geometries::{plane_geometry, torus_knot_geometry};
 use three_rs::materials::Side;
 use three_rs::math::{Plane, Vector3};
@@ -48,7 +48,7 @@ pub struct App {
     /// The page's `controls`.
     pub controls: OrbitControls,
     /// The page's module-level `object`: the torus knot.
-    pub object: Node,
+    pub object: ObjectRef,
     /// The page's module-level `startTime`, `Date.now()` at the end of
     /// `init()`.
     pub start_time: f64,

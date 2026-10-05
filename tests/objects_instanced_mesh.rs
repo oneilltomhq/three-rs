@@ -11,7 +11,7 @@ use three_rs::materials::MeshBasicNodeMaterial;
 use three_rs::math::{Matrix4, Vector3};
 use three_rs::objects::InstancedMesh;
 
-fn instanced(count: usize) -> three_rs::core::Node {
+fn instanced(count: usize) -> three_rs::core::ObjectRef {
     InstancedMesh::new(
         Rc::new(box_geometry(1.0, 1.0, 1.0, 1, 1, 1)),
         MeshBasicNodeMaterial::default(),

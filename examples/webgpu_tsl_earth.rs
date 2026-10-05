@@ -24,7 +24,7 @@ use three_rs::nodes::{NodeRef, Type};
 use three_rs::textures::Texture;
 use three_rs::{
     sphere_geometry, Background, Color, ColorSpace, DirectionalLight, Mesh, MeshBasicNodeMaterial,
-    MeshStandardNodeMaterial, Node, PerspectiveCamera, Renderer, RendererParameters, Scene,
+    MeshStandardNodeMaterial, ObjectRef, PerspectiveCamera, Renderer, RendererParameters, Scene,
     TextureLoader, Timer, Vector3,
 };
 
@@ -43,7 +43,7 @@ pub struct App {
     pub camera: PerspectiveCamera,
     pub controls: OrbitControls,
     pub timer: Timer,
-    pub globe: Node,
+    pub globe: ObjectRef,
 }
 
 /// `uniform( color( hex ) )` — the sRGB hex in the working space.

@@ -20,7 +20,7 @@ use std::f64::consts::PI;
 use std::rc::Rc;
 
 use three_rs::addons::controls::OrbitControls;
-use three_rs::core::Node;
+use three_rs::core::ObjectRef;
 use three_rs::loaders::GltfLoader;
 use three_rs::materials::Side;
 use three_rs::nodes::display::{
@@ -52,7 +52,7 @@ pub struct App {
     /// Shared with `scene_pass` and the godrays and blend nodes.
     pub camera: Rc<RefCell<PerspectiveCamera>>,
     pub controls: OrbitControls,
-    pub point_light: Node,
+    pub point_light: ObjectRef,
     pub scene_pass: PassNode,
     pub godrays_pass: GodraysNode,
     pub blur_pass: BilateralBlurNode,

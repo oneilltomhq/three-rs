@@ -25,7 +25,7 @@ use std::f64::consts::PI;
 use std::rc::Rc;
 
 use three_rs::addons::controls::OrbitControls;
-use three_rs::core::{Node, Object3D};
+use three_rs::core::{Object3D, ObjectRef};
 use three_rs::geometries::{
     cylinder_geometry_full, icosahedron_geometry, plane_geometry, sphere_geometry_full,
 };
@@ -49,8 +49,8 @@ pub struct App {
     pub scene: Scene,
     pub camera: PerspectiveCamera,
     pub camera_controls: OrbitControls,
-    pub sphere_group: Node,
-    pub small_sphere: Node,
+    pub sphere_group: ObjectRef,
+    pub small_sphere: ObjectRef,
 }
 
 fn examples_dir() -> std::path::PathBuf {
@@ -63,7 +63,7 @@ fn phong(hex: u32) -> MeshPhongNodeMaterial {
 }
 
 /// `new THREE.PointLight( color, intensity, distance, 0 )`.
-fn point_light(hex: u32, intensity: f64, distance: f64) -> Node {
+fn point_light(hex: u32, intensity: f64, distance: f64) -> ObjectRef {
     let light = PointLight::new(Color::from_hex(hex), intensity, distance);
     light.borrow_mut().light_mut().unwrap().decay = 0.0;
     light

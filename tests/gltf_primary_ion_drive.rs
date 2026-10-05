@@ -20,7 +20,7 @@ use std::path::PathBuf;
 use serde_json::Value;
 
 use three_rs::animation::{AnimationClip, AnimationMixer};
-use three_rs::core::{Index, Node};
+use three_rs::core::{Index, ObjectRef};
 use three_rs::loaders::{Gltf, GltfLoader};
 use three_rs::materials::{MaterialKind, MeshBasicNodeMaterial, Side};
 
@@ -40,7 +40,7 @@ fn load() -> Gltf {
 
 /// The scene in `traverse()` order, which is the order the oracle's `nodes` is
 /// in.
-fn traversal(gltf: &Gltf) -> Vec<Node> {
+fn traversal(gltf: &Gltf) -> Vec<ObjectRef> {
     let mut out = Vec::new();
     gltf.scene.traverse(&mut |node| out.push(node.clone()));
     out
