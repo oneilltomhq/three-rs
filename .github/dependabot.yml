@@ -13,7 +13,19 @@ updates:
       # PR of their own rather than one per crate.
       wgpu:
         patterns: ["wgpu", "wgpu-*", "naga"]
+    ignore:
+      # ruzstd stays on the 0.7 line basisu depends on, so the tree carries
+      # one copy (see the comment in Cargo.toml). It bumps by hand when basisu
+      # does (#243).
+      - dependency-name: ruzstd
+        versions: [">=0.8"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # The msrv job pins this action to the MSRV toolchain tag on purpose,
+      # and the action's tags are Rust versions, not releases of the action
+      # (1.120.0 is not a Rust release). The pin moves by hand together with
+      # rust-version in Cargo.toml (#239).
+      - dependency-name: dtolnay/rust-toolchain
