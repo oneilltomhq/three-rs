@@ -46,6 +46,12 @@ have their own sections after the release they ship with. The format follows [Ke
   `DepthTexture`, `CubeDepthTexture`, `RenderTarget`, `CubeRenderTarget`,
   `MeshBasicNodeMaterial` (`dispose(self)`) and `BufferGeometry`
   (`dispose(self: Rc<Self>)`), so three.js code ports line for line.
+- **The renderer's cache window is a documented contract** (#249,
+  `docs/api.md` decision 13): the renderer forgets what it has not drawn
+  for four frames. A thumbnail, an on-demand preview or a timer-driven view
+  drawn less often than every fourth frame rebuilds its programs, buffers
+  and bind groups on each draw. The behaviour is unchanged; a configurable
+  window and eviction by liveness stay open if a consumer needs them.
 
 - **`KHR_materials_iridescence` and `webgpu_loader_gltf_iridescence`**
   (graded, 0 pixels; #229): the thin-film half of `PhysicalLightingModel`
@@ -815,6 +821,15 @@ have their own sections after the release they ship with. The format follows [Ke
   map in a `BasicEnvironmentNode` in three; the port's unlit flow sampled it
   for every kind that reached it, while `unsupported_fields()` warned that
   those kinds ignore it. The warning stays; the sample is gone.
+- A glTF that lists `KHR_materials_iridescence` under `extensionsRequired`
+  loads (#330). The loader has read the extension since
+  `webgpu_loader_gltf_iridescence`, but it was missing from the list of
+  extensions the required-extension check accepts, so such a file was
+  refused. `IridescenceLamp.glb` only lists it under `extensionsUsed`.
+- `cargo run --example web_manifests` records `webgpu_lightprobe_cubecamera`
+  again (#271). Its `init()` became `async` and the generator dropped the
+  future without running it, so a regeneration wrote an empty manifest for
+  the page. It now blocks on the future, as the page's own `main()` does.
 
 ## [0.2.0] - 2026-09-29
 

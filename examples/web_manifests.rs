@@ -586,8 +586,12 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_tsl_halftone", || drop(webgpu_tsl_halftone::init())),
     ("webgpu_tsl_earth", || drop(webgpu_tsl_earth::init())),
     ("webgpu_lightprobe", || drop(webgpu_lightprobe::init())),
+    // The one async `init()` (`LightProbeGenerator.fromCubeRenderTarget` reads
+    // back from the GPU), driven to completion as the page's own `main()`, the
+    // viewer and the e2e rung do. Dropping the bare future ran nothing and
+    // recorded an empty manifest (#271).
     ("webgpu_lightprobe_cubecamera", || {
-        drop(webgpu_lightprobe_cubecamera::init())
+        drop(pollster::block_on(webgpu_lightprobe_cubecamera::init()))
     }),
     ("webgpu_sky", || drop(webgpu_sky::init())),
     ("webgpu_backdrop", || drop(webgpu_backdrop::init())),
