@@ -1,6 +1,6 @@
 [package]
 name = "three-rs-controls"
-version = "0.2.0"
+version = "0.3.0"
 description = "A map camera over a ground with curvature, for three-rs: MapControls in the spirit of three.js' addon, damped the way camera-controls damps."
 documentation = "https://docs.rs/three-rs-controls"
 readme = "README.md"
