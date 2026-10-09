@@ -5,9 +5,11 @@
 //! three.js' `src/`. [`Ground`] and [`MapControls`] are this crate's own
 //! design; [`smooth_damp`] is camera-controls', not three.js'.
 //!
-//! [`Ground`] is a sphere with a distinguished point at the world origin and
-//! arc-length coordinates around it; at its largest radius it is a plane to the
-//! eye. [`MapControls`] drives a camera over it the way three.js'
+//! [`Ground`] is a surface of signed curvature `k` with a distinguished point at
+//! the world origin and arc-length coordinates around it: the plane at `0`, a
+//! planet under the camera for `k > 0`, and for `k < 0` the same sphere closing
+//! around the camera, which looks at the grid on its inner surface.
+//! [`MapControls`] drives a camera over it the way three.js'
 //! `MapControls` drives one over a map — the ground is what you grab — with
 //! `camera-controls`' `smoothDamp` on every field.
 //!
@@ -16,7 +18,7 @@
 //! use three_rs_controls::{Ground, MapControls, Pose};
 //!
 //! let mut controls = MapControls::new(
-//!     Ground::new(1e7),
+//!     Ground::flat(),
 //!     Pose {
 //!         u: 0.0,
 //!         v: 0.0,
@@ -36,7 +38,7 @@ mod ground;
 mod map_controls;
 mod smooth_damp;
 
-pub use ground::{Frame, Ground, MAX_RADIUS, MIN_RADIUS};
+pub use ground::{Frame, Ground, MAX_CURVATURE, MIN_RADIUS};
 pub use map_controls::{
     Damping, MapControls, Mode, Pane, Pose, DRAGGING_SMOOTH_TIME, MAX_DISTANCE, MAX_POLAR,
     MIN_DISTANCE, MIN_POLAR, PANE_LIFT, REST_THRESHOLD, SMOOTH_TIME, WHEEL_SMOOTH_TIME,

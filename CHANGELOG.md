@@ -16,6 +16,39 @@ have their own sections after the release they ship with. The format follows [Ke
   `cargo test --workspace --no-fail-fast` passes without the release-mode
   second run of the e2e target that `docs/RELEASING.md` carried since #339.
 
+## three-rs-controls 0.3.0 - 2026-10-09
+
+Breaking: the ground's knob is a signed curvature `k` instead of a radius,
+and the sphere can now close round the camera. Ships on its own, against
+`three-rs` 0.3.
+
+- **`Ground` takes a curvature.** `Ground::new(k)` with `k = 0` the plane
+  exactly, `k > 0` a planet of radius `1 / k` (what 0.2 had), and `k < 0` a
+  bowl: the camera inside the sphere, looking at the grid on its inner
+  surface. `Ground::flat()` is the plane; `curvature()` and `set_curvature(k)`
+  read and set it, clamped to `±MAX_CURVATURE` (`1 / MIN_RADIUS`). No formula
+  divides by `k`, so the ground passes through the plane without a seam.
+  `radius`, `set_radius`, `scale_radius`, `centre` and `MAX_RADIUS` are gone:
+  where 0.2 code wrote `Ground::new(r)`, write `Ground::new(1.0 / r)`, and
+  where it wrote `Ground::new(1e7)` for a plane, write `Ground::flat()`.
+- **`Ground::intersect(origin, direction)`** returns the ground coordinates a
+  ray hits: the near side of a planet, the far wall of a bowl, a plane test
+  at `0`. `Ground::normal` is on the camera's side, so it points into a bowl.
+- **`Pose::clamped(ground)`** takes the ground. In a bowl the distance is
+  capped at the radius `1 / |k|`, where the camera is the sphere's centre
+  whatever way it looks (the panopticon), and the polar angle may tip past
+  the horizon, as far as `π - MIN_POLAR` far enough up from the floor.
+  `MAX_POLAR` is the ceiling on the plane and on a planet only.
+- **`MapControls::set_curvature(k)` and `target_curvature()`** replace
+  `set_radius`, `scale_radius` and `target_radius`. The curvature is damped
+  linearly, so a planet can morph into a bowl through the plane; setting
+  `k = -1 / distance` carries the camera to the centre.
+- Grabbing and zooming to the cursor solve by Newton's method, and stay
+  pinned to `1e-6` at the panopticon, where 0.2's fixed-point step slipped.
+- The `heli` demo: `[` and `]` step the curvature through `0`, `P` flattens,
+  `O` is the panopticon, and `--radius R` is `--curvature K` (signed, and
+  `-1/300` works).
+
 ## [0.3.0] - 2026-10-05
 
 Ships with `sdf-text` 0.3.0 and `three-rs-controls` 0.2.0; their sections
