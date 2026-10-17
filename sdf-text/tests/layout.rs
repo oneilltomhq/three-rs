@@ -144,7 +144,7 @@ fn unknown_anchor_keywords_fall_through_to_zero() {
     let mut left_params = base.clone();
     left_params.anchor_x = Anchor::named("left");
     let left = layout_text_vector(left_params, Some(&font));
-    // 'start' and 'end' are what d33 passes, and neither is a branch of
+    // 'start' and 'end' are what d3-three passes, and neither is a branch of
     // resolveAnchor — so both are left-anchored.
     for keyword in ["start", "end", "middle", "", "LEFT"] {
         let mut p = base.clone();

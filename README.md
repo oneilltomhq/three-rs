@@ -154,7 +154,7 @@ interpolant.
 
 **Workspace crate.** `sdf-text`: signed-distance-field text rendering with
 a `BatchedText` object (ttf-parser outlines, analytic rasteriser), and the
-SDF text examples with their gates. Its `d33_treemap_labels` example lays
+SDF text examples with their gates. Its `d3_treemap_labels` example lays
 its treemap out with [d3-hierarchy](https://github.com/oneilltomhq/d3-hierarchy),
 a port of d3-hierarchy 3.1.2 that began in this repository.
 
@@ -528,14 +528,17 @@ real Vulkan adapter, which is how the reference numbers were calibrated
 (`rung0/RUNG0.md`). `docs/grader.md` says what the grader reproduces and
 what a pass means.
 
-One more checkout is optional:
+Two more checkouts are optional:
 
 | env var | default | needed by |
 |---|---|---|
-| `D3_GALLERY_DIR` | `~/src/vendor/d3-gallery` | `sdf-text`'s `d33_treemap_labels` example (its `flare.json`) |
+| `D3_GALLERY_DIR` | `~/src/vendor/d3-gallery` | `sdf-text`'s `d3_treemap_labels` example (its `flare.json`) |
+| `D3_THREE_DIR` | `~/src/projects/d3-three/main` | the image comparison in `sdf-text`'s `tests/d3_treemap_labels.rs` (its `examples/screenshots/d3_treemap.jpg`) |
 
 Tests that need a checkout that is missing fail on the open with the path
-they looked for.
+they looked for. The one exception is `D3_THREE_DIR`: d3-three is not public
+yet, so without it that test prints the path it looked for and skips only the
+image comparison.
 
 ## Layout
 

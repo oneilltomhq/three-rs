@@ -177,7 +177,7 @@ fn main() {
     );
 
     // The `lines` branch: `new LineBasicNodeMaterial( { color: 0xffffff } )`,
-    // the d33 treemap's tile outlines. Three's own dump of it from that page is
+    // the d3-three treemap's tile outlines. Three's own dump of it from that page is
     // in `docs/lines/LineBasicNodeMaterial_27.{vert,frag}.wgsl`; it is the
     // `basic` program above statement for statement, which is why there is no
     // `MaterialKind::Line`. What makes it a line is the topology the *object*

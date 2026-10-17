@@ -2,3 +2,6 @@
 
 # The browser shell's build output (web/build.sh); regenerated, never committed.
 /web/dist
+
+# npm installs for the JS dump scripts (e.g. sdf-text/tests/golden); package-lock.json is committed.
+node_modules/

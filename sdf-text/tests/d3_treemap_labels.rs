@@ -1,10 +1,10 @@
-//! Step 6's gate: `examples/d33_treemap_labels.rs` against
-//! `tests/golden/d3_treemap_labels.json`, which was dumped from d33's
+//! Step 6's gate: `examples/d3_treemap_labels.rs` against
+//! `tests/golden/d3_treemap_labels.json`, which was dumped from d3-three's
 //! `examples/d3_treemap.html` running its own JavaScript (see
 //! `tests/golden/README.md`).
 //!
 //! The plan's gate for this step is the `< 0.1 %` image comparison against
-//! `d33/rung0/examples/screenshots/d3_treemap.jpg`. One deviation still stands
+//! d3-three's `examples/screenshots/d3_treemap.jpg`. One deviation still stands
 //! between this branch and it — the page's tiles are PBR under a
 //! `HemisphereLight` and a `DirectionalLight`, and this example draws them with
 //! `MeshBasicNodeMaterial` (the example's module doc lists the remaining
@@ -26,9 +26,9 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-#[path = "../examples/d33_treemap_labels.rs"]
+#[path = "../examples/d3_treemap_labels.rs"]
 #[allow(dead_code)] // the example's own `main()` is unused here
-mod d33_treemap_labels;
+mod d3_treemap_labels;
 
 /// `frameCamera` iterates 24 times over `project()`, so the two
 /// implementations' last bits can drift; everything else is a handful of
@@ -61,9 +61,9 @@ fn close(what: &str, actual: f64, expected: f64) {
 }
 
 #[test]
-fn the_layout_matches_the_d33_page() {
+fn the_layout_matches_the_d3_three_page() {
     let golden = golden();
-    let app = d33_treemap_labels::init();
+    let app = d3_treemap_labels::init();
     let layout = &app.layout;
 
     // ---- the constants the example re-declares ----
@@ -71,8 +71,8 @@ fn the_layout_matches_the_d33_page() {
     assert_eq!(f(&golden, "THICK"), 0.3);
     assert_eq!(f(&golden, "LIFT"), 0.012);
     assert_eq!(f(&golden, "LINE"), 0.9);
-    assert_eq!(f(&golden, "INNER_WIDTH"), d33_treemap_labels::INNER_WIDTH);
-    assert_eq!(f(&golden, "INNER_HEIGHT"), d33_treemap_labels::INNER_HEIGHT);
+    assert_eq!(f(&golden, "INNER_WIDTH"), d3_treemap_labels::INNER_WIDTH);
+    assert_eq!(f(&golden, "INNER_HEIGHT"), d3_treemap_labels::INNER_HEIGHT);
 
     // ---- the d3 layout ----
     let leaves = golden["leaves"].as_array().unwrap();
@@ -220,7 +220,7 @@ fn the_layout_matches_the_d33_page() {
 /// broken unless a lower-case letter follows).
 #[test]
 fn the_name_split_and_the_value_format_are_the_js() {
-    use d33_treemap_labels::{format_d, split_name};
+    use d3_treemap_labels::{format_d, split_name};
 
     assert_eq!(
         split_name("NodeLinkTreeLayout"),
@@ -242,17 +242,20 @@ fn the_name_split_and_the_value_format_are_the_js() {
 }
 
 fn out_dir() -> PathBuf {
-    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("d33_treemap_labels");
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("d3_treemap_labels");
     std::fs::create_dir_all(&dir).unwrap();
     dir
 }
 
-/// The d33 harness' reference frame for this page, 400 × 250.
-fn d33_screenshot() -> PathBuf {
-    match std::env::var("D33_DIR") {
+/// The d3-three harness' reference frame for this page, 400 × 250, read from a
+/// d3-three checkout: `D3_THREE_DIR`, or `~/src/projects/d3-three/main`.
+/// d3-three is not public yet, so the image comparison skips without it; the
+/// JPEG is deliberately not copied into this repo.
+fn d3_three_screenshot() -> PathBuf {
+    match std::env::var("D3_THREE_DIR") {
         Ok(dir) => PathBuf::from(dir),
         Err(_) => {
-            PathBuf::from(std::env::var("HOME").expect("HOME")).join("src/projects/d33/rung0")
+            PathBuf::from(std::env::var("HOME").expect("HOME")).join("src/projects/d3-three/main")
         }
     }
     .join("examples/screenshots/d3_treemap.jpg")
@@ -269,20 +272,20 @@ fn d33_screenshot() -> PathBuf {
 /// still.
 const IMAGE_CEILING: u64 = 250;
 
-/// d33's `--twice` in the shape this side can run it: two full rounds through
+/// d3-three's `--twice` in the shape this side can run it: two full rounds through
 /// `sync()` + render must produce the same frame, bit for bit. Then the image
 /// comparison the plan asks for, measured, printed and asserted under
 /// [`IMAGE_CEILING`] — see this file's header and `tests/golden/README.md`.
 #[test]
 fn the_frame_is_stable_and_the_image_gap_is_measured() {
-    let mut app = d33_treemap_labels::init();
+    let mut app = d3_treemap_labels::init();
     println!("adapter: {:?}", app.renderer.adapter_info());
 
-    d33_treemap_labels::animate(&mut app);
+    d3_treemap_labels::animate(&mut app);
     let (width, height, first) = app.renderer.read_canvas_pixels().unwrap();
     assert_eq!((width, height), (800, 500));
 
-    d33_treemap_labels::animate(&mut app);
+    d3_treemap_labels::animate(&mut app);
     let (_, _, second) = app.renderer.read_canvas_pixels().unwrap();
 
     let differing = first
@@ -309,16 +312,17 @@ fn the_frame_is_stable_and_the_image_gap_is_measured() {
     let actual = out.join("actual.png");
     three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &second);
 
-    let expected = d33_screenshot();
+    let expected = d3_three_screenshot();
     if !expected.exists() {
         println!(
-            "no d33 reference at {}; skipping the image measurement",
+            "no d3-three reference at {}; skipping the image measurement \
+             (set D3_THREE_DIR to a d3-three checkout to run it)",
             expected.display()
         );
         return;
     }
 
-    // three-rs's e2e comparator, over d33's reference instead of Three's.
+    // three-rs's e2e comparator, over d3-three's reference instead of Three's.
     let result = three_rs::testing::compare(&actual, &expected, &out);
     println!("compare vs {}: {result:?}", expected.display());
     println!("images: {}", out.display());
@@ -327,7 +331,7 @@ fn the_frame_is_stable_and_the_image_gap_is_measured() {
 
     assert!(
         different <= IMAGE_CEILING,
-        "{different} of 100000 pixels differ from d33's own render, over the \
+        "{different} of 100000 pixels differ from d3-three's own render, over the \
          {IMAGE_CEILING} ceiling. Look at {}: the only difference this branch \
          still expects is the unlit near silhouette of the slab (the tiles are \
          MeshBasicNodeMaterial, the page's are MeshStandardNodeMaterial under a \

@@ -1,9 +1,23 @@
-// Golden dump for step 6: the d33 treemap page's label arithmetic, taken from
-// the JS itself. Read-only in lib3 and d33.
-import * as THREE from '/home/tom/src/projects/lib3/node_modules/three/build/three.module.js';
-import * as d3 from '/home/tom/src/projects/d33/rung0/examples/jsm/vendor/d3.js';
-import { VectorFont } from '/home/tom/src/projects/lib3/src/sdf-text/VectorFont.js';
+// Golden dump for step 6: the d3-three treemap page's label arithmetic
+// (examples/d3_treemap.html), taken from the JS itself. frameCamera and
+// basisQuaternion below are copied verbatim from that page's src/frame.js and
+// src/labels.js, so only public packages are needed:
+//
+//     npm ci && node dump_d3_treemap_labels.mjs d3_treemap_labels.json
+//
+// three, d3 and @oneilltom/lib3 (VectorFont) are pinned in package.json; d3
+// is the release d3-three bundles. The font is this crate's own
+// tests/assets/Roboto-Regular.ttf, byte-identical to d3-three's
+// examples/fonts/Roboto-Regular.ttf. flare.json comes from D3_GALLERY_DIR, or
+// ~/src/vendor/d3-gallery. See README.md.
+import * as THREE from 'three';
+import * as d3 from 'd3';
+import { VectorFont } from '@oneilltom/lib3/sdf-text';
 import { readFileSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
+const D3_GALLERY = process.env.D3_GALLERY_DIR || path.join( os.homedir(), 'src/vendor/d3-gallery' );
 
 const DEG = Math.PI / 180;
 
@@ -83,7 +97,7 @@ const LABEL_PAD_PX = 3;
 const INNER_WIDTH = 800, INNER_HEIGHT = 500; // the harness viewport, dpr 1
 
 const data = JSON.parse( readFileSync(
-	'/home/tom/src/vendor/d3-gallery/notebooks/hierarchies/treemap.v2/files/flare.json', 'utf8' ) );
+	path.join( D3_GALLERY, 'notebooks/hierarchies/treemap.v2/files/flare.json' ), 'utf8' ) );
 
 const format = d3.format( ',d' );
 
@@ -109,7 +123,7 @@ const pad = LABEL_PAD_PX * S;
 // node's fetch has no file:// scheme, so the bytes are handed over directly —
 // VectorFont.load's ArrayBufferView branch, same parse.
 const font = await VectorFont.load( new Uint8Array( readFileSync(
-	'/home/tom/src/projects/d33/rung0/examples/fonts/Roboto-Regular.ttf' ) ) );
+	new URL( '../assets/Roboto-Regular.ttf', import.meta.url ) ) ) );
 const measure = text => {
 	let units = 0;
 	for ( let i = 0; i < text.length; i ++ ) {
@@ -137,7 +151,7 @@ for ( const leaf of leaves ) {
 }
 
 const out = {
-	note: 'dumped from the d33 treemap page\'s own JS; see tests/golden/README.md',
+	note: 'dumped from the d3-three treemap page\'s own JS; see tests/golden/README.md',
 	WIDTH, HEIGHT, SIDE, S, THICK, LIFT, LABEL_PX, LINE, LABEL_PAD_PX,
 	INNER_WIDTH, INNER_HEIGHT,
 	unitsPerEm: font.unitsPerEm,

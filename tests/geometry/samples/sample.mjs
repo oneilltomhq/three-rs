@@ -1,8 +1,16 @@
 // Emit a Rust `GeometrySample` literal for a three.js geometry.
 // usage: node sample.mjs '<name>' '<js expression returning a geometry>'
-const THREE = await import( '/home/tom/src/vendor/three.js/src/Three.js' );
-const { TeapotGeometry } = await import( '/home/tom/src/vendor/three.js/examples/jsm/geometries/TeapotGeometry.js' );
-const { RoundedBoxGeometry } = await import( '/home/tom/src/vendor/three.js/examples/jsm/geometries/RoundedBoxGeometry.js' );
+// three.js comes from THREE_JS_DIR, or ~/src/vendor/three.js.
+import os from 'node:os';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+const THREE_DIR = process.env.THREE_JS_DIR || path.join( os.homedir(), 'src/vendor/three.js' );
+const from = ( rel ) => import( pathToFileURL( path.join( THREE_DIR, rel ) ).href );
+
+const THREE = await from( 'src/Three.js' );
+const { TeapotGeometry } = await from( 'examples/jsm/geometries/TeapotGeometry.js' );
+const { RoundedBoxGeometry } = await from( 'examples/jsm/geometries/RoundedBoxGeometry.js' );
 Object.assign( globalThis, THREE, { TeapotGeometry, RoundedBoxGeometry } );
 
 const name = process.argv[ 2 ];
