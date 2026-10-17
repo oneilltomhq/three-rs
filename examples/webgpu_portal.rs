@@ -16,7 +16,7 @@
 //! * **The pass is tapped at `screenUV`, not `uv()`.** The page spells it
 //!   `pass( scenePortal, camera ).context( { getUV: () => screenUV } )`; the
 //!   port reads a tap's uv when the tap is made, not at build (#352), so the
-//!   spelling here is [`PassNode::node_with_uv`].
+//!   spelling here is [`PassNode::sample`].
 //! * **The portal scene is rendered with the camera the main scene is being
 //!   drawn with.** The nested render runs from inside the main one, so the
 //!   main render holds the camera shared ([`Renderer::render_shared`]), or
@@ -201,7 +201,7 @@ pub fn init() -> App {
 
     let mut material = MeshBasicNodeMaterial::new();
     // `pass( scenePortal, camera ).context( { getUV: () => screenUV } )`.
-    material.color_node = Some(portal_pass.node_with_uv(screen_uv()));
+    material.color_node = Some(portal_pass.sample(screen_uv()));
     // `uv().distance( .5 ).remapClamp( .3, .5 ).oneMinus()`: the scalar is
     // splatted to a `vec2`, and `remapClamp`'s output range defaults to
     // `[ 0, 1 ]`.

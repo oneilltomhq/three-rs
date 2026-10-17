@@ -561,7 +561,9 @@ impl PassNode {
     }
 
     /// `pass( … ).context( { getUV: () => coord } )` — the pass used as a
-    /// value, tapped at `coord` instead of the default `uv()`.
+    /// value, tapped at `coord` instead of the default `uv()`. The same
+    /// spelling as `RttNode::sample`, `SsaoNode::sample` and
+    /// `SssNode::sample`: the output texture read at the caller's uv.
     ///
     /// Three reaches this through the builder context: `TextureNode.setup()`
     /// asks `builder.context.getUV` for a tap that has no uv of its own, so a
@@ -582,10 +584,10 @@ impl PassNode {
     /// `webgpu_portal` is the caller: a plane's `colorNode` is a pass of a
     /// second scene read at `screenUV`, so the portal shows that scene as if
     /// seen through the plane.
-    pub fn node_with_uv(&self, coord: NodeRef) -> NodeRef {
+    pub fn sample(&self, coord: NodeRef) -> NodeRef {
         assert!(
             !self.depth_scope.get(),
-            "three-rs: node_with_uv() is for a colour pass; a depth_pass() has no uv"
+            "three-rs: sample() is for a colour pass; a depth_pass() has no uv"
         );
         texture_uv(&self.render_target.texture(), coord)
     }

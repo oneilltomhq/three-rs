@@ -25,7 +25,7 @@ counts match: 9 draws, 9 pipelines.
 
 | area | what |
 |---|---|
-| `src/renderer/pass.rs` | `PassNode::node_with_uv( coord )` — `pass( … ).context( { getUV: () => coord } )`, the pass tapped at the caller's uv |
+| `src/renderer/pass.rs` | `PassNode::sample( coord )` — `pass( … ).context( { getUV: () => coord } )`, the pass tapped at the caller's uv |
 | `src/renderer/mod.rs` | `Renderer::render_shared` is public: a page whose main render shares its camera with a pass renders this way |
 | `tests/nodes_display_wgsl.rs` | the plane's material, front and back halves, gated against three's `m12` / `m13` |
 
@@ -82,7 +82,7 @@ pink at the top. Both background nodes are now wrapped in an argument-less
 
 ## Divergences
 
-- `pass( … ).context( { getUV } )` is `PassNode::node_with_uv( coord )`, a
+- `pass( … ).context( { getUV } )` is `PassNode::sample( coord )`, a
   method on the pass rather than a context on any node (#352).
 - `gltf.scene.clone()` is `Object3D.clone( true )`, which the port's clone is
   not (#300): the model is loaded twice, and the second load is the page's

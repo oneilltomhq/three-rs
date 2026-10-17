@@ -555,7 +555,7 @@ Ported, `#[ignore]`d. Each row gives three's own score against its reference JPE
 | `ColorSpaceNode` | Partial | srgb_to_working (src/nodes/tsl.rs:4654), render_output | tests/nodes_custom.rs | sRGB/linear only; no convertColorSpace or Display-P3 |
 | `FrontFacingNode` | Present | front_facing / Builtin::FrontFacing (src/nodes/tsl.rs:2064) | webgpu_loader_gltf_compressed |  |
 | `NormalMapNode` | Partial | normal_map (src/nodes/tsl.rs:1456) | webgpu_lights_phong, webgpu_clearcoat | tangent space only; no object-space normal map |
-| `PassNode` | Present | pass / PassNode (src/renderer/pass.rs:117,54) | webgpu_postprocessing_bloom; webgpu_portal (a pass of a second scene with its own `backgroundNode`, read at `screenUV` inside the main render) | `.context( { getUV } )` is the narrow `node_with_uv()` (#352) |
+| `PassNode` | Present | pass / PassNode (src/renderer/pass.rs:117,54) | webgpu_postprocessing_bloom; webgpu_portal (a pass of a second scene with its own `backgroundNode`, read at `screenUV` inside the main render) | `.context( { getUV } )` is the narrow `sample()` (#352) |
 | `RenderOutputNode` | Present | render_output (src/materials/node_material.rs:1040) | tests/nodes_custom.rs |  |
 | `ScreenNode` | Present | screen_uv, viewport_size, viewport_coordinate, viewport_uv (src/nodes/tsl.rs) | webgpu_mrt, webgpu_tsl_halftone; tests/nodes_tsl_batch.rs (viewport_coords_match) |  |
 | `ToneMappingNode` | Partial | tone_mapping_node (src/materials/node_material.rs:1078) | tests/nodes_custom.rs, tests/nodes_tsl_batch.rs (cineon_tone_mapping_node_matches), webgpu_custom_fog_background | no Custom tone mapping |

@@ -11,7 +11,7 @@ have their own sections after the release they ship with. The format follows [Ke
 - **`webgpu_portal`** (graded, 77 of 100000; #351): a plane whose colour is
   `pass( scenePortal, camera ).context( { getUV: () => screenUV } )` — a
   second scene, with its own `backgroundNode`, rendered inside the main
-  render and read at the screen position. `PassNode::node_with_uv( coord )`
+  render and read at the screen position. `PassNode::sample( coord )`
   is the port's spelling of that context, a second tap on the pass's output
   at the caller's uv (`texture()` fixes its uv when the tap is made; #352 is
   the general fix). `Renderer::render_shared` is public, for a page whose

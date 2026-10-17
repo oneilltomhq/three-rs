@@ -1805,7 +1805,7 @@ fn check_portal_plane(side: three_rs::materials::Side, fixture_name: &str) {
         ))),
     );
     let mut material = three_rs::MeshBasicNodeMaterial::new();
-    material.color_node = Some(portal.node_with_uv(screen_uv()));
+    material.color_node = Some(portal.sample(screen_uv()));
     material.opacity_node = Some(
         distance(uv(), float(0.5))
             .remap_clamp(0.3, 0.5, 0.0, 1.0)
