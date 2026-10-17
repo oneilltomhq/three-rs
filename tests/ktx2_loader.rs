@@ -11,9 +11,10 @@
 //!
 //! The inputs are every `.ktx2` in the three.js examples (the eighteen
 //! `textures/ktx2/` samples, `spiritedaway.ktx2`, the eight PMREM cubes), a
-//! Zstandard-supercompressed repack of two of them (the checkout has no
-//! supercompressed non-Basis file), and the Basis images inside the three
-//! glTF assets that use `KHR_texture_basisu`. The profiles are the four a
+//! Zstandard-supercompressed repack of three of them (the checkout has no
+//! supercompressed non-Basis file, and its only supercompressed Basis files
+//! are UASTC HDR), and the Basis images inside the three glTF assets that use
+//! `KHR_texture_basisu`. The profiles are the four a
 //! WebGPU device can present: no compression, BC, ASTC, ETC2.
 //!
 //! Skipped, with a note, when there is no three.js checkout or no node.
@@ -339,8 +340,12 @@ fn zstd_supercompressed_levels_match_three() {
     let mut files = Vec::new();
     // One uncompressed format and one block-compressed one: `DataTexture` and
     // `CompressedTexture` come out of different branches of
-    // `createRawTexture`, after the same inflate.
-    for name in ["2d_rgba16_linear.ktx2", "2d_bc7.ktx2"] {
+    // `createRawTexture`, after the same inflate. And one Basis UASTC LDR
+    // file, which three's transcoder inflates itself and the port inflates
+    // before `basisu` sees it (the UASTC HDR 4x4 sample and the PMREM cubes
+    // in `every_ktx2_in_the_three_js_examples_matches_three` already ship
+    // supercompressed; this is the LDR codec on the same path).
+    for name in ["2d_rgba16_linear.ktx2", "2d_bc7.ktx2", "2d_uastc.ktx2"] {
         let out = dir.join(name.replace(".ktx2", ".zstd.ktx2"));
         if zstd_repack(&examples.join(name), &out).is_none() {
             eprintln!("skipping: cannot run zstd");

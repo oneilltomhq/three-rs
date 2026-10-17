@@ -67,12 +67,15 @@ draco-core = { version = "2.2.0", default-features = false, features = [
 ] }
 # `KTX2Loader` (issue #172): `ktx2` reads the container, `basisu` is a pure
 # Rust port of the Basis Universal transcoder three.js runs as wasm, and
-# `ruzstd` inflates Zstandard-supercompressed levels of non-Basis files.
-# `ruzstd` is pinned to the 0.7 line `basisu` itself depends on, so the tree
-# carries one Zstandard decoder rather than two.
+# `ruzstd` inflates Zstandard-supercompressed levels, of non-Basis and Basis
+# files alike. `basisu`'s default `zstd` feature would pull in its own
+# `ruzstd` (0.7, which RUSTSEC-2026-0344 covers); it is off, and the loader
+# inflates a Basis file's levels before handing it over, so the tree carries
+# one Zstandard decoder. (The feature also feeds zstd side channels inside
+# XUASTC payloads, a codec this loader rejects, as three's transcoder does.)
 ktx2 = "0.5"
-basisu = "0.1"
-ruzstd = { version = "0.7", default-features = false }
+basisu = { version = "0.1", default-features = false, features = ["std"] }
+ruzstd = { version = "0.9.1", default-features = false }
 # `EXT_meshopt_compression` (issue #173). three.js ships meshoptimizer's
 # decoder only as WebAssembly, and the `meshopt` crate is C behind FFI, which
 # the wasm32 build cannot link; this is a pure-Rust port of it. Only its

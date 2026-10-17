@@ -12,7 +12,9 @@
 //!   transcoder, here — synchronously, because the port's loaders are (see
 //!   `crate::io`);
 //! * Zstandard-supercompressed levels of non-Basis files are inflated by
-//!   `zstddec` upstream and by [`ruzstd`] here.
+//!   `zstddec` upstream and by [`ruzstd`] here. Those of Basis files are
+//!   inflated by the Basis transcoder upstream, and by [`ruzstd`] here too,
+//!   before `basisu` sees the file.
 //!
 //! Everything around those — which transcode target a device gets
 //! (`getTranscoderFormat`), which texture class and filters come out
@@ -43,6 +45,7 @@
 //! by the oracle) but have no renderer path yet, so `into_texture` refuses
 //! them rather than hand back something that samples wrong.
 
+use std::borrow::Cow;
 use std::path::Path;
 
 use basisu::{DecodeFlags, SourceFormat, TargetFormat, Transcoder};
@@ -328,7 +331,7 @@ impl Ktx2Loader {
             return create_raw_texture(&container);
         }
 
-        let transcoded = self.transcode(buffer)?;
+        let transcoded = self.transcode(&inflate_basis_levels(buffer, &container)?)?;
         Ok(create_texture_from(transcoded, &container))
     }
 
@@ -862,11 +865,70 @@ fn create_raw_texture(container: &ktx2::Reader<&[u8]>) -> Result<Ktx2Texture, Er
 
 /// `zstd.decode( levelData, uncompressedByteLength )`.
 fn zstd_decode(compressed: &[u8], uncompressed_length: usize) -> Result<Vec<u8>, Error> {
-    use ruzstd::io::Read;
+    let mut decoder = zstd_decoder(compressed)?;
+    zstd_read(&mut decoder, uncompressed_length)
+}
 
-    let mut decoder = ruzstd::StreamingDecoder::new(compressed)
-        .map_err(|error| ktx2_error(format!("zstd: {error}")))?;
-    let mut out = vec![0u8; uncompressed_length];
+/// A Basis file with its Zstandard-supercompressed levels inflated, rewritten
+/// as `supercompressionScheme = 0`; the file itself when it is not
+/// Zstandard-supercompressed.
+///
+/// Upstream, the Basis Universal transcoder (`ktx2_transcoder`) inflates a
+/// zstd level itself, and so does [`basisu`] with its `zstd` feature. Doing it
+/// here instead, with the decoder [`zstd_decode`] uses, lets `basisu` be built
+/// without that feature and its own `ruzstd`, so the tree carries one
+/// Zstandard decoder. What the transcoder then sees is the same level bytes:
+/// the rewritten file is the original (header, DFD, key/value and global data
+/// unchanged; the compressed levels left in place, unreferenced) with each
+/// inflated level appended and the level index patched to point at it.
+///
+/// The inflate is as strict as `basisu`'s: a level must inflate to exactly
+/// its `uncompressedByteLength`, with nothing left over.
+fn inflate_basis_levels<'a>(
+    buffer: &'a [u8],
+    container: &ktx2::Reader<&[u8]>,
+) -> Result<Cow<'a, [u8]>, Error> {
+    if container.header().supercompression_scheme != Some(SupercompressionScheme::Zstandard) {
+        return Ok(Cow::Borrowed(buffer));
+    }
+
+    let mut file = buffer.to_vec();
+    file[44..48].copy_from_slice(&0u32.to_le_bytes());
+    for (index, level) in container.levels().enumerate() {
+        let mut decoder = zstd_decoder(level.data)?;
+        let data = zstd_read(&mut decoder, level.uncompressed_byte_length as usize)?;
+        let mut extra = [0u8; 1];
+        if ruzstd::io::Read::read(&mut decoder, &mut extra)
+            .map_err(|error| ktx2_error(format!("zstd: {error:?}")))?
+            != 0
+        {
+            return Err(ktx2_error(
+                "zstd: level is longer than its uncompressedByteLength".to_string(),
+            ));
+        }
+
+        // KTX 2.0 aligns unsupercompressed levels to lcm(texel block size, 4):
+        // 16 for every Basis block format.
+        file.resize(file.len().next_multiple_of(16), 0);
+        let offset = file.len() as u64;
+        let entry = 80 + index * 24;
+        file[entry..entry + 8].copy_from_slice(&offset.to_le_bytes());
+        file[entry + 8..entry + 16].copy_from_slice(&(data.len() as u64).to_le_bytes());
+        file.extend_from_slice(&data);
+    }
+    Ok(Cow::Owned(file))
+}
+
+fn zstd_decoder(
+    compressed: &[u8],
+) -> Result<ruzstd::decoding::StreamingDecoder<&[u8], ruzstd::decoding::FrameDecoder>, Error> {
+    ruzstd::decoding::StreamingDecoder::new(compressed)
+        .map_err(|error| ktx2_error(format!("zstd: {error}")))
+}
+
+/// Exactly `length` bytes out of `decoder`; an error if it has fewer.
+fn zstd_read(decoder: &mut impl ruzstd::io::Read, length: usize) -> Result<Vec<u8>, Error> {
+    let mut out = vec![0u8; length];
     decoder
         .read_exact(&mut out)
         .map_err(|error| ktx2_error(format!("zstd: {error:?}")))?;
