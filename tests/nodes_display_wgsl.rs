@@ -1769,3 +1769,93 @@ fn gltf_iridescence_lamp_matches_three() {
         );
     }
 }
+
+/// webgpu_portal's two lights, in scene order: the `PointLight`, then the
+/// `HemisphereLight`. A `MeshBasicMaterial` only takes the hemisphere's
+/// irradiance; the point light leaves no trace in its module.
+fn portal_lights() -> Vec<LightDesc> {
+    [LightKind::Point, LightKind::Hemisphere]
+        .into_iter()
+        .enumerate()
+        .map(|(index, kind)| LightDesc {
+            index,
+            kind,
+            shadow_map: None,
+        })
+        .collect()
+}
+
+/// webgpu_portal's plane: a `MeshBasicMaterial` whose colour is
+/// `pass( scenePortal, camera ).context( { getUV: () => screenUV } )` and
+/// whose opacity is `uv().distance( .5 ).remapClamp( .3, .5 ).oneMinus()`,
+/// `DoubleSide` and transparent, built as one of its two halves.
+///
+/// Three lights the plane through `BasicLightingModel` (`MeshBasicNodeMaterial
+/// .lights` is true), which sums the hemisphere's irradiance into a var
+/// nothing reads and leaves `outgoingLight = DiffuseColor.rgb`; the port's
+/// Basic path takes that model only for an env map, an AO or a backdrop
+/// (`docs/nodes.md` §61.4). So the gates compare the statements the pass
+/// and the opacity node own, and the `Output` clamp, not the whole body.
+fn check_portal_plane(side: three_rs::materials::Side, fixture_name: &str) {
+    use three_rs::nodes::tsl::{distance, float, screen_uv, uv};
+    let portal = three_rs::pass(
+        std::rc::Rc::new(std::cell::RefCell::new(three_rs::Scene::new())),
+        std::rc::Rc::new(std::cell::RefCell::new(three_rs::PerspectiveCamera::new(
+            50.0, 1.6, 0.01, 30.0,
+        ))),
+    );
+    let mut material = three_rs::MeshBasicNodeMaterial::new();
+    material.color_node = Some(portal.node_with_uv(screen_uv()));
+    material.opacity_node = Some(
+        distance(uv(), float(0.5))
+            .remap_clamp(0.3, 0.5, 0.0, 1.0)
+            .one_minus(),
+    );
+    material.side = side;
+    material.transparent = true;
+    let ctx = SetupContext {
+        lights: portal_lights(),
+        ..SetupContext::default()
+    };
+    let program = NodeBuilder::new().build(&setup(&material, &ctx, None));
+    for which in [
+        Region::Statement("textureSample("),
+        Region::Statement("DiffuseColor ="),
+        Region::Statement("DiffuseColor.w ="),
+        Region::Statement("max( vec4<f32>("),
+    ] {
+        let ours = fingerprint(&program.fragment_wgsl, which);
+        let three = fingerprint(&fixture(fixture_name), which);
+        assert_eq!(ours, three, "\n{}", program.fragment_wgsl);
+    }
+    check_three_lines(
+        &program.fragment_wgsl,
+        fixture_name,
+        &[
+            "\tnodeVar0 = textureSample( nodeUniform0, nodeUniform0_sampler, ( fragCoord.xy / render.nodeUniform1 ) );",
+            "\tDiffuseColor = nodeVar0;",
+        ],
+    );
+}
+
+/// webgpu_portal `m13`: the plane's front half — the pass tapped at
+/// `screenUV` (one `textureSample` at `fragCoord.xy / viewport`, into one
+/// var), the radial opacity, and the hemisphere irradiance.
+#[test]
+fn portal_plane_front_matches_three() {
+    check_portal_plane(
+        three_rs::materials::Side::Front,
+        "webgpu_portal_m13_plane_front.wgsl",
+    );
+}
+
+/// webgpu_portal `m12`: the plane's back half. Three's only difference from
+/// `m13` is the flipped geometry normal, in the lighting block the port's
+/// Basic path does not emit; the gated statements are the same.
+#[test]
+fn portal_plane_back_matches_three() {
+    check_portal_plane(
+        three_rs::materials::Side::Back,
+        "webgpu_portal_m12_plane_back.wgsl",
+    );
+}

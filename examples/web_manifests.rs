@@ -337,6 +337,9 @@ mod webgpu_ocean;
 #[path = "webgpu_oit.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_oit;
+#[path = "webgpu_portal.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_portal;
 #[path = "webgpu_postprocessing_3dlut.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_postprocessing_3dlut;
@@ -631,6 +634,7 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_materials_transmission", || {
         drop(webgpu_materials_transmission::init())
     }),
+    ("webgpu_portal", || drop(webgpu_portal::init())),
 ];
 
 /// Where the committed manifests live, one `<example>.json` each.

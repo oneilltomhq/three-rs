@@ -245,6 +245,9 @@ mod webgpu_postprocessing_bloom_selective;
 #[allow(dead_code)]
 mod webgpu_postprocessing_bloom_emissive;
 
+#[path = "../../examples/webgpu_portal.rs"]
+#[allow(dead_code)]
+mod webgpu_portal;
 #[path = "../../examples/webgpu_postprocessing_motion_blur.rs"]
 #[allow(dead_code)]
 mod webgpu_postprocessing_motion_blur;
@@ -2263,6 +2266,52 @@ fn webgpu_postprocessing_bloom_emissive() {
         webgpu_postprocessing_bloom_emissive::animate,
         |app| app.renderer.device(),
     );
+}
+
+/// A plane whose colour is a pass of a second scene tapped at `screenUV`:
+/// the nested render runs from inside the main one, through the camera the
+/// main render holds shared (`docs/webgpu_portal-progress.md`).
+#[test]
+fn webgpu_portal() {
+    let name = "webgpu_portal";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_portal::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_portal::animate(&mut app);
+    println!("{name}: info {:?}", app.renderer.info());
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_portal::animate, |app| {
+        app.renderer.device()
+    });
 }
 
 #[test]
@@ -6699,6 +6748,7 @@ fn steady_frame_builds_nothing() {
     // The velocity history is per object and per camera, filled on the first
     // frame; the steady frames roll it over and build nothing.
     rung!(webgpu_postprocessing_motion_blur);
+    rung!(webgpu_portal);
     // The PMREM is built in `init()`; the steady frames are the scene pass,
     // the box-blurred mix and the FXAA quad.
     rung!(webgpu_postprocessing_dof_basic);
