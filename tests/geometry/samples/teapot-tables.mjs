@@ -1,5 +1,11 @@
+// Writes teapot-tables.rs to the current directory. three.js comes from
+// THREE_JS_DIR, or ~/src/vendor/three.js.
 import fs from 'fs';
-const src = fs.readFileSync( '/home/tom/src/vendor/three.js/examples/jsm/geometries/TeapotGeometry.js', 'utf8' );
+import os from 'node:os';
+import path from 'node:path';
+
+const THREE_DIR = process.env.THREE_JS_DIR || path.join( os.homedir(), 'src/vendor/three.js' );
+const src = fs.readFileSync( path.join( THREE_DIR, 'examples/jsm/geometries/TeapotGeometry.js' ), 'utf8' );
 
 function table( name ) {
 	const i = src.indexOf( 'const ' + name + ' = [' );
