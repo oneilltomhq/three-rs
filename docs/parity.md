@@ -44,11 +44,11 @@ TSL by family:
 | materialx | 49 | 48 | 0 | 1 | 0 |
 | utils | 77 | 47 | 16 | 4 | 10 |
 
-Graded examples: 99 (the rows of the README's graded table, `webgpu_textures_2d-array_compressed` among them; its `rung!` spells the name with an underscore). 15 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
+Graded examples: 100 (the rows of the README's graded table, `webgpu_textures_2d-array_compressed` among them; its `rung!` spells the name with an underscore). 15 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
 
 ### Pages
 
-three ships 231 `webgpu_*` pages at 5f610f5. The README headline counts graded pages out of the gradeable ones, and the two tables below are what takes a page out of that denominator or keeps it out of the graded count (#293). A page is **N.A.** when no frame of it can be diffed against three's reference on a headless, session-less, media-less grading machine; the pieces of an N.A. page that are portable are judged as rows above, and the page itself is not a port target. A page is **ignored** when it is ported and its e2e test exists but is `#[ignore]`d because three.js itself fails its own reference screenshot on the grading machine (Intel Iris Xe, Mesa 25.3, Vulkan), so a pass or fail of the port says nothing. Of the 17 pages #293 lists, 16 are N.A. and one (`webgpu_sandbox`) turns out to be an ordinary scene and stays gradeable; 15 pages are ignored; 99 of the 215 gradeable pages are graded.
+three ships 231 `webgpu_*` pages at 5f610f5. The README headline counts graded pages out of the gradeable ones, and the two tables below are what takes a page out of that denominator or keeps it out of the graded count (#293). A page is **N.A.** when no frame of it can be diffed against three's reference on a headless, session-less, media-less grading machine; the pieces of an N.A. page that are portable are judged as rows above, and the page itself is not a port target. A page is **ignored** when it is ported and its e2e test exists but is `#[ignore]`d because three.js itself fails its own reference screenshot on the grading machine (Intel Iris Xe, Mesa 25.3, Vulkan), so a pass or fail of the port says nothing. Of the 17 pages #293 lists, 16 are N.A. and one (`webgpu_sandbox`) turns out to be an ordinary scene and stays gradeable; 15 pages are ignored; 100 of the 215 gradeable pages are graded.
 
 Three's own `test/e2e/puppeteer.js` still screenshots 13 of the 17 (it excepts only the three TSL editors and `webgpu_compute_audio`), so most have a reference JPEG; the third column says what that JPEG is a picture of and why diffing the port against it would not verify the page.
 
@@ -555,7 +555,7 @@ Ported, `#[ignore]`d. Each row gives three's own score against its reference JPE
 | `ColorSpaceNode` | Partial | srgb_to_working (src/nodes/tsl.rs:4654), render_output | tests/nodes_custom.rs | sRGB/linear only; no convertColorSpace or Display-P3 |
 | `FrontFacingNode` | Present | front_facing / Builtin::FrontFacing (src/nodes/tsl.rs:2064) | webgpu_loader_gltf_compressed |  |
 | `NormalMapNode` | Partial | normal_map (src/nodes/tsl.rs:1456) | webgpu_lights_phong, webgpu_clearcoat | tangent space only; no object-space normal map |
-| `PassNode` | Present | pass / PassNode (src/renderer/pass.rs:117,54) | webgpu_postprocessing_bloom |  |
+| `PassNode` | Present | pass / PassNode (src/renderer/pass.rs:117,54) | webgpu_postprocessing_bloom; webgpu_portal (a pass of a second scene with its own `backgroundNode`, read at `screenUV` inside the main render) | `.context( { getUV } )` is the narrow `sample()` (#352) |
 | `RenderOutputNode` | Present | render_output (src/materials/node_material.rs:1040) | tests/nodes_custom.rs |  |
 | `ScreenNode` | Present | screen_uv, viewport_size, viewport_coordinate, viewport_uv (src/nodes/tsl.rs) | webgpu_mrt, webgpu_tsl_halftone; tests/nodes_tsl_batch.rs (viewport_coords_match) |  |
 | `ToneMappingNode` | Partial | tone_mapping_node (src/materials/node_material.rs:1078) | tests/nodes_custom.rs, tests/nodes_tsl_batch.rs (cineon_tone_mapping_node_matches), webgpu_custom_fog_background | no Custom tone mapping |

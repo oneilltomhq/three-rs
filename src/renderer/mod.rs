@@ -1842,19 +1842,20 @@ impl Renderer {
         self.render_with_camera(scene, SceneCamera::Exclusive(camera));
     }
 
-    /// [`render`](Self::render) for a pass that holds its scene and camera in
-    /// `RefCell`s and renders from `updateBefore()` (`docs/nodes.md` §57).
+    /// [`render`](Self::render) for a scene and camera held in `RefCell`s: a
+    /// pass renders its own from `updateBefore()` this way (`docs/nodes.md`
+    /// §57), and a page whose *main* render shares its camera with a pass
+    /// renders this way too, or the pass's nested render would find the
+    /// camera mutably borrowed. `webgpu_portal` is that page: its plane's
+    /// material samples a pass of a second scene through the camera the
+    /// main scene is being drawn with.
     ///
     /// Three's JS renders a scene from inside a draw of the same scene
     /// without asking; in Rust the outer render holds the borrow. So this
     /// takes both shared. The camera's `updateMatrixWorld()` needs it
     /// mutably: when an outer render of this frame already holds the camera,
     /// that render has just updated it, and this one skips the update.
-    pub(crate) fn render_shared(
-        &mut self,
-        scene: &Scene,
-        camera: &std::cell::RefCell<dyn RenderCamera>,
-    ) {
+    pub fn render_shared(&mut self, scene: &Scene, camera: &std::cell::RefCell<dyn RenderCamera>) {
         self.render_with_camera(scene, SceneCamera::Shared(camera));
     }
 

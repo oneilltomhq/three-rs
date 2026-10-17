@@ -560,6 +560,38 @@ impl PassNode {
         }
     }
 
+    /// `pass( … ).context( { getUV: () => coord } )` — the pass used as a
+    /// value, tapped at `coord` instead of the default `uv()`. The same
+    /// spelling as `RttNode::sample`, `SsaoNode::sample` and
+    /// `SssNode::sample`: the output texture read at the caller's uv.
+    ///
+    /// Three reaches this through the builder context: `TextureNode.setup()`
+    /// asks `builder.context.getUV` for a tap that has no uv of its own, so a
+    /// `.context( { getUV } )` around the pass moves its tap. The port fixes
+    /// a tap's uv when the tap is made (`texture()` reads the context at
+    /// construction, not at build; #352 is the general fix), so this is the
+    /// narrow spelling: a second tap on the same output texture at the uv the
+    /// caller gives. The nested render is keyed by that texture
+    /// (`register_texture_update`), so a draw that samples this tap fires the
+    /// pass exactly as one that samples [`node`](Self::node) does.
+    ///
+    /// The tap is the texture node alone, not a `TempNode` var over it as
+    /// [`node`](Self::node) is: three's `ContextNode` is no `TempNode`, and
+    /// the `PassNode` under it is read once, so its dump has the one var
+    /// `TextureNode.generate()` makes (`nodeVar0 = textureSample( … );
+    /// DiffuseColor = nodeVar0;`).
+    ///
+    /// `webgpu_portal` is the caller: a plane's `colorNode` is a pass of a
+    /// second scene read at `screenUV`, so the portal shows that scene as if
+    /// seen through the plane.
+    pub fn sample(&self, coord: NodeRef) -> NodeRef {
+        assert!(
+            !self.depth_scope.get(),
+            "three-rs: sample() is for a colour pass; a depth_pass() has no uv"
+        );
+        texture_uv(&self.render_target.texture(), coord)
+    }
+
     /// `pass( … ).a` — the `a` of [`node`](Self::node), so a [`depth_pass`]
     /// swizzles its linear depth as three's `PassNode` in depth scope does.
     pub fn a(&self) -> NodeRef {
