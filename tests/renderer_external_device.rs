@@ -187,9 +187,9 @@ fn adopted_device_external_texture_and_in_place_update() {
     assert_eq!(external.size(), (2, 2), "size comes off the wgpu texture");
     assert_eq!(external.format(), wgpu::TextureFormat::Rgba8Unorm);
 
-    let mut scene = scene_with(external.clone());
+    let scene = scene_with(external.clone());
     let mut camera = pixel_camera();
-    renderer.render(&mut scene, &mut camera);
+    renderer.render(&scene, &mut camera);
     let (width, height, pixels) = renderer.read_canvas_pixels().unwrap();
     assert_eq!((width, height), (W, H));
 
@@ -205,8 +205,8 @@ fn adopted_device_external_texture_and_in_place_update() {
     // -- the in-place update ---------------------------------------------
 
     let map = Texture::new(4, 4, Some(solid(4, 4, RED)));
-    let mut scene = scene_with(map.clone());
-    renderer.render(&mut scene, &mut camera);
+    let scene = scene_with(map.clone());
+    renderer.render(&scene, &mut camera);
     let (_, _, pixels) = renderer.read_canvas_pixels().unwrap();
     assert_rgb(&pixels, W / 2, H / 2, RED, "first frame");
 
@@ -216,7 +216,7 @@ fn adopted_device_external_texture_and_in_place_update() {
     map.set_data(solid(4, 4, BLUE));
     assert_eq!(map.version(), 1, "set_data is the needsUpdate too");
 
-    renderer.render(&mut scene, &mut camera);
+    renderer.render(&scene, &mut camera);
     let (_, _, pixels) = renderer.read_canvas_pixels().unwrap();
     assert_rgb(&pixels, W / 2, H / 2, BLUE, "after set_data");
 
@@ -230,7 +230,7 @@ fn adopted_device_external_texture_and_in_place_update() {
 
     // A frame with no version change must not re-upload anything, and must not
     // go stale either.
-    renderer.render(&mut scene, &mut camera);
+    renderer.render(&scene, &mut camera);
     let (_, _, pixels) = renderer.read_canvas_pixels().unwrap();
     assert_rgb(&pixels, W / 2, H / 2, BLUE, "unchanged third frame");
 }

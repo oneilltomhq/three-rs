@@ -305,7 +305,7 @@ impl Renderer {
 
                 reflector.borrow_mut().has_output = false;
             } else {
-                renderer.render_nested(scene, &mut virtual_camera);
+                renderer.render(scene, &mut virtual_camera);
 
                 reflector.borrow_mut().has_output = true;
             }

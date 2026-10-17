@@ -59,7 +59,7 @@ fn silhouette(
     scene: &Rc<RefCell<Scene>>,
     camera: &mut dyn three_rs::RenderCamera,
 ) -> Vec<bool> {
-    renderer.render(&mut scene.borrow_mut(), camera);
+    renderer.render(&scene.borrow_mut(), camera);
     let (_, _, pixels) = renderer.read_canvas_pixels().unwrap();
     pixels.chunks(4).map(|p| p[0] > 128).collect()
 }
@@ -70,7 +70,7 @@ fn plain(
     scene: &Rc<RefCell<Scene>>,
     camera: &mut dyn three_rs::RenderCamera,
 ) -> Vec<u8> {
-    renderer.render(&mut scene.borrow_mut(), camera);
+    renderer.render(&scene.borrow_mut(), camera);
     renderer.read_canvas_pixels().unwrap().2
 }
 

@@ -120,7 +120,7 @@ pub fn animate(app: &mut App) {
 
     let elapsed_time = app.timer.get_elapsed();
 
-    app.renderer.render(&mut app.scene, &mut app.camera);
+    app.renderer.render(&app.scene, &mut app.camera);
 
     if elapsed_time - app.last > 0.1 {
         app.last = elapsed_time;

@@ -554,7 +554,7 @@ impl OutlineState {
         let mut renderer = renderer.save_state();
         renderer.set_render_target(Some(target.clone()));
         renderer.outline_selection = Some(selection);
-        renderer.render_shared(&self.scene.borrow(), &self.camera);
+        renderer.render(&self.scene.borrow(), &self.camera);
     }
 }
 

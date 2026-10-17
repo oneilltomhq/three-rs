@@ -285,7 +285,7 @@ impl SsaaPassNode {
 
             renderer.set_render_target(Some(self.sample_render_target.clone()));
             renderer.clear(true, true);
-            renderer.render(scene, camera);
+            renderer.render(scene, &mut *camera);
 
             // accumulation
 

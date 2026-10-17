@@ -188,7 +188,7 @@ pub fn animate(app: &mut App) {
         let left = if canvas.force_webgl { half } else { 0.0 };
         app.renderer.set_viewport(left, 0.0, half, app.height);
         app.renderer.set_scissor(left, 0.0, half, app.height);
-        app.renderer.render(&mut canvas.scene, &mut canvas.camera);
+        app.renderer.render(&canvas.scene, &mut canvas.camera);
     }
     app.renderer.set_scissor_test(false);
 }

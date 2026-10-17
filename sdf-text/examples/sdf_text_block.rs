@@ -165,7 +165,7 @@ pub fn render_once(app: &mut App) {
     // Here the members hang off the batch, whose `sync()` composed them already;
     // this is the batch node's own matrix.
     app.batched.node().update_matrix_world(true);
-    app.renderer.render(&mut app.scene, &mut app.camera);
+    app.renderer.render(&app.scene, &mut app.camera);
 }
 
 fn main() {

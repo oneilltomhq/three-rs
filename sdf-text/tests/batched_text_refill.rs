@@ -76,7 +76,7 @@ fn frame(renderer: &mut Renderer, camera: &mut OrthographicCamera, batch: &Batch
     scene.set_background(Color::from_hex(0x000000));
     scene.add(batch.node());
     batch.node().update_matrix_world(true);
-    renderer.render(&mut scene, camera);
+    renderer.render(&scene, camera);
     renderer.read_canvas_pixels().unwrap().2
 }
 

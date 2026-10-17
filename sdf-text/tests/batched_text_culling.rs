@@ -127,7 +127,7 @@ fn distant_members_still_render() {
     let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
     renderer.set_pixel_ratio(1.0);
     renderer.set_size(WIDTH, HEIGHT);
-    renderer.render(&mut scene, &mut camera);
+    renderer.render(&scene, &mut camera);
 
     let (w, h, pixels) = renderer.read_canvas_pixels().unwrap();
     assert_eq!((w as f64, h as f64), (WIDTH, HEIGHT));

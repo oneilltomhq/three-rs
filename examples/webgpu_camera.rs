@@ -269,10 +269,8 @@ pub fn animate(app: &mut App) {
     app.renderer.set_scissor(0.0, 0.0, w / 2.0, h);
     app.renderer.set_viewport(0.0, 0.0, w / 2.0, h);
     match app.active {
-        Active::Perspective => app
-            .renderer
-            .render(&mut app.scene, &mut app.camera_perspective),
-        Active::Orthographic => app.renderer.render(&mut app.scene, &mut app.camera_ortho),
+        Active::Perspective => app.renderer.render(&app.scene, &mut app.camera_perspective),
+        Active::Orthographic => app.renderer.render(&app.scene, &mut app.camera_ortho),
     }
 
     //
@@ -282,7 +280,7 @@ pub fn animate(app: &mut App) {
     app.renderer.set_clear_color(Color::from_hex(0x111111), 1.0);
     app.renderer.set_scissor(w / 2.0, 0.0, w / 2.0, h);
     app.renderer.set_viewport(w / 2.0, 0.0, w / 2.0, h);
-    app.renderer.render(&mut app.scene, &mut app.camera);
+    app.renderer.render(&app.scene, &mut app.camera);
 }
 
 /// The page's `onWindowResize()`.

@@ -175,7 +175,7 @@ pub fn animate(app: &mut App) {
         object.set_rotation(r.x + 0.005, r.y, r.z + 0.01);
     }
 
-    app.renderer.render(&mut app.scene, &mut app.camera);
+    app.renderer.render(&app.scene, &mut app.camera);
 }
 
 /// The page's `onWindowResize()`.

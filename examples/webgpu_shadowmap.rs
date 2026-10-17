@@ -253,7 +253,7 @@ pub fn animate(app: &mut App) {
     }
     app.dir_light.borrow_mut().position.z = 17.0 + (time * 0.001).sin() * 5.0;
 
-    app.renderer.render(&mut app.scene, &mut app.camera);
+    app.renderer.render(&app.scene, &mut app.camera);
 }
 
 /// The page's `resize()` — the same three lines the other examples spell

@@ -144,7 +144,7 @@ pub fn init() -> App {
 pub fn animate(app: &mut App) {
     app.cube2.update(&mut app.renderer).unwrap();
     app.cube1.update(&mut app.renderer).unwrap();
-    app.renderer.render(&mut app.scene, &mut app.camera);
+    app.renderer.render(&app.scene, &mut app.camera);
 }
 
 /// The page's `onWindowResize()`.

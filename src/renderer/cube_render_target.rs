@@ -140,7 +140,7 @@ pub fn from_equirectangular_texture(
     material.blending = Blending::No;
 
     let mesh = Mesh::new(Rc::new(box_geometry(5.0, 5.0, 5.0, 1, 1, 1)), material);
-    let mut scene = Scene::new();
+    let scene = Scene::new();
     scene.add(&mesh);
 
     let face_target = RenderTarget::new_with_options(
@@ -169,7 +169,7 @@ pub fn from_equirectangular_texture(
             object.up = Vector3::new(up[0], up[1], up[2]);
         }
         camera.look_at(&Vector3::new(look_at[0], look_at[1], look_at[2]));
-        renderer.render(&mut scene, &mut camera);
+        renderer.render(&scene, &mut camera);
         renderer.copy_to_cube_layer(&face_target, &cube, layer as u32, 0);
     }
     drop(renderer);

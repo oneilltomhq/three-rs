@@ -640,7 +640,42 @@ contract altogether at the cost of giving materials a liveness signal.
 Either can keep four frames as the default, so neither need break a
 consumer that relies on this one.
 
+## 14. One `render()`, whatever holds the camera
+
+`Renderer::render( scene, camera )` is the only way to render a scene, from
+a page and from inside a pass alike. The scene goes in as `&Scene`; the
+camera is anything `IntoSceneCamera`: `&mut` a camera the page owns, or a
+`&RefCell` / `&Rc<RefCell>` of a camera the page shares with a pass.
+
+Three's JS renders a scene from inside a draw of that scene without asking.
+In Rust the outer render holds the borrows, so a pass's nested render has
+to be able to borrow what the outer one holds. The scene has always been
+fine: a render reads it shared. The camera has not, because
+`camera.updateMatrixWorld()` wants it mutably on the way in. The portal page
+(#354) exposed the consequence: a page whose main render shares its camera
+with a pass had to call a second entry point, `render_shared`, and a page
+that called `render` instead panicked inside the pass's draw. The page had
+to know what its passes borrow to pick a method name.
+
+The decision is that the argument carries the answer, not the method name.
+A page that gave its camera to `pass( scene, camera )` holds an
+`Rc<RefCell<_>>`, and passes that; `render` takes it shared, updates the
+matrices when the cell is free, and leaves them as an outer render set them
+when it is not. A page that owns its camera passes `&mut` as it always has.
+Every caller in this tree compiles unchanged on the camera side; the scene
+side drops a `&mut` that was never used.
+
+What is *not* decided here: `render` cannot tell the outer render's camera
+from another holder without borrowing, so a shared camera that is borrowed
+while no outer render is running is a caller bug, and `render()` panics on
+it with a message rather than guessing. Making `updateMatrixWorld()` take
+`&self` would remove the case, but `OrthographicCamera` holds its `Object3D`
+inline, so that is a change to the camera types, not the renderer, and it
+waits for a reason.
+
 ## Where each decision came from
+
+Decision 14 is issue #356, from the lens review of #354.
 
 Decision 13 is issue #249's option 1: the window the renderer already had,
 written down as a contract.

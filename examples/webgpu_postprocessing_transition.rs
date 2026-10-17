@@ -287,11 +287,11 @@ fn render(app: &mut App) {
     if app.transition == 0.0 {
         let fx = &mut app.fx_scene_b;
         app.renderer
-            .render(&mut fx.scene.borrow_mut(), &mut *fx.camera.borrow_mut());
+            .render(&fx.scene.borrow(), &mut *fx.camera.borrow_mut());
     } else if app.transition == 1.0 {
         let fx = &mut app.fx_scene_a;
         app.renderer
-            .render(&mut fx.scene.borrow_mut(), &mut *fx.camera.borrow_mut());
+            .render(&fx.scene.borrow(), &mut *fx.camera.borrow_mut());
     } else {
         // `renderPipeline.render()`: the transition quad's draw runs both
         // scene passes' `updateBefore()` first (`docs/nodes.md` §57).

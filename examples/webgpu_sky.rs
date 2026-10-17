@@ -190,7 +190,7 @@ pub fn animate(app: &mut App) {
     app.cube_camera.update(&mut app.renderer, &mut app.scene);
     app.sphere.borrow_mut().visible = true;
 
-    app.renderer.render(&mut app.scene, &mut app.camera);
+    app.renderer.render(&app.scene, &mut app.camera);
 }
 
 /// The page's `onWindowResize()`.

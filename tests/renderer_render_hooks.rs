@@ -113,10 +113,10 @@ fn hooks_run_in_three_order_around_the_draws() {
     renderer.info_mut().reset();
     let calls = renderer.info().render.calls;
 
-    renderer.render(&mut scene, &mut camera);
+    renderer.render(&scene, &mut camera);
     let first = renderer.info().render.calls;
     assert!(first >= calls + 2, "both quads were drawn");
-    renderer.render(&mut scene, &mut camera);
+    renderer.render(&scene, &mut camera);
     let second = renderer.info().render.calls;
 
     let expected = |start: u64, end: u64| {
@@ -157,7 +157,7 @@ fn hooks_run_in_three_order_around_the_draws() {
     let own = RenderTarget::new(32, 32);
     renderer.set_render_target(Some(own.clone()));
     targets.borrow_mut().clear();
-    renderer.render(&mut scene, &mut camera);
+    renderer.render(&scene, &mut camera);
     renderer.set_render_target(None);
     for target in targets.borrow().iter() {
         assert_eq!(
@@ -184,8 +184,8 @@ fn hooks_run_in_three_order_around_the_draws() {
                     });
             });
     }
-    renderer.render(&mut scene, &mut camera);
-    renderer.render(&mut scene, &mut camera);
+    renderer.render(&scene, &mut camera);
+    renderer.render(&scene, &mut camera);
     let names: Vec<String> = log
         .borrow()
         .iter()
@@ -201,7 +201,7 @@ fn hooks_run_in_three_order_around_the_draws() {
     scene.add(&probe);
     scene.add(&helper.node);
     probe.borrow_mut().position.set(3.0, -2.0, 0.0);
-    renderer.render(&mut scene, &mut camera);
+    renderer.render(&scene, &mut camera);
     let object = helper.node.borrow();
     assert_eq!(
         (object.position.x, object.position.y, object.position.z),

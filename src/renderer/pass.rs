@@ -744,7 +744,7 @@ impl NodeUpdate for PassState {
             (camera.near(), camera.far())
         };
         self.render_with(renderer, near, far, |renderer| {
-            renderer.render_shared(&scene.borrow(), &camera)
+            renderer.render(&scene.borrow(), &camera)
         });
         true
     }

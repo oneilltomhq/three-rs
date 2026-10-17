@@ -322,7 +322,7 @@ pub fn animate(app: &mut App) {
     direction[1] = time.sin();
     app.cyan_direction.set(direction);
 
-    app.renderer.render(&mut app.scene, &mut app.camera);
+    app.renderer.render(&app.scene, &mut app.camera);
 }
 
 /// The page's `onWindowResize()`.

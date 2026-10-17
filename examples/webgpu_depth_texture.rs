@@ -117,7 +117,7 @@ pub fn init() -> App {
 pub fn animate(app: &mut App) {
     app.renderer
         .set_render_target(Some(app.render_target.clone()));
-    app.renderer.render(&mut app.scene, &mut app.camera);
+    app.renderer.render(&app.scene, &mut app.camera);
 
     app.renderer.set_render_target(None);
     app.renderer.render_quad(&app.quad);

@@ -109,7 +109,7 @@ pub fn init() -> App {
 /// the renderer discovers on its own, so it is still called by hand.
 pub fn animate(app: &mut App) {
     app.blur.render(&mut app.renderer);
-    app.renderer.render(&mut app.scene, &mut app.camera);
+    app.renderer.render(&app.scene, &mut app.camera);
 }
 
 /// The page's `onWindowResize()`: the frustum keeps its height and takes the

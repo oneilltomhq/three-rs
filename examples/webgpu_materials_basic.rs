@@ -119,7 +119,7 @@ pub fn animate(app: &mut App) {
         sphere.position.y = 5.0 * (timer + i as f64 * 1.1).sin();
     }
 
-    app.renderer.render(&mut app.scene, &mut app.camera);
+    app.renderer.render(&app.scene, &mut app.camera);
 }
 
 /// The page's `onWindowResize()`.

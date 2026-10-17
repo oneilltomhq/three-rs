@@ -236,7 +236,7 @@ pub fn animate(app: &mut App) {
     let delta = app.timer.get_delta();
 
     app.mixer.update(delta);
-    app.renderer.render(&mut app.scene, &mut app.camera);
+    app.renderer.render(&app.scene, &mut app.camera);
 }
 
 /// The page's `onWindowResize()`.

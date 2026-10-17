@@ -173,7 +173,7 @@ pub fn animate(app: &mut App) {
     place(&app.point_light, time);
     place(&app.point_light2, time + 10000.0);
 
-    app.renderer.render(&mut app.scene, &mut app.camera);
+    app.renderer.render(&app.scene, &mut app.camera);
 }
 
 /// The page's `onWindowResize()`.

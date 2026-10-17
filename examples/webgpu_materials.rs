@@ -284,7 +284,7 @@ pub fn animate(app: &mut App) {
         object.set_rotation(x + 0.01, y + 0.005, z);
     }
 
-    app.renderer.render(&mut app.scene, &mut app.camera);
+    app.renderer.render(&app.scene, &mut app.camera);
 }
 
 /// The page's `onWindowResize()`.

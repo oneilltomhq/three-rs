@@ -184,7 +184,7 @@ pub fn animate(app: &mut App) {
         object.scale.set_scalar((time.cos()) * 0.125 + 0.875);
     }
 
-    app.renderer.render(&mut app.scene, &mut app.camera);
+    app.renderer.render(&app.scene, &mut app.camera);
 }
 
 /// The page's `onWindowResize()`.

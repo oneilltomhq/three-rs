@@ -343,7 +343,7 @@ impl NodeUpdate for OitState {
             // "default pass: opaque objects and transparent objects that do
             // not qualify for OIT"
             renderer.oit = Some(OitRenderObjects::Default);
-            renderer.render_shared(&self.scene.borrow(), &self.camera);
+            renderer.render(&self.scene.borrow(), &self.camera);
 
             // "OIT pass: accumulate the weighted colors and the revealage of
             // all OIT-qualified objects"
@@ -364,7 +364,7 @@ impl NodeUpdate for OitState {
             renderer.opaque = false;
             renderer.transparent = true;
 
-            renderer.render_shared(&self.scene.borrow(), &self.camera);
+            renderer.render(&self.scene.borrow(), &self.camera);
 
             // `RendererUtils.restoreSceneState()`; the renderer's target, MRT,
             // flags and render objects are restored by `render_with`.

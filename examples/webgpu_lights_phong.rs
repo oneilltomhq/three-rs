@@ -210,7 +210,7 @@ pub fn animate(app: &mut App) {
         light.position.z = (light_time * 0.5).sin() * 3.0;
     }
 
-    app.renderer.render(&mut app.scene, &mut app.camera);
+    app.renderer.render(&app.scene, &mut app.camera);
 }
 
 /// The page's `onWindowResize()`.

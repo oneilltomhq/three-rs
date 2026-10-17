@@ -106,20 +106,20 @@ fn viewport_and_scissor_measure_from_the_top_left() {
     // target, so every pixel below is a pixel this test wrote.
     let mut black = Scene::new();
     black.set_background(Color::from_hex(0x000000));
-    renderer.render(&mut black, &mut camera());
+    renderer.render(&black, &mut camera());
 
     // Frame two, the inset. `autoClear` off and no background, exactly as the
     // second `render()` of a picture-in-picture frame has it — a `Color`
     // background would force the clear back on (`Background.update()`'s
     // `forceClear`).
-    let mut inset = Scene::new();
+    let inset = Scene::new();
     inset.add(&quad(0xff0000, 0.0));
 
     renderer.auto_clear = false;
     renderer.set_scissor_test(true);
     renderer.set_scissor(VX, VY, VW, VH);
     renderer.set_viewport(VX, VY, VW, VH);
-    renderer.render(&mut inset, &mut camera());
+    renderer.render(&inset, &mut camera());
 
     let (w, h, pixels) = renderer.read_canvas_pixels().expect("canvas readback");
     assert_eq!((w, h), (W, H));
@@ -159,14 +159,14 @@ fn the_viewport_confines_a_draw_without_the_scissor() {
 
     let mut black = Scene::new();
     black.set_background(Color::from_hex(0x000000));
-    renderer.render(&mut black, &mut camera());
+    renderer.render(&black, &mut camera());
 
-    let mut inset = Scene::new();
+    let inset = Scene::new();
     inset.add(&quad(0x00ff00, 0.0));
 
     renderer.auto_clear = false;
     renderer.set_viewport(VX, VY, VW, VH);
-    renderer.render(&mut inset, &mut camera());
+    renderer.render(&inset, &mut camera());
 
     let (_, _, pixels) = renderer.read_canvas_pixels().expect("canvas readback");
     assert_box(
@@ -190,16 +190,16 @@ fn a_render_target_renders_through_its_own_viewport() {
     let mut black = Scene::new();
     black.set_background(Color::from_hex(0x000000));
     renderer.set_render_target(Some(target.clone()));
-    renderer.render(&mut black, &mut camera());
+    renderer.render(&black, &mut camera());
 
-    let mut inset = Scene::new();
+    let inset = Scene::new();
     inset.add(&quad(0x0000ff, 0.0));
 
     // The renderer's own viewport is left at the full frame on purpose: a
     // render target must not read it.
     renderer.auto_clear = false;
     target.set_viewport(VX, VY, VW, VH);
-    renderer.render(&mut inset, &mut camera());
+    renderer.render(&inset, &mut camera());
     renderer.set_render_target(None);
 
     let (_, _, pixels) = renderer
@@ -225,14 +225,14 @@ fn clear_depth_lets_a_further_quad_through() {
     let mut near = Scene::new();
     near.set_background(Color::from_hex(0x000000));
     near.add(&quad(0xffffff, 0.0));
-    renderer.render(&mut near, &mut camera());
+    renderer.render(&near, &mut camera());
 
     // A quad five units further from the camera, composited over the first.
-    let mut far = Scene::new();
+    let far = Scene::new();
     far.add(&quad(0xff0000, -5.0));
 
     renderer.auto_clear = false;
-    renderer.render(&mut far, &mut camera());
+    renderer.render(&far, &mut camera());
 
     let (_, _, pixels) = renderer.read_canvas_pixels().expect("canvas readback");
     assert_rgb(
@@ -244,7 +244,7 @@ fn clear_depth_lets_a_further_quad_through() {
     );
 
     renderer.clear_depth();
-    renderer.render(&mut far, &mut camera());
+    renderer.render(&far, &mut camera());
 
     let (_, _, pixels) = renderer.read_canvas_pixels().expect("canvas readback");
     assert_rgb(
@@ -267,13 +267,13 @@ fn auto_clear_decides_whether_the_frame_is_kept() {
         let mut white = Scene::new();
         white.set_background(Color::from_hex(0x000000));
         white.add(&quad(0xffffff, 0.0));
-        renderer.render(&mut white, &mut camera());
+        renderer.render(&white, &mut camera());
 
         // An empty scene with no background: with `auto_clear` on it clears to
         // the renderer's clear colour, with it off it leaves frame one alone.
-        let mut empty = Scene::new();
+        let empty = Scene::new();
         renderer.auto_clear = auto_clear;
-        renderer.render(&mut empty, &mut camera());
+        renderer.render(&empty, &mut camera());
 
         let (_, _, pixels) = renderer.read_canvas_pixels().expect("canvas readback");
         assert_rgb(

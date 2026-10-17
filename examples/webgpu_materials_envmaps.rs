@@ -113,7 +113,7 @@ pub fn animate(app: &mut App) {
     // The three `backgroundRotation` toggles and `syncMaterial` are all
     // `false`, so the whole body of `animate()` before the `lookAt` is skipped.
     app.camera.look_at(&Vector3::ZERO);
-    app.renderer.render(&mut app.scene, &mut app.camera);
+    app.renderer.render(&app.scene, &mut app.camera);
 }
 
 /// The page's `onWindowResize()`.

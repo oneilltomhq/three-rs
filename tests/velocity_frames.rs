@@ -74,7 +74,7 @@ impl Rig {
             ("output", output_property()),
             ("velocity", velocity()),
         ])));
-        self.renderer.render(&mut self.scene, &mut self.camera);
+        self.renderer.render(&self.scene, &mut self.camera);
         self.renderer.set_mrt(None);
 
         let mut options = RenderTargetOptions::default();

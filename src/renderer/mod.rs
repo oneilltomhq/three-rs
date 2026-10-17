@@ -438,12 +438,64 @@ const VARIANT_FRONT_SIDE: u64 = 5;
 /// draw's) for a material a [`RenderObjectFunction`] derived.
 const VARIANT_RENDER_OBJECT_FUNCTION: u64 = 7;
 
-/// How a render entry point holds its camera: [`Renderer::render`] and
-/// [`Renderer::render_nested`] own a mutable borrow, a pass's
-/// [`Renderer::render_shared`] a `RefCell` an outer render may already hold.
-enum SceneCamera<'a> {
+/// How [`Renderer::render`] holds its camera: a mutable borrow the caller
+/// lends for the call, or a `RefCell` the caller shares with a pass, which
+/// an outer render of this frame may already hold.
+///
+/// Made from the argument by [`IntoSceneCamera`]; a caller never spells it.
+pub enum SceneCamera<'a> {
+    /// A camera the caller owns, lent for the call; its matrices are
+    /// updated on the way in.
     Exclusive(&'a mut dyn RenderCamera),
+    /// A camera the caller shares with a pass. Its matrices are updated
+    /// when the cell is free, and left as an outer render set them when it
+    /// is not.
     Shared(&'a std::cell::RefCell<dyn RenderCamera>),
+}
+
+/// The camera argument of [`Renderer::render`]: `&mut` any camera, or a
+/// `&RefCell` / `&Rc<RefCell>` of one, which is how a page that gave its
+/// camera to `pass( scene, camera )` holds it. The one `render` serves both,
+/// so a page does not pick an entry point by what its passes borrow.
+pub trait IntoSceneCamera<'a> {
+    /// The borrow [`Renderer::render`] holds for the call.
+    fn into_scene_camera(self) -> SceneCamera<'a>;
+}
+
+impl<'a, C: RenderCamera> IntoSceneCamera<'a> for &'a mut C {
+    fn into_scene_camera(self) -> SceneCamera<'a> {
+        SceneCamera::Exclusive(self)
+    }
+}
+
+impl<'a> IntoSceneCamera<'a> for &'a mut dyn RenderCamera {
+    fn into_scene_camera(self) -> SceneCamera<'a> {
+        SceneCamera::Exclusive(self)
+    }
+}
+
+impl<'a, C: RenderCamera + 'static> IntoSceneCamera<'a> for &'a std::cell::RefCell<C> {
+    fn into_scene_camera(self) -> SceneCamera<'a> {
+        SceneCamera::Shared(self)
+    }
+}
+
+impl<'a> IntoSceneCamera<'a> for &'a std::cell::RefCell<dyn RenderCamera> {
+    fn into_scene_camera(self) -> SceneCamera<'a> {
+        SceneCamera::Shared(self)
+    }
+}
+
+impl<'a, C: RenderCamera + 'static> IntoSceneCamera<'a> for &'a std::rc::Rc<std::cell::RefCell<C>> {
+    fn into_scene_camera(self) -> SceneCamera<'a> {
+        SceneCamera::Shared(&**self)
+    }
+}
+
+impl<'a> IntoSceneCamera<'a> for &'a std::rc::Rc<std::cell::RefCell<dyn RenderCamera>> {
+    fn into_scene_camera(self) -> SceneCamera<'a> {
+        SceneCamera::Shared(&**self)
+    }
 }
 
 /// The two render-object functions `OutlineNode.updateBefore()` installs
@@ -1835,43 +1887,26 @@ impl Renderer {
 
     /// `renderer.render( scene, camera )`.
     ///
-    /// `camera` is `&mut dyn RenderCamera` so an `OrthographicCamera` works too
-    /// — `&mut PerspectiveCamera` still coerces at the call site, so every
-    /// existing caller is unchanged.
-    pub fn render(&mut self, scene: &mut Scene, camera: &mut dyn RenderCamera) {
-        self.render_with_camera(scene, SceneCamera::Exclusive(camera));
-    }
-
-    /// [`render`](Self::render) for a scene and camera held in `RefCell`s: a
-    /// pass renders its own from `updateBefore()` this way (`docs/nodes.md`
-    /// §57), and a page whose *main* render shares its camera with a pass
-    /// renders this way too, or the pass's nested render would find the
-    /// camera mutably borrowed. `webgpu_portal` is that page: its plane's
-    /// material samples a pass of a second scene through the camera the
-    /// main scene is being drawn with.
+    /// `camera` is anything [`IntoSceneCamera`]: `&mut camera` for a camera
+    /// the page owns, or `&camera` for the `Rc<RefCell<_>>` a page shares
+    /// with `pass( scene, camera )`. The scene is borrowed shared, as a
+    /// pass's nested render of it must borrow it too.
     ///
     /// Three's JS renders a scene from inside a draw of the same scene
-    /// without asking; in Rust the outer render holds the borrow. So this
-    /// takes both shared. The camera's `updateMatrixWorld()` needs it
-    /// mutably: when an outer render of this frame already holds the camera,
-    /// that render has just updated it, and this one skips the update.
-    pub fn render_shared(&mut self, scene: &Scene, camera: &std::cell::RefCell<dyn RenderCamera>) {
-        self.render_with_camera(scene, SceneCamera::Shared(camera));
+    /// without asking; in Rust the outer render holds the borrows. A pass
+    /// renders its own scene from `updateBefore()` through this same call
+    /// (`docs/nodes.md` §57), as does a page whose *main* render shares its
+    /// camera with a pass (`webgpu_portal`: the plane's material samples a
+    /// pass of a second scene through the camera the main scene is drawn
+    /// with). A shared camera's `updateMatrixWorld()` needs it mutably: when
+    /// an outer render of this frame already holds it, that render has just
+    /// updated it, and this one does not. Any other holder is a bug in the
+    /// caller, and panics here rather than in a draw.
+    pub fn render<'a>(&mut self, scene: &Scene, camera: impl IntoSceneCamera<'a>) {
+        self.render_with_camera(scene, camera.into_scene_camera());
     }
 
-    /// [`render`](Self::render) for a reflector's nested render
-    /// (`ReflectorBaseNode.updateBefore()`): the outer render of this frame
-    /// holds the scene shared, so this takes it shared too, with the
-    /// reflector's own virtual camera. Part of the outer frame, as a pass's
-    /// nested render is (`docs/nodes.md` §55 and §57).
-    pub(crate) fn render_nested(&mut self, scene: &Scene, camera: &mut dyn RenderCamera) {
-        self.render_with_camera(scene, SceneCamera::Exclusive(camera));
-    }
-
-    /// The one body of [`render`](Self::render),
-    /// [`render_shared`](Self::render_shared) and
-    /// [`render_nested`](Self::render_nested), which differ only in how they
-    /// hold the camera.
+    /// The body of [`render`](Self::render), past the argument.
     fn render_with_camera(&mut self, scene: &Scene, camera: SceneCamera<'_>) {
         // `Renderer.render()`: `if ( this.info.autoReset === true )
         // this.info.reset()`. A frame that is several renders turns
@@ -1898,8 +1933,20 @@ impl Renderer {
                     renderer.render_scene(scene, camera);
                 }
                 SceneCamera::Shared(camera) => {
-                    if let Ok(mut camera) = camera.try_borrow_mut() {
-                        camera.update_matrix_world();
+                    match camera.try_borrow_mut() {
+                        Ok(mut camera) => camera.update_matrix_world(),
+                        // Only an outer render of this frame may hold it,
+                        // and that render updated it on its way in. The
+                        // outer camera cannot be told from another without
+                        // borrowing, so the frame's nesting stands in:
+                        // `begin_frame` has counted this render already, so
+                        // an outer one reads 1 here and a nested one more.
+                        Err(_) => assert!(
+                            renderer.call_depth > 1,
+                            "three-rs: render(): the camera is borrowed, and not by \
+                             an outer render of this frame; drop that borrow before \
+                             rendering"
+                        ),
                     }
                     renderer.render_scene(scene, &*camera.borrow());
                 }

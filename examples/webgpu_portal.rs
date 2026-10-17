@@ -19,8 +19,8 @@
 //!   spelling here is [`PassNode::sample`].
 //! * **The portal scene is rendered with the camera the main scene is being
 //!   drawn with.** The nested render runs from inside the main one, so the
-//!   main render holds the camera shared ([`Renderer::render_shared`]), or
-//!   the pass would find it mutably borrowed.
+//!   main render passes the camera's `Rc<RefCell<_>>` to [`Renderer::render`]
+//!   rather than a `&mut`, or the pass would find it mutably borrowed.
 //! * **`gltf.scene.clone()` is `Object3D.clone( true )`**, which the port's
 //!   `Object3D` clone is not (#300). The model is loaded twice instead; the
 //!   second load is the page's clone, down to the cloned materials.
@@ -267,8 +267,8 @@ pub fn animate(app: &mut App) {
 
     // `renderer.render( sceneMain, camera )`. The portal pass renders
     // `scenePortal` through the same camera from inside this render, so the
-    // camera is held shared rather than mutably.
-    app.renderer.render_shared(&app.scene_main, &*app.camera);
+    // camera goes in as the `Rc<RefCell<_>>` the pass shares, not as `&mut`.
+    app.renderer.render(&app.scene_main, &app.camera);
 }
 
 /// The page's `onWindowResize()`.

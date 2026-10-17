@@ -175,7 +175,7 @@ fn render_sprite(center: Vector2) -> Vec<u8> {
     let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
     renderer.set_pixel_ratio(1.0);
     renderer.set_size(W as f64, H as f64);
-    renderer.render(&mut scene, &mut camera);
+    renderer.render(&scene, &mut camera);
     let (w, h, pixels) = renderer.read_canvas_pixels().unwrap();
     assert_eq!((w as usize, h as usize), (W, H));
     pixels
