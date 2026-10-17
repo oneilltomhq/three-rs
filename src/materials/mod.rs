@@ -1096,7 +1096,7 @@ impl MeshBasicNodeMaterial {
     /// render line primitives with a width of one pixel"). `vertexColors` is on
     /// the shared material, since `setupDiffuseColor()` is where three reads
     /// it — see [`MeshBasicNodeMaterial::vertex_colors`]. Three's own dump of this
-    /// material from the d33 page (`docs/lines/LineBasicNodeMaterial_27.*`) is
+    /// material from the d3-three page (`docs/lines/LineBasicNodeMaterial_27.*`) is
     /// the `Basic` program statement for statement, so a second kind would
     /// generate identical WGSL.
     ///

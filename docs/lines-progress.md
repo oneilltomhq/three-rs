@@ -1,6 +1,6 @@
 # lines — hairline `Line` / `LineSegments`, done
 
-**Status: done.** `examples/d33_treemap_labels.rs` now draws the page's white
+**Status: done.** `examples/d3_treemap_labels.rs` now draws the page's white
 tile outlines, and the image gap against `d3_treemap.jpg` fell from **2551 to
 156** of 100000 pixels (0.156 %), now *asserted* under a ceiling of 250. The
 serial e2e ladder is unchanged at **0 / 60 / 31 / 4 / 0 / 0 / 18 / 1 / 7 / 40**.
@@ -16,14 +16,14 @@ serial e2e ladder is unchanged at **0 / 60 / 31 / 4 / 0 / 0 / 18 / 1 / 7 / 40**.
 | material | `MeshBasicNodeMaterial::line( color )` and `pub type LineBasicNodeMaterial = MeshBasicNodeMaterial;` — no new `MaterialKind`, decided by the dump (below). |
 | geometry | `BufferGeometry::set_from_points()`, faithful to `setFromPoints()`'s in-place vs fresh-attribute branches. |
 | shadows | Both shadow item loops (planar and cube) now read geometry/material off the payload and take the topology from `Primitive::of()`, so a line with `castShadow` casts a hairline shadow instead of panicking. |
-| gates | `tests/renderer_lines.rs` (4 deterministic readback tests), `examples/dump_wgsl.rs`'s `line_basic` section, and the d33 image assertion. |
+| gates | `tests/renderer_lines.rs` (4 deterministic readback tests), `examples/dump_wgsl.rs`'s `line_basic` section, and the d3-three image assertion. |
 
 `LineLoop` is deliberately absent: `Renderer._projectObject()` errors on it
 ("Please use THREE.Line or THREE.LineSegments"), so there is nothing to port.
 
 ## The material decision, from the dump
 
-Three's real `LineBasicNodeMaterial` program was captured off d33's own
+Three's real `LineBasicNodeMaterial` program was captured off d3-three's own
 `d3_treemap.html` page with a temporary `test/e2e/_dump_lines.mjs` (recipe:
 `handoff/scouts/rung8/PLAN.md` §2; script and profile dir deleted afterwards).
 It is in `docs/lines/LineBasicNodeMaterial_27.{vert,frag}.wgsl` and
@@ -54,7 +54,7 @@ it: `topology: "line-strip"`, but `frontFace: "ccw"` / `cullMode: "back"` still
 straight off `material.side`, and the same two uniform bind groups a basic mesh
 gets.
 
-## The d33 number, and the strip
+## The d3-three number, and the strip
 
 Before: **2551** of 100000 (2.551 %) — the outlines' pixels, missing.
 After: **156** of 100000 (0.156 %), ceiling 250.

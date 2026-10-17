@@ -1,4 +1,4 @@
-//! Port of the **label half** of d33's `rung0/examples/d3_treemap.html` — step 6
+//! Port of the **label half** of d3-three's `examples/d3_treemap.html` — step 6
 //! of the sdf-text ladder: the d3 treemap of `flare.json` laid flat in the world,
 //! one multi-line `Text` per labelled leaf, all drawn by one `BatchedText`.
 //!
@@ -23,7 +23,7 @@
 //!    `color(pkg).lerp(white, 0.4)` — the notebook's fill at
 //!    `fill-opacity: 0.6` on white — so the hue of every tile is right and only
 //!    the shading is missing. This is the whole of the image gap that is left:
-//!    all 156 of the 100000 pixels that still differ from d33's own render are
+//!    all 156 of the 100000 pixels that still differ from d3-three's own render are
 //!    on the slab's near silhouette, where the page's `HemisphereLight` +
 //!    `DirectionalLight` darken the tiles' side walls. `MeshStandardNodeMaterial`
 //!    and both light types *do* exist in the port now (rung 8); switching the
@@ -34,15 +34,15 @@
 //!    `+y` is world `−Z`, which projects up — so every label is in pose 0 with
 //!    `anchorX: 'left'`, which is what is built here directly. The arithmetic
 //!    that would be exercised is `Vector3::project`, already graded.
-//! 3. **`positionNode` is kept.** d33's `LabelBatch` nulls it and bakes each
+//! 3. **`positionNode` is kept.** d3-three's `LabelBatch` nulls it and bakes each
 //!    glyph quad into its instance matrix, purely to dodge r186's
 //!    `setupPosition` ordering bug. This port applies `position_node` *before*
 //!    the instance matrix (plan §5.2), so the bug is not there and lib3's own
 //!    `BatchedText` path is the one used.
 //!
 //! Deviation 1 is what still keeps the `< 0.1 %` image gate against
-//! `d33/rung0/examples/screenshots/d3_treemap.jpg` out of reach — 0.156 %.
-//! `tests/d33_treemap_labels.rs` grades the layout against a JSON golden dumped
+//! d3-three's `examples/screenshots/d3_treemap.jpg` out of reach — 0.156 %.
+//! `tests/d3_treemap_labels.rs` grades the layout against a JSON golden dumped
 //! from the page's own JS, and asserts the image number under a 250-pixel
 //! ceiling.
 
@@ -62,7 +62,7 @@ use three_rs::{
 
 pub const INNER_WIDTH: f64 = 800.0;
 pub const INNER_HEIGHT: f64 = 500.0;
-/// The d33 harness runs at `400 × 250 @ viewScale 2` with no
+/// The d3-three harness runs at `400 × 250 @ viewScale 2` with no
 /// `deviceScaleFactor`, so `devicePixelRatio` is 1.
 pub const DPR: f64 = 1.0;
 
@@ -195,7 +195,7 @@ pub fn split_name(name: &str) -> Vec<String> {
 }
 
 /// `frameCamera( camera, box, { elevation, azimuth, fill } )` from
-/// `d33/rung0/src/frame.js`, for the one box this page passes: the axis-aligned
+/// d3-three's `src/frame.js`, for the one box this page passes: the axis-aligned
 /// slab `(0, 0, −SIDE) … (SIDE, THICK + LIFT, 0)`. The `Box3` → `Sphere` step
 /// and the 8 corners are inlined rather than routed through `Box3`, which keeps
 /// the deliberately-iterative part — place, project, recentre, refit — verbatim.
@@ -306,7 +306,7 @@ fn frame_camera(
     target
 }
 
-/// `basisQuaternion( along, up )` from `d33/rung0/src/labels.js`.
+/// `basisQuaternion( along, up )` from d3-three's `src/labels.js`.
 fn basis_quaternion(along: Vector3, up: Vector3) -> Quaternion {
     let mut x = along;
     x.normalize();
@@ -661,7 +661,7 @@ fn main() {
     let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
     let path = std::env::args()
         .nth(1)
-        .unwrap_or_else(|| "target/d33_treemap_labels.png".to_string());
+        .unwrap_or_else(|| "target/d3_treemap_labels.png".to_string());
     three_rs::testing::write_png(&path, width, height, &pixels);
     println!("wrote {path} ({width}x{height})");
 }

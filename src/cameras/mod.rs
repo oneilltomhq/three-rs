@@ -82,7 +82,7 @@ impl<'a> From<std::cell::RefMut<'a, PerspectiveCamera>> for CameraMut<'a> {
 /// three.js has a real `Camera extends Object3D` base class that both cameras
 /// extend; the port grew `PerspectiveCamera` first and kept them as separate
 /// structs, so this trait is the base class's render-facing surface rather than
-/// a new idea. It exists because lib3's SDF text page — and d33's, and three's
+/// a new idea. It exists because lib3's SDF text page — and d3-three's, and three's
 /// own `QuadMesh` path — use an `OrthographicCamera`, and `render()` took a
 /// `&mut PerspectiveCamera` by name.
 ///

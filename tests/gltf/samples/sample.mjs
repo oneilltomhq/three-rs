@@ -1,9 +1,17 @@
-import { GLTFLoader } from '/home/tom/src/vendor/three.js/examples/jsm/loaders/GLTFLoader.js';
+// three.js comes from THREE_JS_DIR, or ~/src/vendor/three.js.
 import fs from 'fs';
+import os from 'node:os';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+const THREE_DIR = process.env.THREE_JS_DIR || path.join( os.homedir(), 'src/vendor/three.js' );
+const { GLTFLoader } = await import( pathToFileURL( path.join( THREE_DIR, 'examples/jsm/loaders/GLTFLoader.js' ) ).href );
+const { AnimationMixer } = await import( pathToFileURL( path.join( THREE_DIR, 'build/three.module.js' ) ).href );
+const model = ( file ) => fs.readFileSync( path.join( THREE_DIR, 'examples/models/gltf', file ) );
 const loader = new GLTFLoader();
 loader.register(() => ({ name: 'stub', loadTexture: () => Promise.resolve(null) }));
 for (const file of ['Soldier.glb', 'Michelle.glb']) {
-  const buf = fs.readFileSync('/home/tom/src/vendor/three.js/examples/models/gltf/' + file);
+  const buf = model(file);
   await new Promise((res, rej) => loader.parse(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), '', (gltf) => {
     const names = []; let skinned = null; const skels = [];
     gltf.scene.traverse(o => { names.push(o.name + ':' + o.type); if (o.isSkinnedMesh && !skinned) skinned = o; if (o.isSkinnedMesh) skels.push(o.skeleton.bones.length); });
@@ -23,9 +31,8 @@ for (const file of ['Soldier.glb', 'Michelle.glb']) {
 }
 
 // t = 0 bone world matrices, for the AnimationMixer test.
-import { AnimationMixer } from '/home/tom/src/vendor/three.js/build/three.module.js';
 {
-  const buf = fs.readFileSync('/home/tom/src/vendor/three.js/examples/models/gltf/Michelle.glb');
+  const buf = model('Michelle.glb');
   await new Promise((res, rej) => loader.parse(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), '', (gltf) => {
     const mixer = new AnimationMixer(gltf.scene);
     mixer.clipAction(gltf.animations[0]).play();
@@ -43,7 +50,7 @@ import { AnimationMixer } from '/home/tom/src/vendor/three.js/build/three.module
 
 // Skeleton.update() output at t = 0 — what the skinning shader consumes.
 {
-  const buf = fs.readFileSync('/home/tom/src/vendor/three.js/examples/models/gltf/Michelle.glb');
+  const buf = model('Michelle.glb');
   await new Promise((res, rej) => loader.parse(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), '', (gltf) => {
     const mixer = new AnimationMixer(gltf.scene);
     mixer.clipAction(gltf.animations[0]).play();
