@@ -305,7 +305,7 @@ pub fn init() -> App {
 pub fn animate(app: &mut App) {
     let _ = app.controls.update(&mut app.camera, None);
 
-    app.renderer.render(&mut app.scene, &mut app.camera);
+    app.renderer.render(&app.scene, &mut app.camera);
 }
 
 /// The page's `onWindowResize()`. The rung harness never calls this.

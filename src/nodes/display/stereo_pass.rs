@@ -131,10 +131,10 @@ impl NodeUpdate for StereoState {
             let (width, height) = (f64::from(width), f64::from(height));
 
             render_target.set_viewport(0.0, 0.0, width / 2.0, height);
-            renderer.render_nested(&scene, &mut stereo.camera_l);
+            renderer.render(&scene, &mut stereo.camera_l);
 
             render_target.set_viewport(width / 2.0, 0.0, width / 2.0, height);
-            renderer.render_nested(&scene, &mut stereo.camera_r);
+            renderer.render(&scene, &mut stereo.camera_r);
         });
 
         // restore

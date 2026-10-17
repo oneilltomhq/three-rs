@@ -70,7 +70,7 @@ fn render(count: usize, range_colors: bool) -> Vec<u8> {
     let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
     renderer.set_pixel_ratio(1.0);
     renderer.set_size(WIDTH, HEIGHT);
-    renderer.render(&mut scene, &mut camera);
+    renderer.render(&scene, &mut camera);
 
     let (width, height, pixels) = renderer.read_canvas_pixels().unwrap();
     assert_eq!((width, height), (WIDTH as u32, HEIGHT as u32));

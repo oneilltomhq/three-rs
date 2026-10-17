@@ -122,7 +122,7 @@
 //! let mut camera = PerspectiveCamera::new(60.0, 800.0 / 500.0, 0.1, 100.0);
 //! camera.node.borrow_mut().position.z = 3.0;
 //!
-//! renderer.render(&mut scene, &mut camera);
+//! renderer.render(&scene, &mut camera);
 //! let (width, height, pixels) = renderer.read_canvas_pixels()?;
 //! assert_eq!(pixels.len(), (width * height * 4) as usize);
 //! # Ok::<(), three_rs::Error>(())

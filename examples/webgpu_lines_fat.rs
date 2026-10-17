@@ -203,7 +203,7 @@ pub fn animate(app: &mut App) {
 
     app.renderer.auto_clear = true;
     app.scene.background = None;
-    app.renderer.render(&mut app.scene, &mut app.camera);
+    app.renderer.render(&app.scene, &mut app.camera);
 
     // --- inset scene
     let pos_y = app.inner_height - app.inset_height - 20.0;
@@ -228,7 +228,7 @@ pub fn animate(app: &mut App) {
 
     app.renderer.auto_clear = false;
     app.scene.background = Some(Background::Node(app.background_node.clone()));
-    app.renderer.render(&mut app.scene, &mut app.camera2);
+    app.renderer.render(&app.scene, &mut app.camera2);
 
     app.renderer.set_scissor_test(false);
 }

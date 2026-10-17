@@ -39,7 +39,7 @@ fn viewport_depth_reads_a_depth_stencil_buffer() {
     camera.object.position.z = 10.0;
     camera.update_matrix_world();
 
-    let mut scene = Scene::new();
+    let scene = Scene::new();
     scene.add(&quad(
         MeshBasicNodeMaterial::line(Color::from_hex(0xff0000)),
         0.0,
@@ -50,7 +50,7 @@ fn viewport_depth_reads_a_depth_stencil_buffer() {
     depth.transparent = true;
     scene.add(&quad(depth, 1.0));
 
-    renderer.render(&mut scene, &mut camera);
+    renderer.render(&scene, &mut camera);
     let (w, h, pixels) = renderer.read_canvas_pixels().expect("canvas readback");
     assert_eq!((w, h), (W, H));
     let [r, g, b] = [pixels[0], pixels[1], pixels[2]];

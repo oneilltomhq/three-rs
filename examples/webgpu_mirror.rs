@@ -308,7 +308,7 @@ pub fn animate(app: &mut App) {
         small_sphere.set_rotation(rotation.x, (PI / 2.0) - timer * 0.1, timer * 0.8);
     }
 
-    app.renderer.render(&mut app.scene, &mut app.camera);
+    app.renderer.render(&app.scene, &mut app.camera);
 }
 
 /// The page's `onWindowResize()`.

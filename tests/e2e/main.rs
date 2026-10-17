@@ -6955,7 +6955,7 @@ fn a_scene_mutation_uploads_exactly_what_changed() {
     let strip = three_rs::testing::strip(
         &mut app,
         |app| &mut app.renderer,
-        &mut |app: &mut App| app.renderer.render(&mut app.scene, &mut app.camera),
+        &mut |app: &mut App| app.renderer.render(&app.scene, &mut app.camera),
         &mut [
             // Replace the one geometry, keeping the mesh and its material.
             ("replace geometry", &mut |app: &mut App| {
@@ -7056,15 +7056,15 @@ fn a_render_target_reads_back_the_same_pixels_as_the_canvas() {
         Rc::new(box_geometry(1.0, 1.0, 1.0, 1, 1, 1)),
         MeshBasicNodeMaterial::new(),
     );
-    let mut scene = Scene::new();
+    let scene = Scene::new();
     scene.add(&mesh);
 
-    renderer.render(&mut scene, &mut camera);
+    renderer.render(&scene, &mut camera);
     let (canvas_width, canvas_height, canvas) = renderer.read_canvas_pixels().unwrap();
 
     let target = RenderTarget::new(canvas_width, canvas_height);
     renderer.set_render_target(Some(target.clone()));
-    renderer.render(&mut scene, &mut camera);
+    renderer.render(&scene, &mut camera);
     renderer.set_render_target(None);
 
     let (width, height, pixels) = renderer.read_target_pixels(&target).unwrap();
@@ -7118,10 +7118,10 @@ fn a_mutated_attribute_rewrites_one_buffer() {
 
     let geometry = Rc::new(box_geometry(1.0, 1.0, 1.0, 1, 1, 1));
     let mesh = Mesh::new(geometry.clone(), MeshBasicNodeMaterial::new());
-    let mut scene = Scene::new();
+    let scene = Scene::new();
     scene.add(&mesh);
 
-    renderer.render(&mut scene, &mut camera);
+    renderer.render(&scene, &mut camera);
     let (width, height, before) = renderer.read_canvas_pixels().unwrap();
 
     // Slide every vertex a long way to the left, through the `Rc` the mesh is
@@ -7143,7 +7143,7 @@ fn a_mutated_attribute_rewrites_one_buffer() {
         "set_needs_update() bumps the attribute's version once"
     );
 
-    renderer.render(&mut scene, &mut camera);
+    renderer.render(&scene, &mut camera);
     let info = renderer.info().clone();
     println!("mutated attribute: {info}");
 
@@ -7175,7 +7175,7 @@ fn a_mutated_attribute_rewrites_one_buffer() {
 
     // A third render changes nothing: the version now matches what was
     // uploaded, so the steady frame is a steady frame again.
-    renderer.render(&mut scene, &mut camera);
+    renderer.render(&scene, &mut camera);
     assert_eq!(
         renderer.info().build,
         three_rs::BuildCounts::default(),
@@ -7208,7 +7208,7 @@ fn a_mutated_uniform_reaches_the_pixels_through_the_kept_buffer() {
     let mut material = MeshBasicNodeMaterial::new();
     material.color = Color::from_hex(0xff0000);
     let mesh = Mesh::new(Rc::new(box_geometry(1.0, 1.0, 1.0, 1, 1, 1)), material);
-    let mut scene = Scene::new();
+    let scene = Scene::new();
     scene.add(&mesh);
 
     // The centre texel, RGBA.
@@ -7219,8 +7219,8 @@ fn a_mutated_uniform_reaches_the_pixels_through_the_kept_buffer() {
     };
 
     // Two frames: the first builds, the second is steady.
-    renderer.render(&mut scene, &mut camera);
-    renderer.render(&mut scene, &mut camera);
+    renderer.render(&scene, &mut camera);
+    renderer.render(&scene, &mut camera);
     assert_eq!(
         renderer.info().build,
         BuildCounts::default(),
@@ -7241,7 +7241,7 @@ fn a_mutated_uniform_reaches_the_pixels_through_the_kept_buffer() {
         .as_mut()
         .expect("three-rs: the mesh has a material")
         .color = Color::from_hex(0x0000ff);
-    renderer.render(&mut scene, &mut camera);
+    renderer.render(&scene, &mut camera);
     let info = renderer.info().clone();
     println!("mutated uniform: {info}");
     assert_eq!(
@@ -7257,7 +7257,7 @@ fn a_mutated_uniform_reaches_the_pixels_through_the_kept_buffer() {
 
     // And the object's half of the same group: move the box off the centre.
     mesh.borrow_mut().position.x = 3.0;
-    renderer.render(&mut scene, &mut camera);
+    renderer.render(&scene, &mut camera);
     assert_eq!(
         renderer.info().build,
         BuildCounts::default(),
@@ -7353,9 +7353,9 @@ fn a_dropped_geometry_does_not_lend_its_buffers_to_the_next_one() {
             geometry,
             MeshBasicNodeMaterial::line(Color::from_hex(0xffffff)),
         );
-        let mut scene = Scene::new();
+        let scene = Scene::new();
         scene.add(&line);
-        renderer.render(&mut scene, &mut camera);
+        renderer.render(&scene, &mut camera);
         ptr
     };
     let with_line = renderer.geometry_cache_len();
@@ -7381,8 +7381,8 @@ fn a_dropped_geometry_does_not_lend_its_buffers_to_the_next_one() {
 
     // Frame 2: nothing. The sweep drops the line's entry, and with it the
     // `Weak` that was reserving the block.
-    let mut empty = Scene::new();
-    renderer.render(&mut empty, &mut camera);
+    let empty = Scene::new();
+    renderer.render(&empty, &mut camera);
     assert_eq!(
         renderer.geometry_cache_len(),
         with_line - 1,
@@ -7395,9 +7395,9 @@ fn a_dropped_geometry_does_not_lend_its_buffers_to_the_next_one() {
     let mut material = MeshBasicNodeMaterial::new();
     material.color_node = Some(texture(&tex));
     let mesh = Mesh::new(Rc::new(plane_geometry(1.0, 1.0, 1, 1)), material);
-    let mut scene = Scene::new();
+    let scene = Scene::new();
     scene.add(&mesh);
-    renderer.render(&mut scene, &mut camera);
+    renderer.render(&scene, &mut camera);
 
     // and it drew: the plane is white against a cleared canvas.
     let (w, h, pixels) = renderer.read_canvas_pixels().unwrap();
@@ -7451,9 +7451,9 @@ fn churning_geometry_and_materials_does_not_grow_the_caches() {
         material.color_node =
             Some(instanced_range(Color::from_hex(0x000000), Color::from_hex(0xffffff), 8).xyz());
         let mesh = InstancedMesh::new(geometry, material, 8);
-        let mut scene = Scene::new();
+        let scene = Scene::new();
         scene.add(&mesh);
-        renderer.render(&mut scene, &mut camera);
+        renderer.render(&scene, &mut camera);
 
         sizes.push((
             renderer.geometry_cache_len(),

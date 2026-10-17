@@ -134,7 +134,7 @@ pub fn animate(app: &mut App) {
     // here so the steady-frame assertion runs over the same call the other
     // PMREM examples make.
     app.environment.update(&mut app.renderer).unwrap();
-    app.renderer.render(&mut app.scene, &mut app.camera);
+    app.renderer.render(&app.scene, &mut app.camera);
 }
 
 /// The page's `onWindowResize()`.

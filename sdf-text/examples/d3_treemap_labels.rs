@@ -642,7 +642,7 @@ pub fn animate(app: &mut App) {
 }
 
 pub fn render_once(app: &mut App) {
-    app.renderer.render(&mut app.scene, &mut app.camera);
+    app.renderer.render(&app.scene, &mut app.camera);
 }
 
 fn main() {

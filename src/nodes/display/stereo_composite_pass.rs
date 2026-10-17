@@ -209,11 +209,11 @@ impl NodeUpdate for CompositeState {
 
             // left
             renderer.set_render_target(Some(self.target_l.clone()));
-            renderer.render_nested(&scene, &mut stereo.camera_l);
+            renderer.render(&scene, &mut stereo.camera_l);
 
             // right
             renderer.set_render_target(Some(self.target_r.clone()));
-            renderer.render_nested(&scene, &mut stereo.camera_r);
+            renderer.render(&scene, &mut stereo.camera_r);
         }
 
         // composite

@@ -121,7 +121,7 @@ fn one_glyph_quad_matches_the_atlas_sdf() {
     let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
     renderer.set_pixel_ratio(1.0);
     renderer.set_size(WIDTH as f64, HEIGHT as f64);
-    renderer.render(&mut scene, &mut camera);
+    renderer.render(&scene, &mut camera);
     let (w, h, pixels) = renderer.read_canvas_pixels().unwrap();
     assert_eq!((w as usize, h as usize), (WIDTH, HEIGHT));
 
@@ -314,7 +314,7 @@ fn the_outline_band_is_the_halo_colour() {
     let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
     renderer.set_pixel_ratio(1.0);
     renderer.set_size(WIDTH as f64, HEIGHT as f64);
-    renderer.render(&mut scene, &mut camera);
+    renderer.render(&scene, &mut camera);
     let (_, _, pixels) = renderer.read_canvas_pixels().unwrap();
 
     let aspect = WIDTH as f64 / HEIGHT as f64;
@@ -409,7 +409,7 @@ fn the_atlas_v_flip_and_u_direction_are_right() {
     let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
     renderer.set_pixel_ratio(1.0);
     renderer.set_size(WIDTH as f64, HEIGHT as f64);
-    renderer.render(&mut scene, &mut camera);
+    renderer.render(&scene, &mut camera);
     let (_, _, pixels) = renderer.read_canvas_pixels().unwrap();
 
     let aspect = WIDTH as f64 / HEIGHT as f64;

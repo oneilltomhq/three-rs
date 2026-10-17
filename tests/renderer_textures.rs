@@ -174,12 +174,12 @@ fn dropped_textures_leave_the_caches() {
     // A yellow plane drawn into a target, and the target's texture sampled.
     let target = RenderTarget::new(SIZE, SIZE);
     {
-        let mut target_scene = Scene::new();
+        let target_scene = Scene::new();
         let mut yellow = MeshBasicNodeMaterial::new();
         yellow.color = Color::from_hex(0xffff00);
         target_scene.add(&plane(yellow));
         renderer.set_render_target(Some(target.clone()));
-        renderer.render(&mut target_scene, &mut camera);
+        renderer.render(&target_scene, &mut camera);
         renderer.set_render_target(None);
     }
     set_color_node(&mesh, Some(texture(&target.texture())));

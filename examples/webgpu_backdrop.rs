@@ -258,7 +258,7 @@ pub fn animate(app: &mut App) {
         portals.set_rotation(r.x, r.y + delta * 0.5, r.z);
     }
 
-    app.renderer.render(&mut app.scene, &mut app.camera);
+    app.renderer.render(&app.scene, &mut app.camera);
 }
 
 /// The page's `onWindowResize()`.

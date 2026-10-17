@@ -189,7 +189,7 @@ pub fn init() -> App {
 /// The page's `animate()`: one render, nothing moved.
 pub fn animate(app: &mut App) {
     app.environment.update(&mut app.renderer).unwrap();
-    app.renderer.render(&mut app.scene, &mut app.camera);
+    app.renderer.render(&app.scene, &mut app.camera);
 }
 
 /// The page's `onWindowResize()`.

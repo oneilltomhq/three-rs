@@ -109,7 +109,7 @@ impl Fixture {
     }
 
     fn render(&mut self) -> Vec<u8> {
-        self.renderer.render(&mut self.scene, &mut self.camera);
+        self.renderer.render(&self.scene, &mut self.camera);
         let (width, height, pixels) = self.renderer.read_canvas_pixels().unwrap();
         assert_eq!((width as usize, height as usize), (W, H));
         pixels
@@ -178,7 +178,7 @@ fn a_uint16_storage_attribute_is_widened_on_upload() {
     renderer.set_pixel_ratio(1.0);
     renderer.set_size(W as f64, H as f64);
 
-    renderer.render(&mut scene, &mut camera);
+    renderer.render(&scene, &mut camera);
     let (_, _, pixels) = renderer.read_canvas_pixels().unwrap();
     assert_eq!(
         middle(&pixels, 0),
@@ -204,14 +204,14 @@ fn a_uint16_storage_attribute_is_widened_on_upload() {
 
     // A frame with nothing changed writes nothing (`info().build` is per
     // frame).
-    renderer.render(&mut scene, &mut camera);
+    renderer.render(&scene, &mut camera);
     assert_eq!(renderer.info().build.buffers_written, 0);
 
     // `attribute.needsUpdate = true` writes the array over the buffer, once.
     let color = geometries[0].get_attribute("color").unwrap();
     *color.data_mut() = TypedArray::U16([1, 0, 0, 1].repeat(4));
     color.set_needs_update();
-    renderer.render(&mut scene, &mut camera);
+    renderer.render(&scene, &mut camera);
     assert_eq!(renderer.info().build.buffers_written, 1);
     let (_, _, pixels) = renderer.read_canvas_pixels().unwrap();
     assert_eq!(

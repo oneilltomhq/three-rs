@@ -180,7 +180,7 @@ pub fn animate(app: &mut App) {
         .borrow_mut()
         .set_rotation(0.0, time * 0.1, 0.0);
 
-    app.renderer.render(&mut app.scene, &mut app.camera);
+    app.renderer.render(&app.scene, &mut app.camera);
 }
 
 /// The page's `onWindowResize()`.

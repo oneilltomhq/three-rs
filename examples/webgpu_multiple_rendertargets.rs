@@ -164,7 +164,7 @@ pub fn animate(app: &mut App) {
     // render scene into target
     app.renderer
         .set_render_target(Some(app.render_target.clone()));
-    app.renderer.render(&mut app.scene, &mut app.camera);
+    app.renderer.render(&app.scene, &mut app.camera);
 
     // render post FX
     app.renderer.set_render_target(None);

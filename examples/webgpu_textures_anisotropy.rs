@@ -174,7 +174,7 @@ pub fn animate(app: &mut App) {
 
     app.renderer
         .set_scissor(0.0, 0.0, screen_width / 2.0 - 2.0, screen_height);
-    app.renderer.render(&mut app.scene1, &mut app.camera);
+    app.renderer.render(&app.scene1, &mut app.camera);
 
     app.renderer.set_scissor_test(true);
 
@@ -184,7 +184,7 @@ pub fn animate(app: &mut App) {
         screen_width / 2.0 - 2.0,
         screen_height,
     );
-    app.renderer.render(&mut app.scene2, &mut app.camera);
+    app.renderer.render(&app.scene2, &mut app.camera);
 
     app.renderer.set_scissor_test(false);
 }

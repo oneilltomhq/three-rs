@@ -7898,7 +7898,7 @@ pass's `auto_clear_depth`, opaque / transparent, lighting and
 inert at their defaults, which a stereo pass never changes. Inside the
 bracket, the pass clears colour and depth once (three's `renderer.clear()`
 also clears stencil, which the port does not allocate), then renders each
-eye with `render_nested` into its half's viewport.
+eye with `render` into its half's viewport.
 
 **The anaglyph eyes keep their world matrices.** `frame_corners` writes the
 eye's quaternion. The port then composes `matrix_world` from position,

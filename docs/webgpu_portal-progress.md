@@ -26,7 +26,7 @@ counts match: 9 draws, 9 pipelines.
 | area | what |
 |---|---|
 | `src/renderer/pass.rs` | `PassNode::sample( coord )` — `pass( … ).context( { getUV: () => coord } )`, the pass tapped at the caller's uv |
-| `src/renderer/mod.rs` | `Renderer::render_shared` is public: a page whose main render shares its camera with a pass renders this way |
+| `src/renderer/mod.rs` | `Renderer::render` takes the camera's `Rc<RefCell<_>>` as well as a `&mut`, for a page whose main render shares its camera with a pass (#356) |
 | `tests/nodes_display_wgsl.rs` | the plane's material, front and back halves, gated against three's `m12` / `m13` |
 
 **The pass tapped at `screenUV`.** Three reaches this through the builder
@@ -45,8 +45,9 @@ once, so the dump has the one var `TextureNode.generate()` makes
 **The camera is shared with the pass.** The portal pass renders with the
 camera the main scene is being drawn with, from inside the main render. A
 render that holds the camera mutably would find it borrowed when the pass
-asks for it, so the page renders with `render_shared`, which updates the
-camera's matrices through a `try_borrow_mut` and then holds it shared.
+asks for it, so the page hands `render` the camera's `Rc<RefCell<_>>` rather
+than a `&mut`; `render` then updates the camera's matrices through a
+`try_borrow_mut` and holds it shared (#356).
 
 ## Checked, not assumed
 

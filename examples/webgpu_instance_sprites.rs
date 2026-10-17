@@ -122,7 +122,7 @@ pub fn init() -> App {
 /// The page's `animate()` / `render()`.
 pub fn animate(app: &mut App) {
     animate_cpu_only(app);
-    app.renderer.render(&mut app.scene, &mut app.camera);
+    app.renderer.render(&app.scene, &mut app.camera);
 }
 
 /// The page's `onWindowResize()`.

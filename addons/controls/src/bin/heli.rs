@@ -398,7 +398,7 @@ impl App {
 
     fn render(&mut self) {
         self.sync();
-        self.renderer.render(&mut self.scene, &mut self.camera);
+        self.renderer.render(&self.scene, &mut self.camera);
     }
 
     /// The window title, which is also what documents a screenshot.

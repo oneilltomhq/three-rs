@@ -92,7 +92,7 @@ fn two_frames_run_each_phase_behind_its_guard() {
     let log: Log = Rc::default();
     let probe = custom(Probe { log: log.clone() });
 
-    let mut scene = Scene::new();
+    let scene = Scene::new();
     let geometry = Rc::new(box_geometry(1.0, 1.0, 1.0, 1, 1, 1));
     for x in [-0.75, 0.75] {
         let mut material = MeshBasicNodeMaterial::new();
@@ -110,9 +110,9 @@ fn two_frames_run_each_phase_behind_its_guard() {
 
     for _ in 0..2 {
         renderer.set_render_target(Some(target.clone()));
-        renderer.render(&mut scene, &mut camera);
+        renderer.render(&scene, &mut camera);
         renderer.set_render_target(None);
-        renderer.render(&mut scene, &mut camera);
+        renderer.render(&scene, &mut camera);
     }
 
     let frame = |id: u64| {
@@ -157,7 +157,7 @@ fn event_hooks_run_at_their_phase() {
         .bypass(on_object_update(hook("object")))
         .bypass(on_after_object_update(hook("after object")));
 
-    let mut scene = Scene::new();
+    let scene = Scene::new();
     let geometry = Rc::new(box_geometry(1.0, 1.0, 1.0, 1, 1, 1));
     for x in [-0.75, 0.75] {
         let mut material = MeshBasicNodeMaterial::new();
@@ -175,9 +175,9 @@ fn event_hooks_run_at_their_phase() {
 
     for _ in 0..2 {
         renderer.set_render_target(Some(target.clone()));
-        renderer.render(&mut scene, &mut camera);
+        renderer.render(&scene, &mut camera);
         renderer.set_render_target(None);
-        renderer.render(&mut scene, &mut camera);
+        renderer.render(&scene, &mut camera);
     }
 
     let log = log.borrow();

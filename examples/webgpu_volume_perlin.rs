@@ -238,7 +238,7 @@ pub fn init() -> App {
 
 /// The page's `animate()`.
 pub fn animate(app: &mut App) {
-    app.renderer.render(&mut app.scene, &mut app.camera);
+    app.renderer.render(&app.scene, &mut app.camera);
 }
 
 /// The page's `onWindowResize()`.

@@ -151,7 +151,7 @@ pub fn init() -> App {
 pub fn animate(app: &mut App) {
     app.flow.move_along_curve(0.001);
 
-    app.renderer.render(&mut app.scene, &mut app.camera);
+    app.renderer.render(&app.scene, &mut app.camera);
 }
 
 /// The page's `onWindowResize()`.

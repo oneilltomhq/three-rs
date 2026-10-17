@@ -14,8 +14,20 @@ have their own sections after the release they ship with. The format follows [Ke
   render and read at the screen position. `PassNode::sample( coord )`
   is the port's spelling of that context, a second tap on the pass's output
   at the caller's uv (`texture()` fixes its uv when the tap is made; #352 is
-  the general fix). `Renderer::render_shared` is public, for a page whose
-  main render shares its camera with a pass.
+  the general fix).
+
+### Changed
+
+- **One `Renderer::render`, whatever holds the camera** (#356): `render`
+  takes `&Scene` and any `IntoSceneCamera` — `&mut camera` as before, or
+  `&camera` for the `Rc<RefCell<_>>` a page gave to `pass( scene, camera )`.
+  A page whose main render shares its camera with a pass (`webgpu_portal`)
+  passes the `Rc` it has; the `render_shared` the portal branch added for
+  that, and the crate-internal `render_nested`, are gone. A shared camera
+  that is borrowed by anything other than an outer render of the frame now
+  panics at `render()` with a message, instead of inside a pass's draw.
+  `render(&mut scene, &mut camera)` still compiles; clippy's
+  `unnecessary_mut_passed` asks for `&scene`. `docs/api.md` decision 14.
 
 ### Fixed
 

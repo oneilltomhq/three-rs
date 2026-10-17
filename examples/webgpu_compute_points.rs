@@ -214,7 +214,7 @@ pub fn init() -> App {
 /// `renderer.render( scene, camera )`.
 pub fn animate(app: &mut App) {
     app.renderer.compute(&app.particles.update).unwrap();
-    app.renderer.render(&mut app.scene, &mut app.camera);
+    app.renderer.render(&app.scene, &mut app.camera);
 }
 
 /// The page's `onWindowResize()`.

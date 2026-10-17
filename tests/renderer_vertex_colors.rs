@@ -83,7 +83,7 @@ fn render_node(line: three_rs::ObjectRef) -> Vec<u8> {
     let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
     renderer.set_pixel_ratio(1.0);
     renderer.set_size(W as f64, H as f64);
-    renderer.render(&mut scene, &mut camera);
+    renderer.render(&scene, &mut camera);
 
     let (width, height, pixels) = renderer.read_canvas_pixels().unwrap();
     assert_eq!((width as usize, height as usize), (W, H));

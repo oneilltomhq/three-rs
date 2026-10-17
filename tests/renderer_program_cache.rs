@@ -108,16 +108,16 @@ fn editing_a_material_graph_does_not_grow_the_program_cache() {
     let mut camera = camera();
 
     let mesh = plane(vec3(1.0, 0.0, 0.0));
-    let mut scene = Scene::new();
+    let scene = Scene::new();
     scene.add(&mesh);
-    renderer.render(&mut scene, &mut camera);
+    renderer.render(&scene, &mut camera);
     assert_eq!(centre(&mut renderer), [255, 0, 0]);
     let first = renderer.program_cache_lens();
 
     let mut lens = Vec::with_capacity(FRAMES);
     for frame in 1..=FRAMES {
         set_color_node(&mesh, vec3(0.0, frame as f64 / FRAMES as f64, 1.0));
-        renderer.render(&mut scene, &mut camera);
+        renderer.render(&scene, &mut camera);
         assert_eq!(
             renderer.info().build.programs_compiled,
             1,
@@ -152,7 +152,7 @@ fn editing_a_material_graph_does_not_grow_the_program_cache() {
     // this rebuilds it — the same cache key as before, with a new layout that
     // no cached bind group was made against.
     set_color_node(&mesh, vec3(1.0, 0.0, 0.0));
-    renderer.render(&mut scene, &mut camera);
+    renderer.render(&scene, &mut camera);
     assert_eq!(renderer.info().build.pipelines_built, 1);
     assert_eq!(
         centre(&mut renderer),
@@ -173,11 +173,11 @@ fn a_material_toggled_between_two_graphs_keeps_both_programs() {
     let red = vec3(1.0, 0.0, 0.0);
     let blue = vec3(0.0, 0.0, 1.0);
     let mesh = plane(red.clone());
-    let mut scene = Scene::new();
+    let scene = Scene::new();
     scene.add(&mesh);
-    renderer.render(&mut scene, &mut camera);
+    renderer.render(&scene, &mut camera);
     set_color_node(&mesh, blue.clone());
-    renderer.render(&mut scene, &mut camera);
+    renderer.render(&scene, &mut camera);
     let settled = renderer.program_cache_lens();
 
     for frame in 0..4 * GRACE {
@@ -187,7 +187,7 @@ fn a_material_toggled_between_two_graphs_keeps_both_programs() {
             (blue.clone(), [0, 0, 255])
         };
         set_color_node(&mesh, node);
-        renderer.render(&mut scene, &mut camera);
+        renderer.render(&scene, &mut camera);
         assert_eq!(
             renderer.info().build.pipelines_built,
             0,
@@ -208,13 +208,13 @@ fn a_fresh_kernel_every_frame_does_not_grow_the_compute_cache() {
     let mut renderer = renderer();
     renderer.info_mut().auto_reset = false;
     let mut camera = camera();
-    let mut empty = Scene::new();
+    let empty = Scene::new();
 
     let out = instanced_array(1, Type::U32);
     let mut built_after_first = 0;
     for frame in 0..FRAMES {
         renderer.compute(&increment(&out)).unwrap();
-        renderer.render(&mut empty, &mut camera);
+        renderer.render(&empty, &mut camera);
         let (_, _, compute_programs, compute_pipelines) = renderer.program_cache_lens();
         assert_eq!(
             (compute_programs, compute_pipelines),
@@ -246,7 +246,7 @@ fn a_new_kernel_shape_every_frame_keeps_only_recent_pipelines() {
     let _gpu = gpu();
     let mut renderer = renderer();
     let mut camera = camera();
-    let mut empty = Scene::new();
+    let empty = Scene::new();
 
     let out = instanced_array(1, Type::U32);
     let mut lens = Vec::with_capacity(FRAMES);
@@ -254,7 +254,7 @@ fn a_new_kernel_shape_every_frame_keeps_only_recent_pipelines() {
         let kernel = ComputeFlow::new(vec![out.element(uint(0)).assign(uint(frame as u32 + 1))], 1);
         renderer.compute(&kernel).unwrap();
         drop(kernel);
-        renderer.render(&mut empty, &mut camera);
+        renderer.render(&empty, &mut camera);
         assert_memory_counts(&renderer);
         lens.push(renderer.program_cache_lens());
     }
@@ -286,7 +286,7 @@ fn an_idle_live_kernel_keeps_its_pipeline_and_does_not_reinit() {
     let _gpu = gpu();
     let mut renderer = renderer();
     let mut camera = camera();
-    let mut empty = Scene::new();
+    let empty = Scene::new();
 
     let out = instanced_array(1, Type::U32);
     let mut kernel = increment(&out);
@@ -298,7 +298,7 @@ fn an_idle_live_kernel_keeps_its_pipeline_and_does_not_reinit() {
     assert_eq!(renderer.read_storage_buffer_u32(&out).unwrap(), vec![101]);
 
     for _ in 0..3 * GRACE {
-        renderer.render(&mut empty, &mut camera);
+        renderer.render(&empty, &mut camera);
     }
     let (_, _, compute_programs, compute_pipelines) = renderer.program_cache_lens();
     assert_eq!(
@@ -316,7 +316,7 @@ fn an_idle_live_kernel_keeps_its_pipeline_and_does_not_reinit() {
 
     drop(kernel);
     for _ in 0..GRACE + 2 {
-        renderer.render(&mut empty, &mut camera);
+        renderer.render(&empty, &mut camera);
     }
     let (_, _, compute_programs, compute_pipelines) = renderer.program_cache_lens();
     assert_eq!((compute_programs, compute_pipelines), (0, 0));

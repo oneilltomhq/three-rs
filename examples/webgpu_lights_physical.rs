@@ -244,7 +244,7 @@ pub fn animate(app: &mut App) {
     let time = date_now_ms() * 0.0005;
     app.bulb_light.borrow_mut().position.y = time.cos() * 0.75 + 1.25;
 
-    app.renderer.render(&mut app.scene, &mut app.camera);
+    app.renderer.render(&app.scene, &mut app.camera);
 }
 
 /// The page's `onWindowResize()`.

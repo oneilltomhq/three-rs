@@ -273,7 +273,7 @@ pub fn animate(app: &mut App) {
         app.sphere_on_line.borrow_mut().visible = false;
     }
 
-    app.renderer.render(&mut app.scene, &mut app.camera);
+    app.renderer.render(&app.scene, &mut app.camera);
 }
 
 /// `threshold.position.copy( line.position ); threshold.quaternion.copy(
