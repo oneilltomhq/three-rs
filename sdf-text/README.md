@@ -41,11 +41,11 @@ material), with the examples in `examples/` and their gates in `tests/` —
 |---|---|---|
 | 4 | — | `tests/sdf_text_glyph.rs`: one glyph quad, checked against the atlas tile's own SDF resampled on the CPU (not against an image) |
 | 5 | `examples/sdf_text_block.rs`, lib3's `examples/sdf-text-vector` page | `tests/sdf_text_block.rs`: the attribute packing leaf by leaf, two-run frame identity, and the whole 800 × 500 frame against the atlas SDF |
-| 6 | `examples/d33_treemap_labels.rs`, d33's `examples/d3_treemap.html` | `tests/d33_treemap_labels.rs` against `tests/golden/d3_treemap_labels.json`, dumped from that page's own JS |
+| 6 | `examples/d3_treemap_labels.rs`, d3-three's `examples/d3_treemap.html` | `tests/d3_treemap_labels.rs` against `tests/golden/d3_treemap_labels.json`, dumped from that page's own JS |
 
 Those three need a GPU, and must be run single-threaded
 (`cargo test -p sdf-text -- --test-threads=1`). Step 6's image comparison is
-three-rs's own e2e comparator (`three_rs::testing::compare`), run over d33's
+three-rs's own e2e comparator (`three_rs::testing::compare`), run over d3-three's
 reference frame; its treemap layout comes from the
 [d3-hierarchy](https://github.com/oneilltomhq/d3-hierarchy) crate, a
 dev-dependency.
@@ -201,15 +201,15 @@ Not ported, and why:
   against a golden dumped from the JS in that same environment, which is why
   layer 5 is honest rather than vacuous.
 - **`FontAtlas.js`** — the older canvas-rasterised atlas (128/64/8/16 constants).
-  Superseded by `VectorFontAtlas` for every lib3 and d33 use; its constants are
+  Superseded by `VectorFontAtlas` for every lib3 and d3-three use; its constants are
   not even the ones lib3's own test uses.
 - **What `BatchedText` inherits from `THREE.InstancedMesh`** beyond the draw
   itself — `raycast`, `dispose`. This port's `InstancedMesh` has neither, and
-  nothing in lib3's or d33's pages picks a glyph. `computeBoundingSphere` *is*
+  nothing in lib3's or d3-three's pages picks a glyph. `computeBoundingSphere` *is*
   ported (three-rs `InstancedMesh::compute_bounding_sphere`), and `sync()`
   computes the batch's own sphere over the members' glyph quads: without it the
   batch node is culled as a point at its own origin, which is a black frame and
-  no warning (#42). d33's page turns frustum culling off for its batch; it no
+  no warning (#42). d3-three's page turns frustum culling off for its batch; it no
   longer has to.
 - **`BatchedText`'s `_baseMaterial` constructor argument.** It is dead in the JS
   too — the constructor names it and never reads it, and both call sites pass

@@ -25,7 +25,7 @@
 //! are called out in the plan's §5.4:
 //!
 //! - **Unknown anchor keywords resolve to 0.** `resolveAnchor` has no `else`, so
-//!   `anchorX: 'start'` and `'end'` — which is what d33 passes — fall through
+//!   `anchorX: 'start'` and `'end'` — which is what d3-three passes — fall through
 //!   every branch and return `0`, i.e. left-aligned. [`Anchor::Named`] keeps
 //!   that: any string that is not one of the six recognised keywords is a no-op
 //!   offset. The `start-anchored` case in the golden exists to pin it.

@@ -27,12 +27,12 @@
 //!    rebuilds the nodes around fresh copies of the arrays and ends with the
 //!    material's own `set_needs_update()`, so the renderer builds the program
 //!    once per `sync()` that changed something rather than every frame.
-//! 3. **`positionNode` is kept**, unlike d33's `LabelBatch` workaround, because
+//! 3. **`positionNode` is kept**, unlike d3-three's `LabelBatch` workaround, because
 //!    three-rs applies `position_node` *before* the instance matrix (plan §5.2,
 //!    `docs/nodes.md` §10) — the order lib3 was written against. On a unit
-//!    `PlaneGeometry( 1, 1 )` d33's baked `world × translate × scale` and lib3's
+//!    `PlaneGeometry( 1, 1 )` d3-three's baked `world × translate × scale` and lib3's
 //!    `mix( bounds.x, bounds.z, uv.x )` place every vertex identically, so this
-//!    matches d33's pixels as well as lib3's.
+//!    matches d3-three's pixels as well as lib3's.
 //!
 //! `sync()` also computes the batch's own bounding sphere over the members'
 //! glyph quads and stores it on the node, which is `BatchedMesh`'s

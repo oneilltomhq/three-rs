@@ -61,4 +61,4 @@ sdf-text/sdf_text_block
 sdf-text/sdf_text_glyph
 
 three-rs/e2e                        the pixel ladder, graded on real hardware; lavapipe's numbers against three's screenshots are #18
-sdf-text/d33_treemap_labels         326 of 100000 pixels off d33's own render on lavapipe (Mesa 25.3), over its 250 ceiling
+sdf-text/d3_treemap_labels          326 of 100000 pixels off d3-three's own render on lavapipe (Mesa 25.3), over its 250 ceiling

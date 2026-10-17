@@ -10,7 +10,7 @@
 //!
 //! The page's `VectorFont.load( fontURL )` is a `fetch`; here the same font file
 //! is read from disk (`VectorFont::load` is in the crate's skip register, and
-//! the bytes are byte-identical to lib3's and d33's copies).
+//! the bytes are byte-identical to lib3's and d3-three's copies).
 //!
 //! Two `sync()` + render rounds, as the page does: in vector mode the first
 //! `sync` is what rasterises the atlas, so the page renders once more to make

@@ -760,7 +760,7 @@ differences, each verified to be pixel-neutral.
 ### `LineBasicNodeMaterial` adds no divergence class
 
 Three's own `LineBasicNodeMaterial` program, dumped off
-`~/src/projects/d33/rung0/examples/d3_treemap.html`, is in
+d3-three's `examples/d3_treemap.html`, is in
 `docs/lines/LineBasicNodeMaterial_27.{vert,frag}.wgsl` and `.layout.txt`.
 Diffed against this port's `line_basic` section of `examples/dump_wgsl.rs`
 (`MeshBasicNodeMaterial::line( 0xffffff )`), the only differences are the

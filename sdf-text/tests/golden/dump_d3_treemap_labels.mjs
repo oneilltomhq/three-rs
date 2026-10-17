@@ -151,7 +151,7 @@ for ( const leaf of leaves ) {
 }
 
 const out = {
-	note: 'dumped from the d33 treemap page\'s own JS; see tests/golden/README.md',
+	note: 'dumped from the d3-three treemap page\'s own JS; see tests/golden/README.md',
 	WIDTH, HEIGHT, SIDE, S, THICK, LIFT, LABEL_PX, LINE, LABEL_PAD_PX,
 	INNER_WIDTH, INNER_HEIGHT,
 	unitsPerEm: font.unitsPerEm,

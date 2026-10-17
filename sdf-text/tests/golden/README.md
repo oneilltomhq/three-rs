@@ -1,12 +1,29 @@
 # Golden data for `sdf-text`
 
-Everything here was dumped from the JavaScript original in
-`/home/tom/src/projects/lib3` (`src/sdf-text/`, `src/sdf/edt.js`) on 2026-09-13.
-The Rust port is graded against these files; they are the only ground truth.
-Nothing was written into the lib3 tree — all commands are read-only there.
+Everything here was dumped from the JavaScript originals on 2026-09-13. The Rust
+port is graded against these files; they are the only ground truth.
 
-Font: `lib3/examples/assets/fonts/Roboto-Regular.ttf` (the only font lib3 and d33 use).
-opentype.js version: the one in `lib3/node_modules` (`^2.0.0`).
+Two JavaScript projects are involved:
+
+- **lib3** — the maintainer's library of TSL nodes for three.js WebGPU, whose `src/sdf-text/`
+  and `src/sdf/edt.js` this crate ports. It is public:
+  [github.com/oneilltomhq/lib3](https://github.com/oneilltomhq/lib3) (MIT), and
+  on npm as [`@oneilltom/lib3`](https://www.npmjs.com/package/@oneilltom/lib3),
+  whose `@oneilltom/lib3/sdf-text` export carries `VectorFont`.
+- **d3-three** (formerly *d33*) — the maintainer's port of d3 gallery examples to
+  three.js, whose `examples/d3_treemap.html` labels its tiles with lib3's
+  `BatchedText`. It is **not public yet**. Nothing below needs it: the one
+  golden taken from it (`d3_treemap_labels.json`) regenerates from public
+  packages, and only the image gate in `tests/d3_treemap_labels.rs` reads its
+  reference screenshot, skipping when it is absent.
+
+Nothing was written into either tree — all commands are read-only there.
+
+Font: `Roboto-Regular.ttf`, the only font lib3 and d3-three use. lib3's
+`examples/assets/fonts/` copy, d3-three's `examples/fonts/` copy and this
+crate's `tests/assets/` copy are md5-identical
+(`8f793587dcf03f31c551c5b60d175fc2`).
+opentype.js version: the one in lib3's `node_modules` (`^2.0.0`, 2.0.0 at the time).
 
 | file | contents | produced by |
 |---|---|---|
@@ -22,12 +39,15 @@ The `tile` and `raster_a` fields are base64 of the raw little-endian bytes
 
 ## Commands
 
-All four run from `/home/tom/src/projects/lib3` (that is where `node_modules` lives),
-with
+All four run from a checkout of
+[oneilltomhq/lib3](https://github.com/oneilltomhq/lib3) (that is where
+`node_modules` lives), with
 
 ```bash
-export OUT=/home/tom/src/projects/three-rs/sdf-text/sdf-text/tests/golden
-cd /home/tom/src/projects/lib3
+# from the root of the three-rs checkout:
+export OUT="$PWD/sdf-text/tests/golden"
+# LIB3_DIR is a lib3 checkout, e.g. git clone https://github.com/oneilltomhq/lib3
+cd "$LIB3_DIR" && npm ci
 ```
 
 ### 1 — `edt_fixtures.json`
@@ -122,23 +142,24 @@ console.log("wrote font_roboto.json + layout_vector.json");
 
 `VectorFontAtlas` cannot run in node (`new OffscreenCanvas` throws), so this one comes
 out of headless Chrome driven by `playwright-core`, which **is** installed in lib3
-(`devDependencies`, `^1.61.1`). The browser is the system `/usr/bin/google-chrome`; the
-flag list matches d33's `test/e2e/puppeteer.js:176-201` so the 2-D raster path is the
-same software Skia that produced d33's reference images.
+(`devDependencies`, `^1.61.1`). The browser is the system `/usr/bin/google-chrome`
+(or `CHROME_PATH`); the flag list matches the one in d3-three's `test/e2e/puppeteer.js`
+at the time, so the 2-D raster path is the same software Skia that produced
+d3-three's reference images.
 
 Terminal A — lib3's own dev server, which resolves the bare `three/webgpu` specifier
 inside `VectorFontAtlas.js`:
 
 ```bash
-cd /home/tom/src/projects/lib3
+cd "$LIB3_DIR"
 npx vite --mode examples --port 5199 --strictPort
 ```
 
 Terminal B:
 
 ```bash
-cd /home/tom/src/projects/lib3
-OUT=/home/tom/src/projects/three-rs/sdf-text/sdf-text/tests/golden node --input-type=module -e '
+cd "$LIB3_DIR"   # with OUT exported as above
+node --input-type=module -e '
 import { chromium } from "playwright-core";
 import { writeFileSync } from "node:fs";
 const browser = await chromium.launch({
@@ -200,33 +221,36 @@ Notes on the captured run:
 - `' '` (space) maps to a real Roboto glyph with an empty outline: its `viewBox` stays
   `[0,0,0,0]` and its tile is all zeros, but it still consumes slot 6.
 
-## `d3_treemap_labels.json`, for the d33 treemap gate
+## `d3_treemap_labels.json`, for the d3-three treemap gate
 
-`d3_treemap_labels.json` is the label arithmetic of
-`/home/tom/src/projects/d33/rung0/examples/d3_treemap.html`, dumped from that
-page's own JavaScript on 2026-09-13. It is the ground truth for
-`tests/d33_treemap_labels.rs` (step 6); nothing was written into the d33 or lib3 trees.
+`d3_treemap_labels.json` is the label arithmetic of d3-three's
+`examples/d3_treemap.html`, dumped from that page's own JavaScript on
+2026-09-13. It is the ground truth for `tests/d3_treemap_labels.rs` (step 6).
 
-Produced by `dump_d3_treemap_labels.mjs`, which is committed next to it:
+Produced by `dump_d3_treemap_labels.mjs`, which is committed next to it with a
+`package.json` and `package-lock.json` that pin its dependencies. From this
+directory:
 
 ```bash
-node tests/golden/dump_d3_treemap_labels.mjs tests/golden/d3_treemap_labels.json   # from sdf-text/
+npm ci
+node dump_d3_treemap_labels.mjs d3_treemap_labels.json
 ```
 
-It imports, by absolute path and read-only:
+The output is byte-identical to the committed file. Each input is a public
+stand-in for what the page itself loads:
 
-| what | from |
-|---|---|
-| `Vector3` / `Box3` / `Sphere` / `PerspectiveCamera` / `Quaternion` | `lib3/node_modules/three` 0.184.0 |
-| `d3.treemap`, `d3.treemapBinary`, `d3.hierarchy`, `d3.format` | d33's bundled `rung0/examples/jsm/vendor/d3.js` (d3 7.9) |
-| `VectorFont` (advances, kerning, unitsPerEm) | `lib3/src/sdf-text/VectorFont.js` + `lib3/node_modules/opentype.js` |
-| `flare.json` | `~/src/vendor/d3-gallery/notebooks/hierarchies/treemap.v2/files/flare.json` |
-| `Roboto-Regular.ttf` | `d33/rung0/examples/fonts/` (md5-identical to lib3's and to this repo's copy) |
+| what | from | stands for |
+|---|---|---|
+| `Vector3` / `Box3` / `Sphere` / `PerspectiveCamera` / `Quaternion` | npm `three` 0.184.0 | the page's vendored three.js |
+| `d3.treemap`, `d3.treemapBinary`, `d3.hierarchy`, `d3.format` | npm `d3` 7.9.0 | d3-three's esbuild bundle `examples/jsm/vendor/d3.js` (of `d3` `^7.9.0`) |
+| `VectorFont` (advances, kerning, unitsPerEm) | npm `@oneilltom/lib3` 0.5.0, `@oneilltom/lib3/sdf-text` (opentype.js bundled) | the page's `import { VectorFont } from 'lib3/sdf-text'` |
+| `flare.json` | `$D3_GALLERY_DIR/notebooks/hierarchies/treemap.v2/files/flare.json` (default `~/src/vendor/d3-gallery`) | the page's `fetch( '/gallery/hierarchies/treemap.v2/files/flare.json' )`, served from a d3-gallery checkout |
+| `Roboto-Regular.ttf` | `../assets/Roboto-Regular.ttf` (this crate's copy) | d3-three's `examples/fonts/Roboto-Regular.ttf`, md5-identical |
 
-`frameCamera` (`d33/rung0/src/frame.js`) and `basisQuaternion`
-(`d33/rung0/src/labels.js`) are copied into the script verbatim rather than
-imported, because both files resolve `three` as a bare specifier and d33 has no
-`three` in `node_modules` — it serves the vendored build over HTTP. three
+`frameCamera` (d3-three's `src/frame.js`) and `basisQuaternion`
+(`src/labels.js`) are copied into the script verbatim rather than imported,
+because both files resolve `three` as a bare specifier against the vendored
+build the page serves over HTTP, and d3-three is not public. three
 0.184.0 is not the 186dev build the page runs, but nothing here touches anything
 beyond `Vector3`/`Matrix4`/`Quaternion`/`Sphere`/`PerspectiveCamera` arithmetic,
 which is unchanged between the two.
@@ -243,7 +267,7 @@ exactly.
 | field | meaning |
 |---|---|
 | `WIDTH` … `LABEL_PAD_PX` | the page's constants, so a drift in either copy shows up |
-| `INNER_WIDTH` / `INNER_HEIGHT` | the d33 harness viewport (`400 × 250 @ viewScale 2`, dpr 1) |
+| `INNER_WIDTH` / `INNER_HEIGHT` | the d3-three harness viewport (`400 × 250 @ viewScale 2`, dpr 1) |
 | `camera` | `fov`, `aspect`, and the `near` / `far` / `position` / `quaternion` / `target` `frameCamera` settles on |
 | `pxPerUnit`, `fontSize`, `pad` | the label em derivation |
 | `flatQuaternion` | `basisQuaternion( (1,0,0), (0,0,-1) )` |
@@ -252,9 +276,11 @@ exactly.
 
 ### The image gate
 
-The `< 0.1 %` comparison the ladder plan asks for is against
-`d33/rung0/examples/screenshots/d3_treemap.jpg` (400 × 250, the d33 harness'
-own reference). It is **not reached yet** — 156 of 100000 pixels, 0.156 % — but
+The `< 0.1 %` comparison the ladder plan asks for is against d3-three's
+`examples/screenshots/d3_treemap.jpg` (400 × 250, the d3-three harness' own
+reference). The test reads it from `$D3_THREE_DIR/examples/screenshots/`
+(default `~/src/projects/d3-three/main`) and skips the comparison, saying so,
+when it is not there; it is not copied into this repo. It is **not reached yet** — 156 of 100000 pixels, 0.156 % — but
 it is now asserted under a ceiling rather than only printed, and the remaining
 gap is one deviation, not two: the page's tiles are `MeshStandardNodeMaterial`
 under a `HemisphereLight` and a `DirectionalLight` where this example still uses
