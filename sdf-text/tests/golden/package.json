@@ -1,0 +1,11 @@
+{
+  "name": "sdf-text-golden-dump",
+  "private": true,
+  "description": "Pinned dependencies for dump_d3_treemap_labels.mjs; see README.md.",
+  "type": "module",
+  "dependencies": {
+    "@oneilltom/lib3": "0.5.0",
+    "d3": "7.9.0",
+    "three": "0.184.0"
+  }
+}
