@@ -5,8 +5,20 @@
 //! `screenSpacePanning = false` and the preset
 //! `{ LEFT: PAN, MIDDLE: DOLLY, RIGHT: ROTATE }` — with two changes. The orbit
 //! target is not a free point in space but a point *on the ground*, carried in
-//! ground coordinates; and the ground is a sphere, so when its radius comes
-//! down the same controls are Google Earth rather than Google Maps.
+//! ground coordinates; and the ground has a curvature, so when it goes up the
+//! same controls are Google Earth rather than Google Maps, and when it goes
+//! below zero they are the inside of a planetarium.
+//!
+//! In a bowl the camera has to stay inside, and the deepest it can go is the
+//! centre, where every direction is wall: the panopticon. A [`Pose`]'s distance
+//! is capped at the bowl's radius `1 / |k|` there, and the polar angle may tip
+//! up past the horizon, as far as `π - MIN_POLAR`, since past it there is
+//! still grid to look at. An orbit about the target cannot do either — from the centre the
+//! target is always straight down, and a camera tipped past the horizon at the
+//! bowl's radius is outside it — so in a bowl the camera orbits a pivot raised
+//! along the normal instead, which is the target near the floor and the centre
+//! at the cap (see `place`). Near the floor even that pivot is the target, and
+//! the polar ceiling comes down with the distance so the eye stays inside.
 //!
 //! The damping is yomotsu's `camera-controls` ([`smooth_damp`](crate::smooth_damp),
 //! a critically damped spring), applied field by field exactly as
@@ -93,6 +105,11 @@ const WHEEL_WINDOW: f64 = 3.0;
 /// "nothing moved".
 const SNAP_THRESHOLD: f64 = 1e-6;
 
+/// [`SNAP_THRESHOLD`] for the curvature, whose whole range is `±0.025`: a
+/// snap of `1e-6` would move the edge of a 400-unit grid by a tenth of a unit.
+/// At `1e-9` the jump is under a thousandth of a unit at a thousand units out.
+const CURVATURE_SNAP_THRESHOLD: f64 = 1e-9;
+
 /// `OrbitControls.minDistance`.
 pub const MIN_DISTANCE: f64 = 1.0;
 /// `OrbitControls.maxDistance`.
@@ -103,6 +120,10 @@ pub const MAX_DISTANCE: f64 = 5000.0;
 pub const MIN_POLAR: f64 = 1e-3;
 /// `OrbitControls.maxPolarAngle` — `misc_controls_map.html` uses `π / 2`, which
 /// puts the eye on the ground. `85°` keeps the horizon in shot instead.
+///
+/// The ceiling on the plane and on a planet only. In a bowl the polar angle may
+/// reach `π - MIN_POLAR` far enough up from the floor: the wall rises past the
+/// horizon, so every direction has grid in it; see [`Pose::clamped`].
 pub const MAX_POLAR: f64 = 85.0 * DEG2RAD;
 
 /// One notch of the wheel, as a factor on the distance. `OrbitControls`'
@@ -127,8 +148,18 @@ const FIT_ITERATIONS: usize = 40;
 /// How many times [`MapControls::grab_move`] and [`MapControls::dolly`] refine
 /// the target. On a flat ground one step is exact; on a sphere the map from
 /// "shift the target in ground coordinates" to "shift what is under the
-/// cursor" is not the identity, and this closes the gap.
+/// cursor" is not the identity, and each step is a Newton step on a
+/// finite-difference Jacobian of that map.
+///
+/// 0.2 stepped by the residual alone, taking the Jacobian as the identity.
+/// That converged fine on a planet, where the cursor's hit is near the
+/// target, but at the panopticon the hit is a radian or more round the
+/// sphere and the error only halved each step: 24 of them left a grabbed
+/// point 7e-5 off.
 const SOLVE_ITERATIONS: usize = 24;
+
+/// The finite-difference step of the solver's Jacobian, in ground units.
+const SOLVE_PROBE: f64 = 1e-4;
 
 /// Where the camera is: an orbit target on the ground, and a direction and
 /// distance from it.
@@ -154,17 +185,91 @@ pub struct Pose {
 }
 
 impl Pose {
-    /// The pose with `distance` and `polar` forced into range and `azimuth`
-    /// wrapped to `( -π, π ]`.
-    pub fn clamped(self) -> Self {
+    /// The pose with `distance` and `polar` forced into range for `ground` and
+    /// `azimuth` wrapped to `( -π, π ]`.
+    ///
+    /// On the plane and on a planet (`k >= 0`) the distance is in
+    /// `[ MIN_DISTANCE, MAX_DISTANCE ]` and the polar angle in
+    /// `[ MIN_POLAR, MAX_POLAR ]`, as in 0.2.
+    ///
+    /// In a bowl (`k < 0`) the distance is at most the bowl's radius `1 / |k|`,
+    /// so the camera never passes the sphere's centre, and tightening `k` past
+    /// the distance carries the camera to the centre: the panopticon. The
+    /// polar angle may tip past the horizon, since the wall rises there and
+    /// every direction has grid — up to `π - MIN_POLAR` once the camera is
+    /// far enough up the bowl, and less near its floor, so that the eye never
+    /// goes through the wall (see `max_polar`).
+    pub fn clamped(self, ground: &Ground) -> Self {
+        let distance = self.distance.clamp(MIN_DISTANCE, max_distance(ground));
         Self {
             u: self.u,
             v: self.v,
-            distance: self.distance.clamp(MIN_DISTANCE, MAX_DISTANCE),
+            distance,
             azimuth: wrap_pi(self.azimuth),
-            polar: self.polar.clamp(MIN_POLAR, MAX_POLAR),
+            polar: self.polar.clamp(MIN_POLAR, max_polar(ground, distance)),
         }
     }
+}
+
+/// The distance ceiling on `ground`: [`MAX_DISTANCE`], or in a bowl the radius
+/// `1 / |k|` if that is nearer. Written so that a curvature too small to
+/// matter never divides out to infinity.
+fn max_distance(ground: &Ground) -> f64 {
+    let k = ground.curvature();
+    if k < 0.0 && -k * MAX_DISTANCE > 1.0 {
+        1.0 / -k
+    } else {
+        MAX_DISTANCE
+    }
+}
+
+/// The polar ceiling on `ground` at `distance`: [`MAX_POLAR`] on the plane and
+/// on a planet.
+///
+/// In a bowl, the steepest polar that keeps the eye `δ = distance · cos(
+/// MAX_POLAR )` inside the wall — the clearance the plane's steepest pose
+/// keeps above the plane, so the ceiling tends to [`MAX_POLAR`] as `k → 0⁻`.
+/// With `m = |k|`, `R = 1 / m`, and `place`'s pivot `s` up the normal and reach
+/// `L = distance - s`, the eye is `R - δ` from the centre when
+///
+/// ```text
+/// ( R - s )² + L² - 2 ( R - s ) L cos( polar ) = ( R - δ )²
+/// cos( polar ) = ( ( δ - s )( 2 - m ( s + δ ) ) + m L² ) / ( 2 L ( 1 - m s ) )
+/// ```
+///
+/// the second line being the first multiplied through by `m`, so no `1 / k`.
+/// From about `0.74 / |k|` up, and at the cap, where the eye is the centre,
+/// it is `π - MIN_POLAR`. It gets there the way `acos` reaches `π`, steeply:
+/// a camera looking straight up just past that distance, wheeled one notch
+/// in, is tipped down by tens of degrees, which the polar spring then plays
+/// out. That is the pivot's geometry — looking straight up from just inside
+/// that distance already puts the eye at the wall — not the formula's.
+///
+/// An earlier draft allowed `π - MIN_POLAR` at every distance in a bowl. Near
+/// the floor that orbited the eye out through the wall, to look at the
+/// outside of the sphere; stopping the eye short of the wall instead (along
+/// its line of sight) kept it inside but made it lurch ten units in for a
+/// degree of drag where the line of sight grazed the floor.
+fn max_polar(ground: &Ground, distance: f64) -> f64 {
+    let k = ground.curvature();
+    if k >= 0.0 {
+        return MAX_POLAR;
+    }
+    let m = -k;
+    let x = (distance * m).min(1.0);
+    let s = distance * x * x;
+    let reach = distance - s;
+    let clearance = distance * MAX_POLAR.cos();
+
+    let denominator = 2.0 * reach * (1.0 - m * s);
+    let numerator = (clearance - s) * (2.0 - m * (s + clearance)) + m * reach * reach;
+    if denominator <= 1e-12 * distance || numerator <= -denominator {
+        return PI - MIN_POLAR;
+    }
+    (numerator / denominator)
+        .min(1.0)
+        .acos()
+        .clamp(MIN_POLAR, PI - MIN_POLAR)
 }
 
 /// Free movement, or the overview the pane set is fitted into.
@@ -195,8 +300,14 @@ pub struct Pane {
     pub height: f64,
 }
 
-/// One `smoothDamp` velocity per damped field. The distance and the ground
-/// radius are damped in log space, so their velocities are in log units too.
+/// One `smoothDamp` velocity per damped field. The distance is damped in log
+/// space, so its velocity is in log units too.
+///
+/// The curvature is damped linearly. 0.2 damped the radius in log space, where
+/// a constant ratio per second reads as constant speed, but the log of a radius
+/// cannot reach the plane, let alone cross it; the curvature is linear through
+/// `0`, so a change from planet to bowl slides through the plane without a
+/// seam.
 #[derive(Clone, Copy, Debug, Default)]
 struct Velocities {
     u: f64,
@@ -204,7 +315,7 @@ struct Velocities {
     log_distance: f64,
     azimuth: f64,
     polar: f64,
-    log_radius: f64,
+    curvature: f64,
 }
 
 /// A map camera over a [`Ground`], damped the way `camera-controls` damps.
@@ -215,8 +326,8 @@ struct Velocities {
 #[derive(Clone, Debug)]
 pub struct MapControls {
     ground: Ground,
-    /// The radius the ground is being damped toward.
-    target_radius: f64,
+    /// The curvature the ground is being damped toward.
+    target_curvature: f64,
     target: Pose,
     current: Pose,
     velocities: Velocities,
@@ -235,10 +346,10 @@ pub struct MapControls {
 impl MapControls {
     /// Map controls over `ground`, settled at `start`.
     pub fn new(ground: Ground, start: Pose) -> Self {
-        let start = start.clamped();
+        let start = start.clamped(&ground);
         Self {
             ground,
-            target_radius: ground.radius(),
+            target_curvature: ground.curvature(),
             target: start,
             current: start,
             velocities: Velocities::default(),
@@ -262,14 +373,21 @@ impl MapControls {
         self.damping = damping;
     }
 
-    /// The ground as it is *now*, with the radius the damping has reached.
+    /// The ground as it is *now*, with the curvature the damping has reached.
     pub fn ground(&self) -> &Ground {
         &self.ground
     }
 
-    /// The radius the ground is heading for.
-    pub fn target_radius(&self) -> f64 {
-        self.target_radius
+    /// The curvature the ground is heading for.
+    pub fn target_curvature(&self) -> f64 {
+        self.target_curvature
+    }
+
+    /// The ground the controls are heading for, which is what every input
+    /// clamps the target pose against: the target pose is where the camera
+    /// will be once the ground is there too.
+    fn target_ground(&self) -> Ground {
+        Ground::new(self.target_curvature)
     }
 
     /// The [`Pose`] the inputs are steering toward.
@@ -287,11 +405,11 @@ impl MapControls {
         self.mode
     }
 
-    /// Puts `current` on `target` and the ground on its target radius, with
+    /// Puts `current` on `target` and the ground on its target curvature, with
     /// every velocity zeroed — the settled frame, for a headless render.
     pub fn settle(&mut self) {
         self.current = self.target;
-        self.ground.set_radius(self.target_radius);
+        self.ground.set_curvature(self.target_curvature);
         self.velocities = Velocities::default();
     }
 
@@ -349,22 +467,32 @@ impl MapControls {
     /// from `theta` and `_rotateUp` subtracts from `phi`, and so do these,
     /// since `azimuth` is `theta` in the ground's right-handed frame. See
     /// `a_rightward_drag_orbits_clockwise_from_above`.
+    ///
+    /// The polar angle is clamped against the ground the controls are heading
+    /// for, as every target is: past the horizon once a bowl is on its way (as
+    /// far as the distance allows; see [`Pose::clamped`]), and back to
+    /// [`MAX_POLAR`] once the plane is. Clamping against the
+    /// damped current ground instead would let a drag during the slide from a
+    /// bowl to the plane park the target under the plane.
     pub fn rotate(&mut self, dx: f64, dy: f64, height: f64) {
         let height = height.max(1.0);
         self.target.azimuth = wrap_pi(self.target.azimuth - TAU * dx / height);
-        self.target.polar = (self.target.polar - TAU * dy / height).clamp(MIN_POLAR, MAX_POLAR);
+        let ceiling = max_polar(&self.target_ground(), self.target.distance);
+        self.target.polar = (self.target.polar - TAU * dy / height).clamp(MIN_POLAR, ceiling);
     }
 
     /// `OrbitControls`' `zoomToCursor`: multiplies the distance by
     /// `0.95^steps` and then slides the target so that the ground under
     /// `( ndc_x, ndc_y )` is where it was. A ray that misses the ground dollies
-    /// the distance alone.
+    /// the distance alone. In a bowl the distance stops at the radius, with
+    /// the camera at the centre, and dollying in toward the floor lowers a
+    /// polar angle that would put the eye through the wall.
     pub fn dolly(&mut self, steps: f64, ndc_x: f64, ndc_y: f64, camera: &PerspectiveCamera) {
         let before = self.ground_under(&self.target, ndc_x, ndc_y, camera);
         self.wheel_window = WHEEL_WINDOW * self.damping.wheel_smooth_time;
 
-        self.target.distance = (self.target.distance * self.damping.dolly_step.powf(steps))
-            .clamp(MIN_DISTANCE, MAX_DISTANCE);
+        self.target.distance *= self.damping.dolly_step.powf(steps);
+        self.target = self.target.clamped(&self.target_ground());
 
         if let Some(anchor) = before {
             if let Some((u, v)) = self.solve_target(self.target, anchor, ndc_x, ndc_y, camera) {
@@ -395,29 +523,35 @@ impl MapControls {
         self.target.v += speed * (forward * cos + right * sin);
     }
 
-    /// The radius the ground is damped toward, clamped to the ground's range.
-    pub fn set_radius(&mut self, radius: f64) {
-        self.target_radius = Ground::new(radius).radius();
+    /// The curvature the ground is damped toward, clamped to
+    /// `[ -MAX_CURVATURE, MAX_CURVATURE ]`. Damped linearly, so a change of
+    /// sign slides through the plane.
+    ///
+    /// The target pose is clamped against the new ground: into a bowl tighter
+    /// than the distance, the camera heads for the centre (the panopticon);
+    /// out of a bowl, a polar angle past [`MAX_POLAR`] comes back down to it.
+    pub fn set_curvature(&mut self, k: f64) {
+        self.target_curvature = Ground::new(k).curvature();
+        self.target = self.target.clamped(&self.target_ground());
     }
 
-    /// Multiplies that radius.
-    pub fn scale_radius(&mut self, factor: f64) {
-        self.set_radius(self.target_radius * factor);
-    }
-
-    /// Back to the pose the controller was built with, leaving the ground
-    /// radius alone. Leaves the overview, since the overview pose is the one
+    /// Back to the pose the controller was built with, leaving the ground's
+    /// curvature alone. Leaves the overview, since the overview pose is the one
     /// being replaced.
     pub fn reset(&mut self) {
-        self.target = self.start;
+        self.target = self.start.clamped(&self.target_ground());
         self.mode = Mode::Free;
     }
 
     // ------------------------------------------------------------ the damping
 
     /// Moves every field of `current` one step toward `target` — and the
-    /// ground radius toward its own target — and reports whether anything
+    /// ground's curvature toward its own target — and reports whether anything
     /// moved.
+    ///
+    /// The current distance is then capped against the current ground, so
+    /// that while a bowl tightens faster than the distance shrinks the camera
+    /// still never passes the centre.
     pub fn update(&mut self, dt: f64) -> bool {
         if dt <= 0.0 {
             return false;
@@ -470,36 +604,48 @@ impl MapControls {
             dt,
         );
 
-        let mut radius = self.ground.radius();
-        moved |= damp_log(
-            &mut radius,
-            self.target_radius,
-            &mut self.velocities.log_radius,
+        let mut curvature = self.ground.curvature();
+        moved |= damp_with(
+            &mut curvature,
+            self.target_curvature,
+            &mut self.velocities.curvature,
             smooth_time,
             dt,
+            CURVATURE_SNAP_THRESHOLD,
         );
-        self.ground.set_radius(radius);
+        self.ground.set_curvature(curvature);
+
+        self.current.distance = self.current.distance.min(max_distance(&self.ground));
+        self.current.polar = self
+            .current
+            .polar
+            .min(max_polar(&self.ground, self.current.distance));
 
         moved
     }
 
     /// `CameraControls`' `rest` event: every field is within `restThreshold`
-    /// of its target — in log space for the distance and the ground radius,
-    /// which is where those two are damped.
+    /// of its target — in log space for the distance, which is where it is
+    /// damped, and for the curvature as the dimensionless `Δk · distance`, so
+    /// that the ground has rested when what it still has to bend is a
+    /// hundredth of the way to the camera.
     pub fn rested(&self) -> bool {
         (self.current.u - self.target.u).abs() < REST_THRESHOLD
             && (self.current.v - self.target.v).abs() < REST_THRESHOLD
             && (self.current.distance.ln() - self.target.distance.ln()).abs() < REST_THRESHOLD
             && wrap_pi(self.target.azimuth - self.current.azimuth).abs() < REST_THRESHOLD
             && (self.current.polar - self.target.polar).abs() < REST_THRESHOLD
-            && (self.ground.radius().ln() - self.target_radius.ln()).abs() < REST_THRESHOLD
+            && (self.ground.curvature() - self.target_curvature).abs() * self.current.distance
+                < REST_THRESHOLD
     }
 
     // ------------------------------------------------------------- the camera
 
     /// Writes `current` onto `camera`: the position is the orbit target's
     /// ground point plus the spherical offset, `up` *is* the ground normal
-    /// there, and the camera looks at the target.
+    /// there, and the camera looks at the target — or, in a bowl, at a pivot
+    /// raised along that normal, which is the centre at the distance cap (see
+    /// the module docs).
     ///
     /// The no-roll invariant falls straight out of this: `Matrix4.lookAt()`
     /// builds the camera's right vector as `up × z`, so with `up` the ground
@@ -533,12 +679,13 @@ impl MapControls {
                     distance,
                     azimuth,
                     polar: OVERVIEW_POLAR,
-                };
+                }
+                .clamped(&self.target_ground());
                 self.mode = Mode::Overview;
             }
             Mode::Overview => {
                 if let Some(pose) = self.return_pose {
-                    self.target = pose;
+                    self.target = pose.clamped(&self.target_ground());
                 }
                 self.mode = Mode::Free;
             }
@@ -547,7 +694,8 @@ impl MapControls {
 
     /// The smallest distance in `[ 1, 5000 ]` at which every *visible* pane
     /// projects inside NDC `[ -0.9, 0.9 ]`, found by 40 bisections on
-    /// `log( distance )`. `5000` if nothing fits.
+    /// `log( distance )`. `5000` if nothing fits. In a bowl the ceiling is the
+    /// radius rather than `5000`.
     ///
     /// A pane is visible when the camera is above its local horizon,
     /// `dot( ground normal at the pane, camera position - pane centre ) > 0`,
@@ -598,11 +746,12 @@ impl MapControls {
             })
         };
 
-        if !fits(MAX_DISTANCE) {
-            return MAX_DISTANCE;
+        let ceiling = max_distance(&self.ground);
+        if !fits(ceiling) {
+            return ceiling;
         }
 
-        let (mut low, mut high) = (MIN_DISTANCE.ln(), MAX_DISTANCE.ln());
+        let (mut low, mut high) = (MIN_DISTANCE.ln(), ceiling.ln());
         for _ in 0..FIT_ITERATIONS {
             let middle = 0.5 * (low + high);
             if fits(middle.exp()) {
@@ -673,7 +822,7 @@ impl MapControls {
             azimuth: 0.0,
             polar: OVERVIEW_POLAR,
         }
-        .clamped();
+        .clamped(&self.target_ground());
 
         self.return_pose = Some(pose);
         self.target = pose;
@@ -710,17 +859,7 @@ impl MapControls {
         place(&self.ground, pose, &mut scratch);
 
         let (origin, direction) = cursor_ray(&scratch, ndc_x, ndc_y);
-        let hit = intersect_sphere(
-            origin,
-            direction,
-            self.ground.centre(),
-            self.ground.radius(),
-        )?;
-        Some(ground_coordinates(
-            hit,
-            self.ground.centre(),
-            self.ground.radius(),
-        ))
+        self.ground.intersect(origin, direction)
     }
 
     /// The orbit target that puts ground coordinate `anchor` under
@@ -754,11 +893,48 @@ impl MapControls {
             if residual < 1e-12 {
                 break;
             }
-            pose.u -= du;
-            pose.v -= dv;
+            let (step_u, step_v) = self
+                .newton_step(&pose, (u, v), (du, dv), ndc_x, ndc_y, camera)
+                .unwrap_or((du, dv));
+            pose.u -= step_u;
+            pose.v -= step_v;
         }
 
         best.map(|(uv, _)| uv)
+    }
+
+    /// `J⁻¹ · residual`, with `J` the forward-difference Jacobian of "the
+    /// ground under the cursor" with respect to the target at `pose`, where
+    /// that ground is `hit`. `None` when a probe misses or `J` is singular,
+    /// and the caller steps by the residual alone.
+    fn newton_step(
+        &self,
+        pose: &Pose,
+        hit: (f64, f64),
+        residual: (f64, f64),
+        ndc_x: f64,
+        ndc_y: f64,
+        camera: &PerspectiveCamera,
+    ) -> Option<(f64, f64)> {
+        let along_u = Pose {
+            u: pose.u + SOLVE_PROBE,
+            ..*pose
+        };
+        let along_v = Pose {
+            v: pose.v + SOLVE_PROBE,
+            ..*pose
+        };
+        let (uu, vu) = self.ground_under(&along_u, ndc_x, ndc_y, camera)?;
+        let (uv, vv) = self.ground_under(&along_v, ndc_x, ndc_y, camera)?;
+
+        let (a, c) = ((uu - hit.0) / SOLVE_PROBE, (vu - hit.1) / SOLVE_PROBE);
+        let (b, d) = ((uv - hit.0) / SOLVE_PROBE, (vv - hit.1) / SOLVE_PROBE);
+        let det = a * d - b * c;
+        if !det.is_finite() || det.abs() < 1e-6 {
+            return None;
+        }
+        let (ru, rv) = residual;
+        Some(((d * ru - b * rv) / det, (a * rv - c * ru) / det))
     }
 }
 
@@ -786,28 +962,73 @@ fn scratch(camera: &PerspectiveCamera) -> PerspectiveCamera {
 /// `MapControls::apply` for an arbitrary pose, so the overview's fit and the
 /// cursor picking can try one on a scratch camera without disturbing the
 /// controller.
+///
+/// On the plane and on a planet this is an orbit about the target: the eye is
+/// `distance` along the unit offset `w` (tilted `polar` from the normal,
+/// turned `azimuth` about it) and looks back at the target.
+///
+/// In a bowl it is an orbit about a pivot `s` along the normal from the
+/// target, with the eye `distance - s` along `w` from the pivot, looking back
+/// along `-w`:
+///
+/// ```text
+/// x     = distance · |k|               in ( 0, 1 ], 1 at the cap
+/// s     = distance · x²
+/// pivot = target + s · normal
+/// eye   = pivot + ( distance - s ) · w
+/// ```
+///
+/// At `polar = 0` that is the orbit's eye whatever `s` is. Near the floor
+/// (`x` small) `s` is negligible and it is the orbit. At the cap `s` is the
+/// whole distance, the pivot is the sphere's centre, and the eye sits on it
+/// and turns in place: an orbit there would swing the eye out through the
+/// wall, and from the centre the target is always straight down, so a camera
+/// that only orbited the target could neither look round the panopticon nor
+/// stay in it. `x²` rather than `x` so that `s` and its derivative are both `0`
+/// at `k = 0`: the camera's velocity has no kink as the damped curvature
+/// crosses the plane.
+///
+/// Near the floor, tipped past the horizon, this orbit would carry the eye
+/// out through the wall; `max_polar` is what stops it.
 fn place(ground: &Ground, pose: &Pose, camera: &mut PerspectiveCamera) {
     let frame = ground.frame(pose.u, pose.v);
 
     let (sin_azimuth, cos_azimuth) = pose.azimuth.sin_cos();
     let (sin_polar, cos_polar) = pose.polar.sin_cos();
 
-    // The offset from the target to the eye. At `azimuth = 0` its horizontal
-    // part is `-north`, which is the camera south of the target looking north.
-    let mut offset = Vector3::ZERO;
-    offset.add_scaled_vector(&frame.north, -pose.distance * sin_polar * cos_azimuth);
-    offset.add_scaled_vector(&frame.east, pose.distance * sin_polar * sin_azimuth);
-    offset.add_scaled_vector(&frame.normal, pose.distance * cos_polar);
+    // The unit offset from the target toward the eye. At `azimuth = 0` its
+    // horizontal part is `-north`, which is the camera south of the target
+    // looking north.
+    let mut w = Vector3::ZERO;
+    w.add_scaled_vector(&frame.north, -sin_polar * cos_azimuth);
+    w.add_scaled_vector(&frame.east, sin_polar * sin_azimuth);
+    w.add_scaled_vector(&frame.normal, cos_polar);
 
-    let mut position = frame.origin;
-    position.add(&offset);
+    let k = ground.curvature();
+    let raise = if k < 0.0 {
+        let x = (pose.distance * -k).min(1.0);
+        pose.distance * x * x
+    } else {
+        0.0
+    };
+
+    let mut pivot = frame.origin;
+    pivot.add_scaled_vector(&frame.normal, raise);
+    let reach = pose.distance - raise;
+    let mut position = pivot;
+    position.add_scaled_vector(&w, reach);
+
+    // Along `-w`, which is the pivot whenever the eye is not on it — and at
+    // the cap it is.
+    let mut look = position;
+    look.add_scaled_vector(&w, -1.0);
 
     {
         let mut object = camera.node.borrow_mut();
         object.up = frame.normal;
         object.position = position;
     }
-    camera.look_at(&frame.origin);
+    camera.look_at(&look);
     camera.update_matrix_world();
 }
 
@@ -826,64 +1047,6 @@ fn cursor_ray(camera: &PerspectiveCamera, ndc_x: f64, ndc_y: f64) -> (Vector3, V
     direction.normalize();
 
     (origin, direction)
-}
-
-/// The nearer intersection of a ray with a sphere, or `None` if it misses or
-/// the sphere is behind.
-///
-/// The near root is written `c / ( -b + sqrt( disc ) )` rather than
-/// `-b - sqrt( disc )`: with `R = 1e7` and a camera 160 units up, `b²` and
-/// `disc` agree to eleven digits and the subtraction throws away all of them.
-fn intersect_sphere(
-    origin: Vector3,
-    direction: Vector3,
-    centre: Vector3,
-    radius: f64,
-) -> Option<Vector3> {
-    let mut m = Vector3::ZERO;
-    m.sub_vectors(&origin, &centre);
-
-    let length = m.length();
-    // `|m|² - R²` factored, so that at `R = 1e7` the height above the surface
-    // survives instead of being rounded off against `1e14`.
-    let c = (length - radius) * (length + radius);
-    let b = m.dot(&direction);
-
-    let discriminant = b * b - c;
-    if discriminant < 0.0 {
-        return None;
-    }
-
-    let root = discriminant.sqrt();
-    let t = if b < 0.0 { c / (-b + root) } else { -b - root };
-    if t <= 0.0 {
-        return None;
-    }
-
-    let mut hit = origin;
-    hit.add_scaled_vector(&direction, t);
-    Some(hit)
-}
-
-/// The inverse of [`Ground::point`]: the exponential map read backwards.
-///
-/// ```text
-/// q       = normalize( hit - centre )
-/// d       = R * atan2( |q.xz|, q.y )
-/// ( u, v ) = d * q.xz / |q.xz|
-/// ```
-fn ground_coordinates(hit: Vector3, centre: Vector3, radius: f64) -> (f64, f64) {
-    let mut q = Vector3::ZERO;
-    q.sub_vectors(&hit, &centre);
-    q.normalize();
-
-    let horizontal = q.x.hypot(q.z);
-    if horizontal == 0.0 {
-        return (0.0, 0.0);
-    }
-
-    let d = radius * horizontal.atan2(q.y);
-    (d * q.x / horizontal, -d * q.z / horizontal)
 }
 
 /// The ground point at a frame, lifted `distance` along its normal.
@@ -967,7 +1130,19 @@ fn wrap_pi(angle: f64) -> f64 {
 
 /// One damped field. Returns whether it moved.
 fn damp(current: &mut f64, target: f64, velocity: &mut f64, smooth_time: f64, dt: f64) -> bool {
-    if (target - *current).abs() < SNAP_THRESHOLD {
+    damp_with(current, target, velocity, smooth_time, dt, SNAP_THRESHOLD)
+}
+
+/// [`damp`] with its own snap threshold.
+fn damp_with(
+    current: &mut f64,
+    target: f64,
+    velocity: &mut f64,
+    smooth_time: f64,
+    dt: f64,
+    snap: f64,
+) -> bool {
+    if (target - *current).abs() < snap {
         let moved = *current != target;
         *current = target;
         *velocity = 0.0;
@@ -980,8 +1155,8 @@ fn damp(current: &mut f64, target: f64, velocity: &mut f64, smooth_time: f64, dt
     moved
 }
 
-/// A field damped in log space — the distance and the ground radius, where a
-/// constant *ratio* per second is what reads as constant speed.
+/// A field damped in log space — the distance, where a constant *ratio* per
+/// second is what reads as constant speed.
 fn damp_log(current: &mut f64, target: f64, velocity: &mut f64, smooth_time: f64, dt: f64) -> bool {
     let mut log_current = current.ln();
     let log_target = target.ln();
@@ -1031,6 +1206,8 @@ fn damp_angle(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ground::MAX_CURVATURE;
+    use std::f64::consts::FRAC_PI_2;
     use three_rs::math::RAD2DEG;
 
     const FOV: f64 = 60.0;
@@ -1088,13 +1265,29 @@ mod tests {
             .collect()
     }
 
+    /// The camera's world position.
+    fn eye(camera: &PerspectiveCamera) -> Vector3 {
+        let elements = camera.node.borrow().matrix_world.elements;
+        Vector3::new(elements[12], elements[13], elements[14])
+    }
+
     /// The whole point: the camera's right vector never leaves the ground's
     /// tangent plane at the target, so the horizon never tilts.
     #[test]
     fn the_camera_never_rolls() {
-        for radius in [40.0, 300.0, 1e7] {
-            let ground = Ground::new(radius);
-            for pose in poses() {
+        for k in [
+            MAX_CURVATURE,
+            1.0 / 300.0,
+            0.0,
+            -1.0 / 300.0,
+            -MAX_CURVATURE,
+        ] {
+            let ground = Ground::new(k);
+            let tipped = poses().into_iter().map(|pose| Pose {
+                polar: pose.polar * 2.0,
+                ..pose
+            });
+            for pose in poses().into_iter().chain(tipped) {
                 let mut controls = MapControls::new(ground, pose);
                 controls.settle();
 
@@ -1108,7 +1301,7 @@ mod tests {
                 let roll = right.dot(&normal);
                 assert!(
                     roll.abs() < 1e-9,
-                    "R = {radius}, pose {pose:?}: right · normal = {roll}"
+                    "k = {k}, pose {pose:?}: right · normal = {roll}"
                 );
             }
         }
@@ -1117,7 +1310,7 @@ mod tests {
     /// `azimuth = 0` is the camera south of the target, looking north.
     #[test]
     fn the_zero_azimuth_looks_north() {
-        let mut controls = MapControls::new(Ground::new(1e7), start());
+        let mut controls = MapControls::new(Ground::flat(), start());
         controls.settle();
 
         let mut camera = camera();
@@ -1143,7 +1336,7 @@ mod tests {
     /// `PerspectiveCamera` shares its node.
     #[test]
     fn solving_the_target_leaves_the_camera_where_apply_put_it() {
-        let mut controls = MapControls::new(Ground::new(1e7), start());
+        let mut controls = MapControls::new(Ground::flat(), start());
         controls.settle();
         let mut camera = camera();
         controls.apply(&mut camera);
@@ -1160,7 +1353,7 @@ mod tests {
 
     #[test]
     fn a_rightward_drag_orbits_clockwise_from_above() {
-        let ground = Ground::new(1e7);
+        let ground = Ground::flat();
         // Tilted, so that the orbit has a sense and the tip has room to go.
         let tilted = Pose {
             polar: 45.0 * DEG2RAD,
@@ -1209,7 +1402,7 @@ mod tests {
         let (dx, dy) = (2.0 * 200.0 / WIDTH, -2.0 * 200.0 / HEIGHT);
         let (from_x, from_y) = (-0.1, 0.0);
 
-        for radius in [1e7, 300.0] {
+        for k in [0.0, 1.0 / 300.0, -1.0 / 300.0] {
             for polar_degrees in [20.0, 45.0, 80.0] {
                 for distance in [160.0, 400.0] {
                     let pose = Pose {
@@ -1217,7 +1410,7 @@ mod tests {
                         distance,
                         ..start()
                     };
-                    let mut controls = MapControls::new(Ground::new(radius), pose);
+                    let mut controls = MapControls::new(Ground::new(k), pose);
                     controls.settle();
 
                     let mut camera = camera();
@@ -1225,7 +1418,7 @@ mod tests {
 
                     assert!(
                         controls.grab_begin(from_x, from_y, &camera),
-                        "R = {radius}, polar {polar_degrees}°: the press missed the ground"
+                        "k = {k}, polar {polar_degrees}°: the press missed the ground"
                     );
                     let anchor = controls
                         .ground_under(&controls.target(), from_x, from_y, &camera)
@@ -1242,7 +1435,7 @@ mod tests {
                     let error = (landed.0 - anchor.0).hypot(landed.1 - anchor.1);
                     assert!(
                         error < 1e-6,
-                        "R = {radius}, polar {polar_degrees}°, d = {distance}: \
+                        "k = {k}, polar {polar_degrees}°, d = {distance}: \
                          the grabbed point slipped by {error}"
                     );
                 }
@@ -1253,7 +1446,7 @@ mod tests {
     /// And it slips the way the hand goes: drag right, the ground goes right.
     #[test]
     fn dragging_right_moves_the_ground_right() {
-        let mut controls = MapControls::new(Ground::new(1e7), start());
+        let mut controls = MapControls::new(Ground::flat(), start());
         controls.settle();
 
         let mut camera = camera();
@@ -1281,8 +1474,8 @@ mod tests {
     fn the_wheel_dollies_toward_the_cursor() {
         let (ndc_x, ndc_y) = (0.5, -0.3);
 
-        for radius in [1e7, 300.0] {
-            let mut controls = MapControls::new(Ground::new(radius), start());
+        for k in [0.0, 1.0 / 300.0, -1.0 / 300.0] {
+            let mut controls = MapControls::new(Ground::new(k), start());
             controls.settle();
 
             let mut camera = camera();
@@ -1305,47 +1498,13 @@ mod tests {
                 .ground_under(&controls.target(), ndc_x, ndc_y, &camera)
                 .expect("still over the ground");
             let error = (landed.0 - anchor.0).hypot(landed.1 - anchor.1);
-            assert!(error < 1e-4, "R = {radius}: the ground slipped by {error}");
-        }
-    }
-
-    /// [`ground_coordinates`] is the inverse of [`Ground::point`] over the
-    /// whole useful range, out to nine tenths of the way to the far pole.
-    ///
-    /// The tolerance is the brief's `1e-9` with a relative floor: at
-    /// `R = 1e7` a `1e-9` *absolute* error on an arc length of `1.4e7` would
-    /// be a sixteenth of a double's precision, which no arithmetic can hold.
-    #[test]
-    fn the_inverse_exponential_map_round_trips() {
-        for radius in [40.0, 300.0, 1000.0, 1e7] {
-            let ground = Ground::new(radius);
-            let centre = ground.centre();
-            let limit = 0.9 * PI * radius / 2.0;
-
-            let mut worst: f64 = 0.0;
-            for i in 0..=12 {
-                for j in 0..=12 {
-                    let u = limit * (i as f64 / 6.0 - 1.0);
-                    let v = limit * (j as f64 / 6.0 - 1.0);
-
-                    let (back_u, back_v) = ground_coordinates(ground.point(u, v), centre, radius);
-                    let error = (back_u - u).hypot(back_v - v);
-                    let tolerance = 1e-9_f64.max(1e-12 * u.hypot(v));
-                    assert!(
-                        error <= tolerance,
-                        "R = {radius}, ( {u}, {v} ) came back as \
-                         ( {back_u}, {back_v} ), off by {error}"
-                    );
-                    worst = worst.max(error);
-                }
-            }
-            assert!(worst.is_finite());
+            assert!(error < 1e-4, "k = {k}: the ground slipped by {error}");
         }
     }
 
     #[test]
     fn polar_is_clamped_after_a_rotate() {
-        let mut controls = MapControls::new(Ground::new(1e7), start());
+        let mut controls = MapControls::new(Ground::flat(), start());
 
         for _ in 0..200 {
             controls.rotate(0.0, 100.0, HEIGHT);
@@ -1358,9 +1517,44 @@ mod tests {
         assert_eq!(controls.target().polar, MAX_POLAR);
     }
 
+    /// In a bowl the polar angle may tip past the horizon, to `π - MIN_POLAR`
+    /// far enough up it; dollying down toward the floor brings it back.
     #[test]
-    fn distance_and_radius_are_clamped() {
-        let mut controls = MapControls::new(Ground::new(1e7), start());
+    fn polar_may_tip_past_the_horizon_in_a_bowl() {
+        let high = Pose {
+            distance: 250.0,
+            ..start()
+        };
+        let mut controls = MapControls::new(Ground::new(-1.0 / 300.0), high);
+        for _ in 0..200 {
+            controls.rotate(0.0, -100.0, HEIGHT);
+        }
+        assert_eq!(controls.target().polar, PI - MIN_POLAR);
+
+        let camera = camera();
+        controls.dolly(40.0, 0.0, 0.0, &camera);
+        let target = controls.target();
+        assert!(target.distance < 50.0);
+        assert!(
+            target.polar < FRAC_PI_2,
+            "near the floor the eye would be through it at {}°",
+            target.polar / DEG2RAD
+        );
+
+        // And back to `MAX_POLAR` the moment the plane is on its way.
+        let mut controls = MapControls::new(Ground::new(-1.0 / 300.0), high);
+        for _ in 0..200 {
+            controls.rotate(0.0, -100.0, HEIGHT);
+        }
+        controls.set_curvature(0.0);
+        assert_eq!(controls.target().polar, MAX_POLAR);
+        controls.rotate(0.0, -100.0, HEIGHT);
+        assert_eq!(controls.target().polar, MAX_POLAR);
+    }
+
+    #[test]
+    fn distance_and_curvature_are_clamped() {
+        let mut controls = MapControls::new(Ground::flat(), start());
         let camera = camera();
 
         controls.dolly(-1000.0, 0.0, 0.0, &camera);
@@ -1368,15 +1562,252 @@ mod tests {
         controls.dolly(1000.0, 0.0, 0.0, &camera);
         assert_eq!(controls.target().distance, MIN_DISTANCE);
 
-        controls.set_radius(1.0);
-        assert_eq!(controls.target_radius(), 40.0);
-        controls.set_radius(1e20);
-        assert_eq!(controls.target_radius(), 1e7);
+        controls.set_curvature(1.0);
+        assert_eq!(controls.target_curvature(), MAX_CURVATURE);
+        controls.set_curvature(-1.0);
+        assert_eq!(controls.target_curvature(), -MAX_CURVATURE);
+
+        // In a bowl the wheel stops at the radius.
+        controls.set_curvature(-1.0 / 300.0);
+        controls.dolly(-1000.0, 0.0, 0.0, &camera);
+        assert_eq!(controls.target().distance, 300.0);
+    }
+
+    #[test]
+    fn clamped_caps_the_distance_in_a_bowl_only() {
+        let far = Pose {
+            distance: 1000.0,
+            ..start()
+        };
+        for k in [0.0, 1.0 / 300.0, MAX_CURVATURE] {
+            assert_eq!(far.clamped(&Ground::new(k)).distance, 1000.0, "k = {k}");
+        }
+        assert_eq!(far.clamped(&Ground::new(-1.0 / 300.0)).distance, 300.0);
+        assert_eq!(far.clamped(&Ground::new(-MAX_CURVATURE)).distance, 40.0);
+        // A bowl too shallow to matter leaves `MAX_DISTANCE` the ceiling, and
+        // never divides its way to infinity.
+        let farthest = Pose {
+            distance: 1e9,
+            ..start()
+        };
+        for k in [-1e-6, -1e-300, -f64::MIN_POSITIVE] {
+            assert_eq!(farthest.clamped(&Ground::new(k)).distance, MAX_DISTANCE);
+        }
+    }
+
+    #[test]
+    fn clamped_lets_the_polar_past_the_horizon_in_a_bowl_only() {
+        let over = Pose {
+            polar: PI,
+            ..start()
+        };
+        for k in [0.0, 1.0 / 300.0] {
+            assert_eq!(over.clamped(&Ground::new(k)).polar, MAX_POLAR, "k = {k}");
+        }
+        // At the cap, and far enough up the bowl toward it, any tilt.
+        for k in [-1.0 / 300.0, -1.0 / 160.0, -MAX_CURVATURE] {
+            for reach in [0.75, 1.0] {
+                let high = Pose {
+                    distance: reach / -k,
+                    ..over
+                };
+                assert_eq!(
+                    high.clamped(&Ground::new(k)).polar,
+                    PI - MIN_POLAR,
+                    "k = {k}"
+                );
+            }
+        }
+        // A bowl too shallow to matter is the plane, to within its curvature.
+        for distance in [MIN_DISTANCE, 160.0, MAX_DISTANCE] {
+            let shallow = Pose { distance, ..over };
+            let polar = shallow.clamped(&Ground::new(-1e-9)).polar;
+            assert!((polar - MAX_POLAR).abs() < 1e-5, "d = {distance}: {polar}");
+        }
+        let under = Pose {
+            polar: -1.0,
+            ..start()
+        };
+        assert_eq!(under.clamped(&Ground::new(-1.0 / 300.0)).polar, MIN_POLAR);
+    }
+
+    /// At the distance cap the camera is at the sphere's centre, whichever way
+    /// it is looking: the panopticon.
+    #[test]
+    fn the_cap_puts_the_camera_at_the_centre() {
+        for k in [-1.0 / 160.0, -1.0 / 300.0, -MAX_CURVATURE] {
+            let ground = Ground::new(k);
+            let radius = 1.0 / -k;
+            for (u, v) in [(0.0, 0.0), (30.0, -45.0), (-120.0, 10.0)] {
+                for polar_degrees in [0.0, 45.0, 90.0, 170.0] {
+                    let pose = Pose {
+                        u,
+                        v,
+                        distance: radius,
+                        azimuth: 0.7,
+                        polar: polar_degrees * DEG2RAD,
+                    };
+                    let mut camera = camera();
+                    place(&ground, &pose, &mut camera);
+
+                    let frame = ground.frame(u, v);
+                    let mut centre = frame.origin;
+                    centre.add_scaled_vector(&frame.normal, radius);
+                    let mut off = eye(&camera);
+                    off.sub(&centre);
+                    assert!(
+                        off.length() < 1e-9 * radius,
+                        "k = {k}, ( {u}, {v} ), polar {polar_degrees}°: \
+                         {} from the centre",
+                        off.length()
+                    );
+                }
+            }
+        }
+    }
+
+    /// Tightening a bowl past the distance carries the target to the centre.
+    #[test]
+    fn tightening_the_bowl_past_the_distance_is_the_panopticon() {
+        let mut controls = MapControls::new(
+            Ground::flat(),
+            Pose {
+                distance: 400.0,
+                ..start()
+            },
+        );
+        controls.set_curvature(-1.0 / 160.0);
+        assert_eq!(controls.target().distance, 160.0);
+
+        // And on the way there, the damped camera never passes the centre.
+        for _ in 0..600 {
+            controls.update(1.0 / 60.0);
+            let k = controls.ground().curvature();
+            if k < 0.0 {
+                assert!(controls.current().distance <= 1.0 / -k);
+            }
+        }
+        assert!(controls.rested());
+    }
+
+    /// From inside a bowl the cursor ray finds the wall ahead, at any tilt.
+    #[test]
+    fn the_ground_under_the_cursor_is_found_inside_a_bowl() {
+        let ground = Ground::new(-1.0 / 300.0);
+        for distance in [10.0, 160.0, 299.0] {
+            for polar_degrees in [0.0, 45.0, 90.0, 135.0, 179.0] {
+                let pose = Pose {
+                    distance,
+                    polar: polar_degrees * DEG2RAD,
+                    ..start()
+                };
+                let mut controls = MapControls::new(ground, pose);
+                controls.settle();
+                let mut camera = camera();
+                controls.apply(&mut camera);
+
+                // Tipped past the horizon close to the floor, the clamp
+                // keeps the eye from going through the wall.
+                let centre = Vector3::new(0.0, 300.0, 0.0);
+                let inside = 300.0 - eye(&camera).distance_to(&centre);
+                assert!(
+                    inside > 0.0,
+                    "d = {distance}, polar {polar_degrees}°: the eye is {inside} inside"
+                );
+                for (x, y) in [(0.0, 0.0), (0.9, 0.9), (-0.9, -0.9)] {
+                    let hit = controls.ground_under(&controls.target(), x, y, &camera);
+                    let (u, v) = hit.unwrap_or_else(|| {
+                        panic!("d = {distance}, polar {polar_degrees}°: ( {x}, {y} ) missed")
+                    });
+                    // The hit is in front of the camera.
+                    let point = ground.point(u, v);
+                    let (_, _, depth) = project(&mut camera, point).expect("in front");
+                    assert!(depth > 0.0);
+                }
+            }
+        }
+    }
+
+    /// However far a bowl's camera is tipped, the clamp keeps the eye inside
+    /// the wall by the plane's own clearance, `distance · cos( MAX_POLAR )`;
+    /// and the ceiling moves smoothly with the distance, so a wheel turn near
+    /// the floor never yanks the tilt. (Smoothly, not slowly: see
+    /// `max_polar` on its climb to `π - MIN_POLAR`.)
+    #[test]
+    fn the_eye_never_leaves_the_bowl() {
+        for k in [-1.0 / 1000.0, -1.0 / 300.0, -MAX_CURVATURE] {
+            let ground = Ground::new(k);
+            let radius = 1.0 / -k;
+            let centre = Vector3::new(0.0, radius, 0.0);
+            let mut camera = camera();
+
+            let mut distance = MIN_DISTANCE;
+            while distance <= radius {
+                let ceiling = max_polar(&ground, distance);
+                let nudged = max_polar(&ground, distance * (1.0 + 1e-6));
+                assert!(
+                    (nudged - ceiling).abs() < 0.2 * DEG2RAD,
+                    "k = {k}, d = {distance}: the ceiling jumped"
+                );
+
+                for polar_degrees in [0.0, 60.0, 85.0, 90.0, 120.0, 179.0] {
+                    let pose = Pose {
+                        distance,
+                        polar: polar_degrees * DEG2RAD,
+                        ..start()
+                    }
+                    .clamped(&ground);
+                    place(&ground, &pose, &mut camera);
+                    let inside = radius - eye(&camera).distance_to(&centre);
+                    let clearance = pose.distance * MAX_POLAR.cos();
+                    assert!(
+                        inside >= clearance * (1.0 - 1e-6) - 1e-9,
+                        "k = {k}, d = {distance}, polar {polar_degrees}°: \
+                         {inside} inside, wanted {clearance}"
+                    );
+                }
+                distance *= 1.02;
+            }
+        }
+    }
+
+    /// The curvature is damped linearly, so it slides from planet to bowl
+    /// through the plane: values of both signs on the way, and no step larger
+    /// than the spring allows.
+    #[test]
+    fn the_curvature_damps_through_the_plane() {
+        let a = 1.0 / 300.0;
+        let mut controls = MapControls::new(Ground::new(a), start());
+        controls.set_curvature(-a);
+        assert_eq!(controls.ground().curvature(), a, "the ground jumped");
+
+        let (mut positive, mut negative) = (false, false);
+        let mut previous = controls.ground().curvature();
+        let mut largest_step: f64 = 0.0;
+        for _ in 0..600 {
+            controls.update(1.0 / 60.0);
+            let k = controls.ground().curvature();
+            largest_step = largest_step.max((k - previous).abs());
+            assert!(
+                k <= previous,
+                "the curvature turned back: {previous} -> {k}"
+            );
+            positive |= k > 0.0 && k < a;
+            negative |= k < 0.0 && k > -a;
+            previous = k;
+        }
+
+        assert!(positive && negative, "no intermediate values of both signs");
+        assert_eq!(controls.ground().curvature(), -a);
+        // A critically damped spring over 2a in a quarter of a second never
+        // moves more than a sixth of the way in a frame.
+        assert!(largest_step < 2.0 * a / 6.0, "a step of {largest_step}");
+        assert!(controls.rested());
     }
 
     #[test]
     fn azimuth_damping_takes_the_short_way_round() {
-        let mut controls = MapControls::new(Ground::new(1e7), start());
+        let mut controls = MapControls::new(Ground::flat(), start());
         controls.target.azimuth = 179.0 * DEG2RAD;
         controls.settle();
         controls.target.azimuth = -179.0 * DEG2RAD;
@@ -1409,13 +1840,13 @@ mod tests {
     /// with the distance.
     #[test]
     fn the_arrow_keys_pan_the_view() {
-        let mut controls = MapControls::new(Ground::new(1e7), start());
+        let mut controls = MapControls::new(Ground::flat(), start());
         controls.pan(1.0, 0.0, 1.0);
         assert!((controls.target().v - PAN_SPEED * 160.0).abs() < 1e-12);
         assert!(controls.target().u.abs() < 1e-12);
 
         // Facing north, screen-right is east, `+u`.
-        let mut controls = MapControls::new(Ground::new(1e7), start());
+        let mut controls = MapControls::new(Ground::flat(), start());
         controls.pan(0.0, 1.0, 1.0);
         assert!((controls.target().u - PAN_SPEED * 160.0).abs() < 1e-12);
     }
@@ -1423,7 +1854,7 @@ mod tests {
     #[test]
     fn the_overview_settles_and_then_stops() {
         let panes = demo_panes();
-        let mut controls = MapControls::new(Ground::new(1e7), start());
+        let mut controls = MapControls::new(Ground::flat(), start());
         controls.toggle_overview(&panes, FOV, ASPECT);
 
         assert_eq!(controls.target().polar, OVERVIEW_POLAR);
@@ -1459,7 +1890,7 @@ mod tests {
     #[test]
     fn toggling_twice_returns_the_saved_pose_exactly() {
         let panes = demo_panes();
-        let mut controls = MapControls::new(Ground::new(1e7), start());
+        let mut controls = MapControls::new(Ground::flat(), start());
         controls.rotate(37.0, -11.0, HEIGHT);
         controls.pan(1.0, 0.5, 0.3);
         let saved = controls.target();
@@ -1483,7 +1914,7 @@ mod tests {
     #[test]
     fn the_flat_fit_matches_the_closed_form() {
         let panes = demo_panes();
-        let controls = MapControls::new(Ground::new(1e7), start());
+        let controls = MapControls::new(Ground::flat(), start());
         let distance = controls.fit_distance(&panes, 0.0, 0.0, 0.0, FOV, ASPECT);
 
         let half_v = (FOV * DEG2RAD) * 0.5;
@@ -1513,12 +1944,12 @@ mod tests {
         let panes = demo_panes();
         let mut previous = f64::INFINITY;
 
-        for radius in [1e7, 3000.0, 1000.0, 600.0, 300.0] {
-            let distance = MapControls::new(Ground::new(radius), start())
+        for k in [0.0, 1.0 / 3000.0, 1.0 / 1000.0, 1.0 / 600.0, 1.0 / 300.0] {
+            let distance = MapControls::new(Ground::new(k), start())
                 .fit_distance(&panes, 0.0, 0.0, 0.0, FOV, ASPECT);
             assert!(
                 distance < previous,
-                "R = {radius} fit {distance} is not below the previous {previous}"
+                "k = {k} fit {distance} is not below the previous {previous}"
             );
             previous = distance;
         }
@@ -1527,7 +1958,7 @@ mod tests {
     #[test]
     fn picking_hits_the_pane_the_cursor_is_over() {
         let panes = demo_panes();
-        let ground = Ground::new(1e7);
+        let ground = Ground::flat();
 
         // Focused on the middle pane, which is index 24 of the 7×7.
         let middle = panes[24];
@@ -1549,7 +1980,7 @@ mod tests {
     fn focus_pane_fills_the_view_with_the_pane() {
         let panes = demo_panes();
         let pane = panes[10];
-        let mut controls = MapControls::new(Ground::new(1e7), start());
+        let mut controls = MapControls::new(Ground::flat(), start());
         controls.focus_pane(&pane, FOV, ASPECT);
         controls.settle();
 
@@ -1592,7 +2023,7 @@ mod tests {
     /// A ray that misses the ground leaves the target where it is.
     #[test]
     fn a_ray_off_the_edge_of_the_world_changes_nothing() {
-        let mut controls = MapControls::new(Ground::new(40.0), start());
+        let mut controls = MapControls::new(Ground::new(MAX_CURVATURE), start());
         controls.settle();
 
         let mut camera = camera();

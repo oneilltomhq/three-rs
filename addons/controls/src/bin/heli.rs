@@ -1,17 +1,20 @@
 //! The demo for [`three_rs_controls`]: a map camera over a ground that can be
-//! flat or a small planet, with a grid of panes lying on it.
+//! flat, a small planet, or a bowl closing round the camera, with a grid of
+//! panes lying on it.
 //!
 //! ```text
 //! cargo run --release -p three-rs-controls --bin heli
 //! cargo run --release -p three-rs-controls --bin heli -- --headless shots/heli-plane-low.png
-//! cargo run --release -p three-rs-controls --bin heli -- --headless shots/x.png --radius 300 --overview
+//! cargo run --release -p three-rs-controls --bin heli -- --headless shots/x.png --curvature 1/300 --overview
+//! cargo run --release -p three-rs-controls --bin heli -- --headless shots/x.png --curvature -1/160 --pose 0,0,160,0,90
 //! ```
 //!
 //! Left-drag grabs the ground and pulls it under the cursor, right-drag (or
 //! ctrl and left-drag) orbits, the wheel zooms toward the pointer, the arrow
-//! keys pan, `[` and `]` curl the ground up and flatten it again, `P` snaps it
-//! flat, `Home` returns to the start pose, `Tab` is the overview and `Esc`
-//! quits. In the overview a click picks a pane and drops onto it.
+//! keys pan, `[` and `]` bend the ground toward a bowl and toward a planet,
+//! through the plane, `P` snaps it flat, `O` closes the bowl round the camera
+//! (the panopticon), `Home` returns to the start pose, `Tab` is the overview
+//! and `Esc` quits. In the overview a click picks a pane and drops onto it.
 //!
 //! The window, the surface, the event loop and the headless path are lifted
 //! from `src/bin/viewer.rs`; the scene and the controls are this file's own.
@@ -29,7 +32,7 @@ use three_rs::{
     plane_geometry, Color, LineSegments, Matrix4, Mesh, MeshBasicNodeMaterial, ObjectRef,
     PerspectiveCamera, Renderer, RendererParameters, Scene, Vector3,
 };
-use three_rs_controls::{Ground, MapControls, Mode, Pane, Pose};
+use three_rs_controls::{Ground, MapControls, Mode, Pane, Pose, MAX_CURVATURE};
 
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, Modifiers, MouseButton, MouseScrollDelta, WindowEvent};
@@ -42,10 +45,18 @@ use winit::window::{Window, WindowId};
 /// The vertical field of view the fit and the projection both use.
 const FOV: f64 = 60.0;
 
-/// The ground the demo opens on: a planet small enough that the horizon is
-/// in shot from the first tilt, with the whole grid still on the near side.
-/// `P` flattens it to `1e7`.
-const START_RADIUS: f64 = 500.0;
+/// The ground the demo opens on: a planet of radius 500, small enough that
+/// the horizon is in shot from the first tilt, with the whole grid still on
+/// the near side. `P` flattens it to `0`.
+const START_CURVATURE: f64 = 1.0 / 500.0;
+
+/// `[` and `]` step the curvature by this ratio either side of the plane, as
+/// 0.2 stepped the radius, so each press bends the ground by about the same
+/// look. A ratio never reaches `0`, so the ladder has `CURVATURE_RUNGS` of
+/// them each side and then `0` itself: at `MAX_CURVATURE / 1.25³¹`, a radius
+/// of about 40 000, the 400-unit grid's edges sag by two units.
+const CURVATURE_RATIO: f64 = 1.25;
+const CURVATURE_RUNGS: i32 = 32;
 
 /// The grid runs over `[ -GRID_EXTENT, GRID_EXTENT ]` in both ground
 /// coordinates, with an iso-line every `GRID_STEP` and a vertex every
@@ -68,9 +79,10 @@ const LEGEND_MARGIN_PX: f64 = 18.0;
 /// The keys column is this wide.
 const LEGEND_KEYS_PX: f64 = 96.0;
 
-const LEGEND_KEYS: &str = "left-drag\nright-drag\nwheel\narrows\n[  ]\nP\nTab\nHome\nEsc";
+const LEGEND_KEYS: &str = "left-drag\nright-drag\nwheel\narrows\n[  ]\nP\nO\nTab\nHome\nEsc";
 const LEGEND_ACTIONS: &str = "grab the ground\norbit  (or ctrl-drag)\nzoom to the pointer\npan\n\
-                              curl the ground  /  flatten it\nflat\n\
+                              bend toward a bowl  /  a planet\nflat\n\
+                              panopticon  —  close the bowl round the camera\n\
                               overview  —  click a pane to drop onto it\nreset\nquit";
 
 /// Eight colours, cycling by pane index.
@@ -85,6 +97,55 @@ fn start_pose() -> Pose {
         distance: 160.0,
         azimuth: 0.0,
         polar: 0.0,
+    }
+}
+
+/// The curvature ladder `[` and `]` walk: `±MAX_CURVATURE / CURVATURE_RATIO^i`
+/// for `i` in `0..CURVATURE_RUNGS`, and `0`, ascending.
+fn curvature_rungs() -> Vec<f64> {
+    let mut rungs = vec![0.0];
+    for i in 0..CURVATURE_RUNGS {
+        let k = MAX_CURVATURE / CURVATURE_RATIO.powi(i);
+        rungs.push(k);
+        rungs.push(-k);
+    }
+    rungs.sort_by(f64::total_cmp);
+    rungs
+}
+
+/// The next rung above `k`, or below it, from wherever `k` is: on a rung, off
+/// the ladder after `O` or `--curvature`, or at either end, where it stays.
+fn step_curvature(k: f64, up: bool) -> f64 {
+    let rungs = curvature_rungs();
+    // A hair of slack, so a `k` that is a rung to rounding counts as on it.
+    let slack = 1e-9 * k.abs();
+    let next = if up {
+        rungs.iter().copied().find(|&rung| rung > k + slack)
+    } else {
+        rungs.iter().rev().copied().find(|&rung| rung < k - slack)
+    };
+    next.unwrap_or(k)
+}
+
+/// `0.004`, `-0.004` or `-1/250`: a number, or a quotient of two.
+fn parse_curvature(text: &str) -> Option<f64> {
+    match text.split_once('/') {
+        Some((numerator, denominator)) => {
+            Some(numerator.trim().parse::<f64>().ok()? / denominator.trim().parse::<f64>().ok()?)
+        }
+        None => text.trim().parse().ok(),
+    }
+}
+
+/// The ground for the status line: `flat`, or the sign and radius, which
+/// read more easily than the curvature itself.
+fn describe(k: f64) -> String {
+    if k == 0.0 {
+        "flat".to_owned()
+    } else {
+        let sign = if k > 0.0 { "+" } else { "-" };
+        let what = if k > 0.0 { "planet" } else { "bowl" };
+        format!("k {sign}1/{:.0} ({what})", 1.0 / k.abs())
     }
 }
 
@@ -238,8 +299,8 @@ struct App {
     grid: ObjectRef,
     pane_nodes: Vec<ObjectRef>,
     legend: Option<Legend>,
-    /// The radius the grid's vertices were last built for.
-    grid_radius: f64,
+    /// The curvature the grid's vertices were last built for.
+    grid_curvature: f64,
     size: (u32, u32),
 }
 
@@ -248,14 +309,14 @@ impl App {
     /// renderer share an adapter — or on the renderer's own for the headless
     /// path.
     fn build(instance: Option<wgpu::Instance>, size: (u32, u32), with_legend: bool) -> Self {
-        let ground = Ground::new(START_RADIUS);
+        let ground = Ground::new(START_CURVATURE);
         let controls = MapControls::new(ground, start_pose());
         let panes = demo_panes();
 
         let mut scene = Scene::new();
         scene.set_background(Color::from_hex(0x111111));
 
-        // The grid: one `LineSegments`, rewritten in place when the radius
+        // The grid: one `LineSegments`, rewritten in place when the curvature
         // changes, never rebuilt.
         let grid = {
             let mut geometry = BufferGeometry::new();
@@ -310,7 +371,7 @@ impl App {
             grid,
             pane_nodes,
             legend,
-            grid_radius: ground.radius(),
+            grid_curvature: ground.curvature(),
             size,
         };
         app.set_size(size.0, size.1);
@@ -336,15 +397,17 @@ impl App {
     /// the grid's vertices if the ground curled since the last frame, then
     /// every pane's transform, then the camera.
     fn sync(&mut self) {
-        let radius = self.controls.ground().radius();
-        if (radius - self.grid_radius).abs() > 1e-6 * self.grid_radius {
+        // Any change at all, sign included: a relative test against the
+        // last value, as 0.2 had against its radius, never fires from `0`.
+        let curvature = self.controls.ground().curvature();
+        if curvature != self.grid_curvature {
             let positions = grid_positions(self.controls.ground());
             self.grid
                 .borrow()
                 .line()
                 .expect("the grid is a LineSegments")
                 .set_positions(&positions);
-            self.grid_radius = radius;
+            self.grid_curvature = curvature;
         }
 
         for (pane, node) in self.panes.iter().zip(&self.pane_nodes) {
@@ -373,16 +436,16 @@ impl App {
         }
     }
 
-    /// The status line: mode, ground radius and pose.
+    /// The status line: mode, ground and pose.
     fn status(&self) -> String {
         let pose = self.controls.current();
         format!(
-            "{} — R {:.0} — u {:.0} v {:.0} d {:.0} — az {:.0}° polar {:.0}°{}",
+            "{} — {} — u {:.0} v {:.0} d {:.0} — az {:.0}° polar {:.0}°{}",
             match self.controls.mode() {
                 Mode::Free => "free",
                 Mode::Overview => "overview",
             },
-            self.controls.ground().radius(),
+            describe(self.controls.ground().curvature()),
             pose.u,
             pose.v,
             pose.distance,
@@ -616,8 +679,9 @@ impl ApplicationHandler for Heli {
 
         println!(
             "heli — drag the ground, right-drag (or ctrl-drag) to orbit, \
-             the wheel zooms to the pointer, the arrows pan, [ ] curl the ground, \
-             P flattens it, Home resets, Tab is the overview, Esc quits"
+             the wheel zooms to the pointer, the arrows pan, [ ] bend the ground \
+             toward a bowl and a planet, P flattens it, O is the panopticon, \
+             Home resets, Tab is the overview, Esc quits"
         );
 
         window.request_redraw();
@@ -646,9 +710,19 @@ impl ApplicationHandler for Heli {
                     Key::Character(text) => {
                         for character in text.chars().flat_map(char::to_lowercase) {
                             match character {
-                                '[' if pressed => app.controls.scale_radius(1.25),
-                                ']' if pressed => app.controls.scale_radius(1.0 / 1.25),
-                                'p' if pressed => app.controls.set_radius(1e7),
+                                '[' if pressed => {
+                                    let k = app.controls.target_curvature();
+                                    app.controls.set_curvature(step_curvature(k, false));
+                                }
+                                ']' if pressed => {
+                                    let k = app.controls.target_curvature();
+                                    app.controls.set_curvature(step_curvature(k, true));
+                                }
+                                'p' if pressed => app.controls.set_curvature(0.0),
+                                'o' if pressed => {
+                                    let distance = app.controls.target().distance;
+                                    app.controls.set_curvature(-1.0 / distance);
+                                }
                                 _ => {}
                             }
                         }
@@ -778,17 +852,17 @@ fn headless(
     path: &str,
     size: (u32, u32),
     pose: Option<Pose>,
-    radius: Option<f64>,
+    curvature: Option<f64>,
     overview: bool,
     legend: bool,
 ) {
     let mut app = App::build(None, size, legend);
 
-    if let Some(radius) = radius {
-        app.controls.set_radius(radius);
+    if let Some(curvature) = curvature {
+        app.controls.set_curvature(curvature);
     }
     if let Some(pose) = pose {
-        app.controls = MapControls::new(Ground::new(app.controls.target_radius()), pose);
+        app.controls = MapControls::new(Ground::new(app.controls.target_curvature()), pose);
     }
     app.controls.settle();
 
@@ -812,13 +886,15 @@ fn headless(
 
 const USAGE: &str = "usage: heli [--headless out.png] \
                      [--pose u,v,distance,azimuth_deg,polar_deg] \
-                     [--radius R] [--overview] [--size WxH] [--no-legend]";
+                     [--curvature K] [--overview] [--size WxH] [--no-legend]\n\
+                     K is signed, 0 for the plane and below 0 for a bowl, \
+                     and may be a fraction: --curvature -1/300";
 
 fn main() {
     let mut args = std::env::args().skip(1);
     let mut out: Option<String> = None;
     let mut pose: Option<Pose> = None;
-    let mut radius: Option<f64> = None;
+    let mut curvature: Option<f64> = None;
     let mut overview = false;
     let mut size = (1600u32, 1000u32);
     let mut legend = true;
@@ -848,10 +924,10 @@ fn main() {
                     polar: numbers[4] * DEG2RAD,
                 });
             }
-            "--radius" => {
-                radius = Some(
+            "--curvature" => {
+                curvature = Some(
                     args.next()
-                        .and_then(|text| text.parse().ok())
+                        .and_then(|text| parse_curvature(&text))
                         .unwrap_or_else(|| panic!("{USAGE}")),
                 );
             }
@@ -874,7 +950,7 @@ fn main() {
     }
 
     if let Some(out) = out {
-        headless(&out, size, pose, radius, overview, legend);
+        headless(&out, size, pose, curvature, overview, legend);
         return;
     }
 
